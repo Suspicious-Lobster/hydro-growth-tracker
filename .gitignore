@@ -29,3 +29,8 @@ build-resources/node.exe
 # IDE files
 .vscode/
 .idea/
+
+# Package lock files (optional)
+package-lock.json
+frontend/package-lock.json
+backend/package-lock.json

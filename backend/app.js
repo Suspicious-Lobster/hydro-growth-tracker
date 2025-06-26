@@ -2,22 +2,23 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import feedingRoutes from './routes/feeding.routes.js';
-import logsRoutes from './routes/logs.routes.js'; // <-- Added import
+import logsRoutes from './routes/logs.routes.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
 
-// Basic express setup
 const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Middleware
 app.use(express.json());
 app.use(cors());
 
-// Setup for static images
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-app.use('/uploads', express.static('uploads'));
+// Serve static uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Multer setup for image uploads
 const storage = multer.diskStorage({
@@ -39,10 +40,19 @@ app.post('/logs/images', upload.single('image'), (req, res) => {
   });
 });
 
+// API Routes
 app.use('/feeding', feedingRoutes);
-app.use('/logs', logsRoutes); // <-- Added logs route
+app.use('/logs', logsRoutes);
 
-// Error handling middleware (should be after all routes)
+// Serve frontend in production
+if (process.env.NODE_ENV !== 'development') {
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  });
+}
+
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
