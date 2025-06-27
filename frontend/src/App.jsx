@@ -1,5 +1,6 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
+import { ThemeProvider } from './contexts/ThemeContext';
 import api from './api/api';
 import GrowthForm from './components/AddLogForm';
 import FeedingSchedule from './components/FeedingSchedule';
@@ -17,7 +18,7 @@ function groupLogsByPlant(logs) {
   return grouped;
 }
 
-function App() {
+function AppContent() {
   const [logs, setLogs] = useState([]);
   const [plants, setPlants] = useState({});
   const [selectedPlant, setSelectedPlant] = useState(null);
@@ -51,10 +52,8 @@ function App() {
     fetchLogs();
   };
 
-  /* -----------------------------  JSX  ---------------------------- */
-
   return (
-    <div className="min-h-screen bg-brandGray text-hydro-light flex">
+    <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text flex transition-colors duration-300">
       {/* Sidebar */}
       <PlantSidebar
         plants={plants}
@@ -66,13 +65,13 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
-        <div className="bg-brandGray-light border-b border-gray-700 p-4">
+        <div className="bg-light-bg-secondary dark:bg-dark-bg-secondary border-b border-light-border dark:border-dark-border p-4 transition-colors duration-300">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-hydro">
+              <h1 className="text-2xl font-bold text-light-primary dark:text-dark-primary">
                 {selectedPlant ? `${selectedPlant} Dashboard` : 'Hydro Growth Tracker'}
               </h1>
-              <p className="text-hydro-light">
+              <p className="text-light-text-muted dark:text-dark-text-muted">
                 {selectedPlant 
                   ? `Viewing ${plants[selectedPlant]?.length || 0} logs for ${selectedPlant}`
                   : `Managing ${Object.keys(plants).length} plants with ${logs.length} total logs`
@@ -91,10 +90,10 @@ function App() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                   activeTab === tab
-                    ? 'bg-hydro text-brandGray'
-                    : 'text-hydro-light hover:bg-gray-800'
+                    ? 'bg-light-primary dark:bg-dark-primary text-white shadow-md'
+                    : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-bg-accent dark:hover:bg-dark-bg-accent'
                 }`}
               >
                 {tab === 'add-log' ? 'Add Log' : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -104,7 +103,7 @@ function App() {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 bg-light-bg dark:bg-dark-bg transition-colors duration-300">
           {activeTab === 'dashboard' && (
             <PlantCards plants={plants} selectedPlant={selectedPlant} />
           )}
@@ -123,6 +122,14 @@ function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }
 

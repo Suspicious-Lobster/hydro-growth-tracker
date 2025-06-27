@@ -5,10 +5,10 @@ const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll }) => {
   const plantNames = Object.keys(plants);
 
   return (
-    <div className="w-64 bg-brandGray-light border-r border-gray-700 h-full flex flex-col">
+    <div className="w-64 bg-light-bg-secondary dark:bg-dark-bg-secondary border-r border-light-border dark:border-dark-border h-full flex flex-col transition-colors duration-300">
       {/* Header */}
-      <div className="p-4 border-b border-gray-700">
-        <h2 className="text-xl font-bold text-hydro flex items-center gap-2">
+      <div className="p-4 border-b border-light-border dark:border-dark-border">
+        <h2 className="text-xl font-bold text-light-primary dark:text-dark-primary flex items-center gap-2">
           <TreePine size={24} />
           My Plants
         </h2>
@@ -19,10 +19,10 @@ const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll }) => {
         {/* All Plants Option */}
         <button
           onClick={onShowAll}
-          className={`w-full text-left p-3 rounded-lg mb-2 flex items-center gap-2 transition-colors ${
+          className={`w-full text-left p-3 rounded-lg mb-2 flex items-center gap-2 transition-colors duration-200 ${
             selectedPlant === null
-              ? 'bg-hydro text-brandGray font-semibold'
-              : 'text-hydro-light hover:bg-gray-800'
+              ? 'bg-light-primary dark:bg-dark-primary text-white font-semibold'
+              : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-bg-accent dark:hover:bg-dark-bg-accent'
           }`}
         >
           <BarChart3 size={18} />
@@ -40,10 +40,10 @@ const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll }) => {
               <button
                 key={plantName}
                 onClick={() => onPlantSelect(plantName)}
-                className={`w-full text-left p-3 rounded-lg transition-colors ${
+                className={`w-full text-left p-3 rounded-lg transition-colors duration-200 ${
                   isSelected
-                    ? 'bg-hydro text-brandGray font-semibold'
-                    : 'text-hydro-light hover:bg-gray-800'
+                    ? 'bg-light-primary dark:bg-dark-primary text-white font-semibold'
+                    : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-bg-accent dark:hover:bg-dark-bg-accent'
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -62,7 +62,7 @@ const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll }) => {
 
         {/* Add Plant Hint */}
         {plantNames.length === 0 && (
-          <div className="text-center text-hydro-light/60 mt-8">
+          <div className="text-center text-light-text-muted dark:text-dark-text-muted mt-8">
             <Plus size={48} className="mx-auto mb-2 opacity-50" />
             <p>No plants yet</p>
             <p className="text-sm">Add your first log to get started!</p>
