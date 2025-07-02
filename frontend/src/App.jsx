@@ -8,6 +8,7 @@ import ExportCSVButton from './components/ExportCSVButton';
 import ThemeToggle from './components/ThemeToggle';
 import PlantSidebar from './components/PlantSidebar';
 import PlantCards from './components/PlantCards';
+import PlantManager from './components/PlantManager';
 
 function groupLogsByPlant(logs) {
   const grouped = {};
@@ -52,6 +53,12 @@ function AppContent() {
     fetchLogs();
   };
 
+  const handleManagePlants = () => {
+    setActiveTab('manage-plants');
+  };
+
+  const tabs = ['dashboard', 'add-log', 'feeding', 'manage-plants'];
+
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text flex transition-colors duration-300">
       {/* Sidebar */}
@@ -60,6 +67,7 @@ function AppContent() {
         selectedPlant={selectedPlant}
         onPlantSelect={handlePlantSelect}
         onShowAll={handleShowAll}
+        onManagePlants={handleManagePlants}
       />
 
       {/* Main Content */}
@@ -86,7 +94,7 @@ function AppContent() {
 
           {/* Tabs */}
           <div className="flex gap-1 mt-4">
-            {['dashboard', 'add-log', 'feeding'].map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -96,7 +104,9 @@ function AppContent() {
                     : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-bg-accent dark:hover:bg-dark-bg-accent'
                 }`}
               >
-                {tab === 'add-log' ? 'Add Log' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'add-log' ? 'Add Log' : 
+                 tab === 'manage-plants' ? 'Manage Plants' :
+                 tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
@@ -117,6 +127,12 @@ function AppContent() {
           {activeTab === 'feeding' && (
             <div className="max-w-4xl mx-auto">
               <FeedingSchedule />
+            </div>
+          )}
+
+          {activeTab === 'manage-plants' && (
+            <div className="max-w-4xl mx-auto">
+              <PlantManager plants={plants} onRefresh={refreshLogs} />
             </div>
           )}
         </div>

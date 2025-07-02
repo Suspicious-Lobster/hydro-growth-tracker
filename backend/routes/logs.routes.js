@@ -20,7 +20,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 /* -----------------------------------------------------------
-   1. GET /logs  – return JSON array                        */
+   1. GET /logs  – return JSON array                        */
 router.get('/', async (_req, res) => {
   const { rows } = await pool.query('SELECT * FROM logs ORDER BY created_at DESC');
   res.json(rows);
@@ -46,7 +46,7 @@ router.post('/', upload.single('image'), async (req, res) => {
 });
 
 /* -----------------------------------------------------------
-   3. GET /logs/export  – return text/csv                   */
+   3. GET /logs/export  – return text/csv                   */
 router.get('/export', async (_req, res) => {
   const { rows } = await pool.query(
     `SELECT id, plant_name, height, nutrients, notes, created_at
@@ -61,6 +61,33 @@ router.get('/export', async (_req, res) => {
   res.header('Content-Type', 'text/csv');
   res.attachment(`hydro_logs_${Date.now()}.csv`);
   res.send(csv);
+});
+
+/* -----------------------------------------------------------
+   4. DELETE /logs/plant/:plantName – delete all logs for a specific plant */
+router.delete('/plant/:plantName', async (req, res) => {
+  try {
+    const { plantName } = req.params;
+    const decodedPlantName = decodeURIComponent(plantName);
+    
+    console.log(`Attempting to delete plant: ${decodedPlantName}`);
+    
+    // Delete all logs for this plant
+    const result = await pool.query(
+      'DELETE FROM logs WHERE plant_name = $1',
+      [decodedPlantName]
+    );
+    
+    console.log(`Deleted ${result.rowCount} logs for plant: ${decodedPlantName}`);
+    
+    res.json({ 
+      message: `Deleted ${result.rowCount} logs for plant: ${decodedPlantName}`,
+      deletedCount: result.rowCount
+    });
+  } catch (err) {
+    console.error('Error deleting plant logs:', err);
+    res.status(500).json({ error: 'Failed to delete plant logs', details: err.message });
+  }
 });
 
 // Serve uploaded images statically

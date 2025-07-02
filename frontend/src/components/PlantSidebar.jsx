@@ -1,17 +1,26 @@
 import React from 'react';
-import { TreePine, BarChart3, Plus } from 'lucide-react';
+import { TreePine, BarChart3, Plus, Settings } from 'lucide-react';
 
-const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll }) => {
+const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll, onManagePlants }) => {
   const plantNames = Object.keys(plants);
 
   return (
     <div className="w-64 bg-light-bg-secondary dark:bg-dark-bg-secondary border-r border-light-border dark:border-dark-border h-full flex flex-col transition-colors duration-300">
       {/* Header */}
       <div className="p-4 border-b border-light-border dark:border-dark-border">
-        <h2 className="text-xl font-bold text-light-primary dark:text-dark-primary flex items-center gap-2">
-          <TreePine size={24} />
-          My Plants
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-light-primary dark:text-dark-primary flex items-center gap-2">
+            <TreePine size={24} />
+            My Plants
+          </h2>
+          <button
+            onClick={onManagePlants}
+            className="text-light-text-muted dark:text-dark-text-muted hover:text-light-primary dark:hover:text-dark-primary transition-colors"
+            title="Manage Plants"
+          >
+            <Settings size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Navigation */}
