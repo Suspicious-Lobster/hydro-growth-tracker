@@ -1,21 +1,23 @@
 import React from 'react';
 import { TreePine, BarChart3, Plus, Settings } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 
 const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll, onManagePlants }) => {
+  const { colors } = useTheme();
   const plantNames = Object.keys(plants);
 
   return (
-    <div className="w-64 bg-light-bg-secondary dark:bg-dark-bg-secondary border-r border-light-border dark:border-dark-border h-full flex flex-col transition-colors duration-300">
+    <div className={`w-64 ${colors.bgSecondary} ${colors.border} border-r h-full flex flex-col transition-colors duration-300`}>
       {/* Header */}
-      <div className="p-4 border-b border-light-border dark:border-dark-border">
+      <div className={`p-4 border-b ${colors.border}`}>
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-light-primary dark:text-dark-primary flex items-center gap-2">
+          <h2 className={`text-xl font-bold ${colors.primary} flex items-center gap-2`}>
             <TreePine size={24} />
             My Plants
           </h2>
           <button
             onClick={onManagePlants}
-            className="text-light-text-muted dark:text-dark-text-muted hover:text-light-primary dark:hover:text-dark-primary transition-colors"
+            className={`${colors.textMuted} hover:${colors.primary} transition-colors`}
             title="Manage Plants"
           >
             <Settings size={18} />
@@ -30,8 +32,8 @@ const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll, onManag
           onClick={onShowAll}
           className={`w-full text-left p-3 rounded-lg mb-2 flex items-center gap-2 transition-colors duration-200 ${
             selectedPlant === null
-              ? 'bg-light-primary dark:bg-dark-primary text-white font-semibold'
-              : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-bg-accent dark:hover:bg-dark-bg-accent'
+              ? `${colors.primaryBg} text-white font-semibold`
+              : `${colors.textSecondary} hover:${colors.bgAccent}`
           }`}
         >
           <BarChart3 size={18} />
@@ -51,8 +53,8 @@ const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll, onManag
                 onClick={() => onPlantSelect(plantName)}
                 className={`w-full text-left p-3 rounded-lg transition-colors duration-200 ${
                   isSelected
-                    ? 'bg-light-primary dark:bg-dark-primary text-white font-semibold'
-                    : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-bg-accent dark:hover:bg-dark-bg-accent'
+                    ? `${colors.primaryBg} text-white font-semibold`
+                    : `${colors.textSecondary} hover:${colors.bgAccent}`
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -71,7 +73,7 @@ const PlantSidebar = ({ plants, selectedPlant, onPlantSelect, onShowAll, onManag
 
         {/* Add Plant Hint */}
         {plantNames.length === 0 && (
-          <div className="text-center text-light-text-muted dark:text-dark-text-muted mt-8">
+          <div className={`text-center ${colors.textMuted} mt-8`}>
             <Plus size={48} className="mx-auto mb-2 opacity-50" />
             <p>No plants yet</p>
             <p className="text-sm">Add your first log to get started!</p>

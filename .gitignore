@@ -11,6 +11,11 @@ frontend/dist/
 .env
 backend/.env
 
+# Database files
+backend/database.db
+backend/database.sqlite
+backend/database.txt
+
 # Uploads (user data)
 backend/uploads/
 uploads/
@@ -18,6 +23,20 @@ uploads/
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache directories
+.npm
+.yarn-integrity
+.eslintcache
+
+# Temporary files
+*.tmp
+*.temp
+
+# Package info (generated)
+PACKAGE_INFO.txt
 
 # OS generated files
 .DS_Store

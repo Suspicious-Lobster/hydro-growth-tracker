@@ -9,6 +9,7 @@ import ThemeToggle from './components/ThemeToggle';
 import PlantSidebar from './components/PlantSidebar';
 import PlantCards from './components/PlantCards';
 import PlantManager from './components/PlantManager';
+import LogViewer from './components/LogViewer';
 
 function groupLogsByPlant(logs) {
   const grouped = {};
@@ -57,7 +58,7 @@ function AppContent() {
     setActiveTab('manage-plants');
   };
 
-  const tabs = ['dashboard', 'add-log', 'feeding', 'manage-plants'];
+  const tabs = ['dashboard', 'add-log', 'view-logs', 'feeding', 'manage-plants'];
 
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text flex transition-colors duration-300">
@@ -105,6 +106,7 @@ function AppContent() {
                 }`}
               >
                 {tab === 'add-log' ? 'Add Log' : 
+                 tab === 'view-logs' ? 'View Logs' :
                  tab === 'manage-plants' ? 'Manage Plants' :
                  tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
@@ -121,6 +123,12 @@ function AppContent() {
           {activeTab === 'add-log' && (
             <div className="max-w-2xl mx-auto">
               <GrowthForm refreshLogs={refreshLogs} />
+            </div>
+          )}
+          
+          {activeTab === 'view-logs' && (
+            <div className="max-w-6xl mx-auto">
+              <LogViewer onRefresh={refreshLogs} />
             </div>
           )}
           

@@ -64,7 +64,55 @@ router.get('/export', async (_req, res) => {
 });
 
 /* -----------------------------------------------------------
-   4. DELETE /logs/plant/:plantName – delete all logs for a specific plant */
+   4. PUT /logs/:id – update a specific log                */
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { plant_name, height, nutrients, notes } = req.body;
+    
+    const result = await pool.query(
+      'UPDATE logs SET plant_name = $1, height = $2, nutrients = $3, notes = $4 WHERE id = $5 RETURNING *',
+      [plant_name, height, nutrients, notes, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Log not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating log:', err);
+    res.status(500).json({ error: 'Failed to update log', details: err.message });
+  }
+});
+
+/* -----------------------------------------------------------
+   5. DELETE /logs/:id – delete a specific log             */
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await pool.query(
+      'DELETE FROM logs WHERE id = $1 RETURNING *',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Log not found' });
+    }
+    
+    res.json({ 
+      message: `Successfully deleted log with ID: ${id}`,
+      deletedLog: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Error deleting log:', err);
+    res.status(500).json({ error: 'Failed to delete log', details: err.message });
+  }
+});
+
+/* -----------------------------------------------------------
+   6. DELETE /logs/plant/:plantName – delete all logs for a specific plant */
 router.delete('/plant/:plantName', async (req, res) => {
   try {
     const { plantName } = req.params;

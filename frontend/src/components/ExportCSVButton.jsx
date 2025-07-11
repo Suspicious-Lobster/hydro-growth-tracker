@@ -1,5 +1,4 @@
-// src/components/ExportCSVButton.jsx
-import api from '../api/api';
+﻿import api from '../api/api';
 
 const ExportCSVButton = () => {
   const handleExport = async () => {
@@ -19,7 +18,7 @@ const ExportCSVButton = () => {
       onClick={handleExport}
       className="bg-hydro-light hover:bg-hydro px-3 py-2 rounded text-brandGray text-sm font-semibold shadow"
     >
-      ⬇️ Export logs to CSV
+      Export logs to CSV
     </button>
   );
 };

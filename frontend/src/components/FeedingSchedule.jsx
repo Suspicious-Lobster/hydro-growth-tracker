@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Droplets, Scissors, Eye, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Calendar, Droplets, Scissors, Eye, AlertTriangle, CheckCircle, Clock, Calculator } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 import api from '../api/api';
+import NutrientCalculator from './NutrientCalculator';
+import FeedingScheduleCalendarExport from './FeedingScheduleCalendarExport';
 
 const FeedingSchedule = () => {
   const [schedules, setSchedules] = useState([]);
@@ -8,10 +11,27 @@ const FeedingSchedule = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [calculatorStage, setCalculatorStage] = useState('vegetative');
+  const [showCalendarExport, setShowCalendarExport] = useState(false);
+  const { colors } = useTheme();
 
   // Fetch data on component mount
   useEffect(() => {
-    fetchData();
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        await Promise.all([fetchSchedules(), fetchPlants()]);
+      } catch (err) {
+        setError('Failed to load data. Please try again.');
+        console.error('Error fetching data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadData();
   }, []);
 
   const fetchData = async () => {
@@ -30,24 +50,22 @@ const FeedingSchedule = () => {
   const fetchSchedules = async () => {
     try {
       const res = await api.get('/feeding');
-      // Ensure we have an array
       const feedingData = Array.isArray(res.data) ? res.data : [];
       setSchedules(feedingData);
     } catch (err) {
       console.error('Feeding API error:', err);
-      setSchedules([]); // Set empty array on error
+      setSchedules([]);
     }
   };
 
   const fetchPlants = async () => {
     try {
       const res = await api.get('/logs');
-      // Ensure we have an array
       const logsData = Array.isArray(res.data) ? res.data : [];
       
       const grouped = {};
       logsData.forEach((log) => {
-        if (log && log.plant_name) { // Add null check
+        if (log && log.plant_name) {
           if (!grouped[log.plant_name]) grouped[log.plant_name] = [];
           grouped[log.plant_name].push(log);
         }
@@ -55,11 +73,11 @@ const FeedingSchedule = () => {
       setPlants(grouped);
     } catch (err) {
       console.error('Plants API error:', err);
-      setPlants({}); // Set empty object on error
+      setPlants({});
     }
   };
 
-  // Get plant growth stage and recommendations
+  // SIMPLIFIED VERSION - Only use simple recommendations
   const getPlantRecommendations = (plantName) => {
     const plantLogs = plants[plantName] || [];
     if (!Array.isArray(plantLogs) || plantLogs.length === 0) return null;
@@ -74,7 +92,7 @@ const FeedingSchedule = () => {
     const daysTracked = Math.ceil((new Date(latestLog.created_at) - new Date(firstLog.created_at)) / (1000 * 60 * 60 * 24));
     const growthRate = sortedLogs.length > 1 ? (currentHeight - parseFloat(firstLog.height)) / Math.max(daysTracked, 1) : 0;
 
-    // Determine growth stage
+    // Determine growth stage and recommendations
     let stage, stageColor, recommendations;
     
     if (currentHeight < 10) {
@@ -83,9 +101,7 @@ const FeedingSchedule = () => {
       recommendations = {
         feeding: 'Light nutrient solution (EC 0.6-0.8). Feed every 2-3 days.',
         pruning: 'No pruning needed. Focus on healthy root development.',
-        monitoring: 'Watch for damping off. Ensure proper humidity (60-70%).',
-        nutrients: 'High nitrogen, moderate phosphorus and potassium.',
-        schedule: 'every-2-days'
+        monitoring: 'Watch for damping off. Ensure proper humidity (60-70%).'
       };
     } else if (currentHeight < 30) {
       stage = 'Vegetative';
@@ -93,9 +109,7 @@ const FeedingSchedule = () => {
       recommendations = {
         feeding: 'Moderate nutrient solution (EC 1.0-1.4). Feed daily.',
         pruning: 'Start light pruning of lower leaves. Remove yellowing leaves.',
-        monitoring: 'Check for pests. Monitor leaf color and growth rate.',
-        nutrients: 'High nitrogen for leaf growth, balanced P-K ratio.',
-        schedule: 'daily'
+        monitoring: 'Check for pests. Monitor leaf color and growth rate.'
       };
     } else if (currentHeight < 60) {
       stage = 'Pre-Flowering';
@@ -103,9 +117,7 @@ const FeedingSchedule = () => {
       recommendations = {
         feeding: 'Balanced nutrient solution (EC 1.4-1.8). Reduce nitrogen slightly.',
         pruning: 'Top pruning to encourage bushiness. Remove lower branches.',
-        monitoring: 'Watch for flowering signs. Adjust light cycle if needed.',
-        nutrients: 'Reduce nitrogen, increase phosphorus for flowering.',
-        schedule: 'daily'
+        monitoring: 'Watch for flowering signs. Adjust light cycle if needed.'
       };
     } else {
       stage = 'Mature/Flowering';
@@ -113,9 +125,7 @@ const FeedingSchedule = () => {
       recommendations = {
         feeding: 'Strong nutrient solution (EC 1.6-2.0). Focus on P-K nutrients.',
         pruning: 'Minimal pruning. Remove only dead/yellowing leaves.',
-        monitoring: 'Check for nutrient deficiencies. Monitor pH closely.',
-        nutrients: 'Low nitrogen, high phosphorus and potassium.',
-        schedule: 'daily'
+        monitoring: 'Check for nutrient deficiencies. Monitor pH closely.'
       };
     }
 
@@ -125,7 +135,9 @@ const FeedingSchedule = () => {
       currentHeight,
       daysTracked: Math.max(daysTracked, 0),
       growthRate: growthRate.toFixed(2),
-      ...recommendations
+      feeding: recommendations.feeding,
+      pruning: recommendations.pruning,
+      monitoring: recommendations.monitoring
     };
   };
 
@@ -133,10 +145,10 @@ const FeedingSchedule = () => {
     const today = new Date();
     const tasks = [];
 
-    // Add scheduled feedings - ensure schedules is an array
+    // Add scheduled feedings
     if (Array.isArray(schedules)) {
       schedules.forEach(schedule => {
-        if (!schedule) return; // Skip null/undefined schedules
+        if (!schedule) return;
         
         const lastFed = new Date(schedule.last_fed || schedule.created_at);
         const daysSinceLastFed = Math.floor((today - lastFed) / (1000 * 60 * 60 * 24));
@@ -166,7 +178,6 @@ const FeedingSchedule = () => {
     Object.keys(plants).forEach(plantName => {
       const recs = getPlantRecommendations(plantName);
       if (recs) {
-        // Add pruning reminders based on stage
         if (recs.stage === 'Vegetative' || recs.stage === 'Pre-Flowering') {
           tasks.push({
             type: 'pruning',
@@ -177,7 +188,6 @@ const FeedingSchedule = () => {
           });
         }
 
-        // Add monitoring tasks
         tasks.push({
           type: 'monitoring',
           plant: plantName,
@@ -192,6 +202,12 @@ const FeedingSchedule = () => {
       const priorityOrder = { high: 3, medium: 2, low: 1 };
       return priorityOrder[b.priority] - priorityOrder[a.priority];
     });
+  };
+
+  const openCalculator = (plantName) => {
+    const recommendations = getPlantRecommendations(plantName);
+    setCalculatorStage(recommendations?.stage || 'vegetative');
+    setShowCalculator(true);
   };
 
   const AddScheduleForm = () => {
@@ -217,14 +233,14 @@ const FeedingSchedule = () => {
     };
 
     return (
-      <div className="bg-brandGray-light rounded-lg p-6 mb-6">
-        <h3 className="text-xl font-semibold text-hydro mb-4">Add Feeding Schedule</h3>
+      <div className={`${colors.bgSecondary} rounded-lg p-6 mb-6 border ${colors.border}`}>
+        <h3 className={`text-xl font-semibold ${colors.text} mb-4`}>Add Feeding Schedule</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <select
               value={form.plant_name}
               onChange={(e) => setForm({...form, plant_name: e.target.value})}
-              className="bg-gray-800 text-hydro rounded-lg p-3 border border-gray-600"
+              className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
               required
             >
               <option value="">Select Plant</option>
@@ -238,26 +254,26 @@ const FeedingSchedule = () => {
               placeholder="Nutrient Type (e.g., General Hydroponics)"
               value={form.nutrient_type}
               onChange={(e) => setForm({...form, nutrient_type: e.target.value})}
-              className="bg-gray-800 text-hydro rounded-lg p-3 border border-gray-600"
+              className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
               required
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <input
               type="number"
               step="0.1"
               placeholder="EC Level (e.g., 1.2)"
               value={form.ec_level}
               onChange={(e) => setForm({...form, ec_level: e.target.value})}
-              className="bg-gray-800 text-hydro rounded-lg p-3 border border-gray-600"
+              className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
               required
             />
             
             <select
               value={form.frequency}
               onChange={(e) => setForm({...form, frequency: e.target.value})}
-              className="bg-gray-800 text-hydro rounded-lg p-3 border border-gray-600"
+              className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
             >
               <option value="daily">Daily</option>
               <option value="every-2-days">Every 2 Days</option>
@@ -269,21 +285,21 @@ const FeedingSchedule = () => {
             placeholder="Additional notes..."
             value={form.notes}
             onChange={(e) => setForm({...form, notes: e.target.value})}
-            className="w-full bg-gray-800 text-hydro rounded-lg p-3 border border-gray-600"
+            className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
             rows="3"
           />
 
           <div className="flex gap-2">
             <button
               type="submit"
-              className="bg-hydro text-brandGray px-6 py-2 rounded-lg font-medium hover:bg-hydro/90"
+              className={`${colors.primaryBg} text-white px-6 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity`}
             >
               Add Schedule
             </button>
             <button
               type="button"
               onClick={() => setShowAddForm(false)}
-              className="bg-gray-700 text-hydro-light px-6 py-2 rounded-lg font-medium hover:bg-gray-600"
+              className={`${colors.bgAccent} ${colors.text} px-6 py-2 rounded-lg font-medium hover:opacity-80 transition-opacity border ${colors.border}`}
             >
               Cancel
             </button>
@@ -298,8 +314,8 @@ const FeedingSchedule = () => {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-hydro mx-auto"></div>
-          <p className="text-hydro-light mt-4">Loading feeding schedule...</p>
+          <div className={`animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto`}></div>
+          <p className={`${colors.textMuted} mt-4`}>Loading feeding schedule...</p>
         </div>
       </div>
     );
@@ -316,7 +332,7 @@ const FeedingSchedule = () => {
             <p className="text-red-300">{error}</p>
             <button
               onClick={fetchData}
-              className="mt-2 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+              className="mt-2 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
             >
               Try Again
             </button>
@@ -331,32 +347,41 @@ const FeedingSchedule = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-light-primary dark:text-dark-primary">🌿 Feeding & Care Schedule</h2>
-          <p className="text-light-text-muted dark:text-dark-text-muted">Intelligent recommendations based on plant growth stages</p>
+          <h2 className={`text-3xl font-bold ${colors.primary}`}>🌿 Feeding & Care Schedule</h2>
+          <p className={`${colors.textMuted}`}>Intelligent recommendations based on plant growth stages</p>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="bg-light-primary dark:bg-dark-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-light-primary-hover dark:hover:bg-dark-primary-hover transition-colors duration-200"
-        >
-          {showAddForm ? 'Cancel' : 'Add Schedule'}
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowCalendarExport(!showCalendarExport)}
+            className={`${colors.bgAccent} ${colors.text} px-4 py-2 rounded-lg font-medium hover:opacity-80 transition-opacity border ${colors.border} flex items-center gap-2`}
+          >
+            <Calendar size={16} />
+            Export Calendar
+          </button>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className={`${colors.primaryBg} text-white px-6 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity`}
+          >
+            {showAddForm ? 'Cancel' : 'Add Schedule'}
+          </button>
+        </div>
       </div>
 
       {/* Add Schedule Form */}
       {showAddForm && <AddScheduleForm />}
 
       {/* Upcoming Tasks */}
-      <div className="bg-light-bg-secondary dark:bg-dark-bg-secondary rounded-lg p-6 border border-light-border dark:border-dark-border transition-colors duration-300">
-        <h3 className="text-xl font-semibold text-light-text dark:text-dark-text mb-4 flex items-center gap-2">
+      <div className={`${colors.bgSecondary} rounded-lg p-6 border ${colors.border} transition-colors duration-300`}>
+        <h3 className={`text-xl font-semibold ${colors.text} mb-4 flex items-center gap-2`}>
           <Clock size={20} />
           Today's Tasks
         </h3>
         <div className="space-y-3">
           {getUpcomingTasks().slice(0, 6).map((task, index) => (
             <div key={index} className={`flex items-center gap-3 p-3 rounded-lg transition-colors duration-300 ${
-              task.priority === 'high' ? 'bg-red-900/10 dark:bg-red-900/20 border border-red-500/30' :
-              task.priority === 'medium' ? 'bg-yellow-900/10 dark:bg-yellow-900/20 border border-yellow-500/30' :
-              'bg-light-bg-accent dark:bg-dark-bg-accent'
+              task.priority === 'high' ? 'bg-red-900/10 border border-red-500/30' :
+              task.priority === 'medium' ? 'bg-yellow-900/10 border border-yellow-500/30' :
+              `${colors.bgAccent}`
             }`}>
               <div className="flex-shrink-0">
                 {task.type === 'feeding' && <Droplets size={18} className="text-blue-500" />}
@@ -364,8 +389,8 @@ const FeedingSchedule = () => {
                 {task.type === 'monitoring' && <Eye size={18} className="text-purple-500" />}
               </div>
               <div className="flex-1">
-                <div className="font-medium text-light-text dark:text-dark-text">{task.task}</div>
-                <div className="text-sm text-light-text-muted dark:text-dark-text-muted">{task.details}</div>
+                <div className={`font-medium ${colors.text}`}>{task.task}</div>
+                <div className={`text-sm ${colors.textMuted}`}>{task.details}</div>
               </div>
               {task.overdue && (
                 <AlertTriangle size={16} className="text-red-500" />
@@ -374,7 +399,7 @@ const FeedingSchedule = () => {
           ))}
           
           {getUpcomingTasks().length === 0 && (
-            <div className="text-center text-light-text-muted dark:text-dark-text-muted py-8">
+            <div className={`text-center ${colors.textMuted} py-8`}>
               <CheckCircle size={48} className="mx-auto mb-2 text-green-500" />
               <p>All caught up! No urgent tasks today.</p>
             </div>
@@ -384,34 +409,42 @@ const FeedingSchedule = () => {
 
       {/* Plant Recommendations */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {Object.keys(plants).map(plantName => {
-          const recs = getPlantRecommendations(plantName);
-          if (!recs) return null;
+        {Object.entries(plants).map(([plantName]) => {
+          const recommendations = getPlantRecommendations(plantName);
+          
+          if (!recommendations) {
+            return (
+              <div key={plantName} className={`${colors.bgSecondary} rounded-xl shadow-lg p-6`}>
+                <h3 className={`text-xl font-semibold ${colors.text}`}>{plantName}</h3>
+                <p className={`${colors.textMuted} mt-2`}>No data available for recommendations</p>
+              </div>
+            );
+          }
 
           return (
-            <div key={plantName} className="bg-brandGray-light rounded-lg p-6">
+            <div key={plantName} className={`${colors.bgSecondary} rounded-xl shadow-lg p-6 border ${colors.border}`}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-semibold text-hydro">{plantName}</h3>
+                <h3 className={`text-xl font-semibold ${colors.text}`}>{plantName}</h3>
                 <div className="flex items-center gap-2">
-                  <span className={`font-medium ${recs.stageColor}`}>{recs.stage}</span>
-                  <span className="text-sm text-hydro-light">({recs.currentHeight} cm)</span>
+                  <span className={`font-medium ${recommendations.stageColor}`}>{recommendations.stage}</span>
+                  <span className={`text-sm ${colors.textMuted}`}>({recommendations.currentHeight} cm)</span>
                 </div>
               </div>
 
               <div className="space-y-4">
                 {/* Quick Stats */}
                 <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-gray-800/50 rounded p-2">
-                    <div className="text-sm text-hydro-light">Days Tracked</div>
-                    <div className="font-semibold text-hydro">{recs.daysTracked}</div>
+                  <div className={`${colors.bgAccent} rounded p-2`}>
+                    <div className={`text-sm ${colors.textMuted}`}>Days Tracked</div>
+                    <div className={`font-semibold ${colors.text}`}>{recommendations.daysTracked}</div>
                   </div>
-                  <div className="bg-gray-800/50 rounded p-2">
-                    <div className="text-sm text-hydro-light">Growth Rate</div>
-                    <div className="font-semibold text-hydro">{recs.growthRate} cm/day</div>
+                  <div className={`${colors.bgAccent} rounded p-2`}>
+                    <div className={`text-sm ${colors.textMuted}`}>Growth Rate</div>
+                    <div className={`font-semibold ${colors.text}`}>{recommendations.growthRate} cm/day</div>
                   </div>
-                  <div className="bg-gray-800/50 rounded p-2">
-                    <div className="text-sm text-hydro-light">Height</div>
-                    <div className="font-semibold text-hydro">{recs.currentHeight} cm</div>
+                  <div className={`${colors.bgAccent} rounded p-2`}>
+                    <div className={`text-sm ${colors.textMuted}`}>Height</div>
+                    <div className={`font-semibold ${colors.text}`}>{recommendations.currentHeight} cm</div>
                   </div>
                 </div>
 
@@ -420,26 +453,37 @@ const FeedingSchedule = () => {
                   <div className="flex gap-3">
                     <Droplets size={16} className="text-blue-400 mt-1 flex-shrink-0" />
                     <div>
-                      <div className="font-medium text-hydro text-sm">Feeding</div>
-                      <div className="text-sm text-hydro-light">{recs.feeding}</div>
+                      <div className={`font-medium ${colors.text} text-sm`}>Feeding</div>
+                      <div className={`text-sm ${colors.textMuted}`}>{recommendations.feeding}</div>
                     </div>
                   </div>
 
                   <div className="flex gap-3">
                     <Scissors size={16} className="text-green-400 mt-1 flex-shrink-0" />
                     <div>
-                      <div className="font-medium text-hydro text-sm">Pruning</div>
-                      <div className="text-sm text-hydro-light">{recs.pruning}</div>
+                      <div className={`font-medium ${colors.text} text-sm`}>Pruning</div>
+                      <div className={`text-sm ${colors.textMuted}`}>{recommendations.pruning}</div>
                     </div>
                   </div>
 
                   <div className="flex gap-3">
                     <Eye size={16} className="text-purple-400 mt-1 flex-shrink-0" />
                     <div>
-                      <div className="font-medium text-hydro text-sm">Monitor</div>
-                      <div className="text-sm text-hydro-light">{recs.monitoring}</div>
+                      <div className={`font-medium ${colors.text} text-sm`}>Monitor</div>
+                      <div className={`text-sm ${colors.textMuted}`}>{recommendations.monitoring}</div>
                     </div>
                   </div>
+                </div>
+
+                {/* Calculator Button */}
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => openCalculator(plantName)}
+                    className={`${colors.primaryBg} text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center gap-2`}
+                  >
+                    <Calculator size={16} />
+                    Calculate Precise Nutrients
+                  </button>
                 </div>
               </div>
             </div>
@@ -448,29 +492,29 @@ const FeedingSchedule = () => {
       </div>
 
       {/* Current Schedules */}
-      <div className="bg-brandGray-light rounded-lg p-6">
-        <h3 className="text-xl font-semibold text-hydro mb-4">Active Feeding Schedules</h3>
+      <div className={`${colors.bgSecondary} rounded-lg p-6 border ${colors.border}`}>
+        <h3 className={`text-xl font-semibold ${colors.text} mb-4`}>Active Feeding Schedules</h3>
         {!Array.isArray(schedules) || schedules.length === 0 ? (
-          <div className="text-center text-hydro-light py-8">
+          <div className={`text-center ${colors.textMuted} py-8`}>
             <Calendar size={48} className="mx-auto mb-2 opacity-50" />
             <p>No feeding schedules yet. Add one to get started!</p>
           </div>
         ) : (
           <div className="space-y-3">
             {schedules.map(schedule => (
-              <div key={schedule.id} className="bg-gray-800/50 rounded-lg p-4 flex items-center justify-between">
+              <div key={schedule.id} className={`${colors.bgAccent} rounded-lg p-4 flex items-center justify-between`}>
                 <div>
-                  <div className="font-medium text-hydro">{schedule.plant_name}</div>
-                  <div className="text-sm text-hydro-light">
+                  <div className={`font-medium ${colors.text}`}>{schedule.plant_name}</div>
+                  <div className={`text-sm ${colors.textMuted}`}>
                     {schedule.nutrient_type} • EC {schedule.ec_level} • {schedule.frequency}
                   </div>
                   {schedule.notes && (
-                    <div className="text-sm text-hydro-light italic mt-1">{schedule.notes}</div>
+                    <div className={`text-sm ${colors.textMuted} italic mt-1`}>{schedule.notes}</div>
                   )}
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-hydro-light">Last Fed</div>
-                  <div className="text-sm text-hydro">
+                  <div className={`text-sm ${colors.textMuted}`}>Last Fed</div>
+                  <div className={`text-sm ${colors.text}`}>
                     {schedule.last_fed ? new Date(schedule.last_fed).toLocaleDateString() : 'Never'}
                   </div>
                 </div>
@@ -479,6 +523,32 @@ const FeedingSchedule = () => {
           </div>
         )}
       </div>
+
+      {/* Calendar Export Modal */}
+      {showCalendarExport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className={`${colors.bgSecondary} rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className={`text-xl font-semibold ${colors.text}`}>Export Feeding Schedule to Calendar</h3>
+              <button
+                onClick={() => setShowCalendarExport(false)}
+                className={`${colors.textMuted} hover:${colors.text} transition-colors`}
+              >
+                ✕
+              </button>
+            </div>
+            <FeedingScheduleCalendarExport />
+          </div>
+        </div>
+      )}
+
+      {/* Nutrient Calculator Modal */}
+      {showCalculator && (
+        <NutrientCalculator
+          plantStage={calculatorStage}
+          onClose={() => setShowCalculator(false)}
+        />
+      )}
     </div>
   );
 };
