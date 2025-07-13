@@ -12,7 +12,10 @@
     "build:frontend": "cd frontend && vite build",
     "electron:start": "cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=1 electron .",
     "dev": "concurrently --names \"backend,frontend,electron\" --prefix-colors \"yellow,cyan,green\" -k \"npm run backend\" \"npm run frontend:dev\" \"wait-on http://localhost:5173 && npm run electron:start\"",
-    "dist": "npm run build:frontend && electron-builder"
+    "dist": "npm run build:frontend && electron-builder",
+    "test:e2e": "node test-e2e.cjs",
+    "test": "npm run test:e2e",
+    "package": "npm run test:e2e && package.bat"
   },
   "build": {
     "appId": "com.yourdomain.hydro-growth-tracker",
