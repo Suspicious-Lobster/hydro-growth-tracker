@@ -6,6 +6,7 @@ import logsRoutes from './routes/logs.routes.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { promises as fs } from 'fs';
 
 dotenv.config();
 
@@ -13,16 +14,25 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+try {
+  await fs.access(uploadsDir);
+} catch (error) {
+  await fs.mkdir(uploadsDir, { recursive: true });
+  console.log('Created uploads directory');
+}
+
 // Middleware
 app.use(express.json());
 app.use(cors());
 
 // Serve static uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(uploadsDir));
 
 // Multer setup for image uploads
 const storage = multer.diskStorage({
-  destination: path.join(__dirname, 'uploads'),
+  destination: uploadsDir,
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   },

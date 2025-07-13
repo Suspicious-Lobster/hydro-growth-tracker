@@ -2,15 +2,20 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
-import pool from '../database/db.js';
+import { fileURLToPath } from 'url';
+import db from '../database/db.js';
 import { Parser } from 'json2csv';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
 // Configure Multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join('uploads'));
+    const uploadsDir = path.join(__dirname, '../uploads');
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -22,8 +27,13 @@ const upload = multer({ storage });
 /* -----------------------------------------------------------
    1. GET /logs  – return JSON array                        */
 router.get('/', async (_req, res) => {
-  const { rows } = await pool.query('SELECT * FROM logs ORDER BY created_at DESC');
-  res.json(rows);
+  try {
+    const rows = await db.all('SELECT * FROM logs ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching logs:', err);
+    res.status(500).json({ error: 'Failed to fetch logs' });
+  }
 });
 
 /* -----------------------------------------------------------
@@ -34,13 +44,16 @@ router.post('/', upload.single('image'), async (req, res) => {
     const { plant_name, date, height, nutrients, notes } = req.body;
     const image_url = req.file ? `/uploads/${req.file.filename}` : null;
 
-    const result = await pool.query(
-      'INSERT INTO logs (plant_name, date, height, nutrients, notes, image_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+    const result = await db.run(
+      'INSERT INTO logs (plant_name, date, height, nutrients, notes, image_url) VALUES (?, ?, ?, ?, ?, ?)',
       [plant_name, date, height, nutrients, notes, image_url]
     );
-    res.status(201).json(result.rows[0]);
+    
+    // Get the inserted row
+    const insertedRow = await db.get('SELECT * FROM logs WHERE id = ?', [result.lastID]);
+    res.status(201).json(insertedRow);
   } catch (err) {
-    console.error(err);
+    console.error('Error adding log:', err);
     res.status(500).json({ error: 'Failed to add log' });
   }
 });
@@ -48,19 +61,24 @@ router.post('/', upload.single('image'), async (req, res) => {
 /* -----------------------------------------------------------
    3. GET /logs/export  – return text/csv                   */
 router.get('/export', async (_req, res) => {
-  const { rows } = await pool.query(
-    `SELECT id, plant_name, height, nutrients, notes, created_at
-     FROM logs ORDER BY created_at DESC`
-  );
+  try {
+    const rows = await db.all(
+      `SELECT id, plant_name, height, nutrients, notes, created_at
+       FROM logs ORDER BY created_at DESC`
+    );
 
-  const parser = new Parser({
-    fields: ['id', 'plant_name', 'height', 'nutrients', 'notes', 'created_at'],
-  });
-  const csv = parser.parse(rows);
+    const parser = new Parser({
+      fields: ['id', 'plant_name', 'height', 'nutrients', 'notes', 'created_at'],
+    });
+    const csv = parser.parse(rows);
 
-  res.header('Content-Type', 'text/csv');
-  res.attachment(`hydro_logs_${Date.now()}.csv`);
-  res.send(csv);
+    res.header('Content-Type', 'text/csv');
+    res.attachment(`hydro_logs_${Date.now()}.csv`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Error exporting logs:', err);
+    res.status(500).json({ error: 'Failed to export logs' });
+  }
 });
 
 /* -----------------------------------------------------------
@@ -70,16 +88,18 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { plant_name, height, nutrients, notes } = req.body;
     
-    const result = await pool.query(
-      'UPDATE logs SET plant_name = $1, height = $2, nutrients = $3, notes = $4 WHERE id = $5 RETURNING *',
+    const result = await db.run(
+      'UPDATE logs SET plant_name = ?, height = ?, nutrients = ?, notes = ? WHERE id = ?',
       [plant_name, height, nutrients, notes, id]
     );
     
-    if (result.rows.length === 0) {
+    if (result.changes === 0) {
       return res.status(404).json({ error: 'Log not found' });
     }
     
-    res.json(result.rows[0]);
+    // Get the updated row
+    const updatedRow = await db.get('SELECT * FROM logs WHERE id = ?', [id]);
+    res.json(updatedRow);
   } catch (err) {
     console.error('Error updating log:', err);
     res.status(500).json({ error: 'Failed to update log', details: err.message });
@@ -92,18 +112,18 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const result = await pool.query(
-      'DELETE FROM logs WHERE id = $1 RETURNING *',
-      [id]
-    );
+    // Get the log before deleting
+    const logToDelete = await db.get('SELECT * FROM logs WHERE id = ?', [id]);
     
-    if (result.rows.length === 0) {
+    if (!logToDelete) {
       return res.status(404).json({ error: 'Log not found' });
     }
     
+    const result = await db.run('DELETE FROM logs WHERE id = ?', [id]);
+    
     res.json({ 
       message: `Successfully deleted log with ID: ${id}`,
-      deletedLog: result.rows[0]
+      deletedLog: logToDelete
     });
   } catch (err) {
     console.error('Error deleting log:', err);
@@ -121,16 +141,16 @@ router.delete('/plant/:plantName', async (req, res) => {
     console.log(`Attempting to delete plant: ${decodedPlantName}`);
     
     // Delete all logs for this plant
-    const result = await pool.query(
-      'DELETE FROM logs WHERE plant_name = $1',
+    const result = await db.run(
+      'DELETE FROM logs WHERE plant_name = ?',
       [decodedPlantName]
     );
     
-    console.log(`Deleted ${result.rowCount} logs for plant: ${decodedPlantName}`);
+    console.log(`Deleted ${result.changes} logs for plant: ${decodedPlantName}`);
     
     res.json({ 
-      message: `Deleted ${result.rowCount} logs for plant: ${decodedPlantName}`,
-      deletedCount: result.rowCount
+      message: `Deleted ${result.changes} logs for plant: ${decodedPlantName}`,
+      deletedCount: result.changes
     });
   } catch (err) {
     console.error('Error deleting plant logs:', err);
