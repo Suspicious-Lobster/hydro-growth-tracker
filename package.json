@@ -50,6 +50,10 @@
         "filter": ["**/*"]
       },
       {
+        "from": "build-resources/node.exe",
+        "to": "node.exe"
+      },
+      {
         "from": "assets/",
         "to": "assets/"
       }

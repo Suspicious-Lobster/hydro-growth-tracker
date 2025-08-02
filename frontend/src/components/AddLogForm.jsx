@@ -113,11 +113,13 @@ const AddLogForm = ({ refreshLogs }) => {
     e.preventDefault();
     
     if (!validateForm()) {
+      console.log('Form validation failed');
       return;
     }
 
     setIsSubmitting(true);
     console.log('Submitting form:', form);
+    console.log('API base URL:', 'http://localhost:5000');
     
     try {
       let response;
@@ -136,6 +138,11 @@ const AddLogForm = ({ refreshLogs }) => {
         }
 
         console.log('Sending FormData with image');
+        console.log('FormData entries:');
+        for (let [key, value] of formData.entries()) {
+          console.log(key, value);
+        }
+        
         response = await api.post('/logs', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -171,6 +178,9 @@ const AddLogForm = ({ refreshLogs }) => {
     } catch (error) {
       console.error('Submit error:', error);
       console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      console.error('Error message:', error.message);
+      console.error('Full error object:', error);
       
       // Handle validation errors from backend
       if (error.response?.status === 400 && error.response?.data?.details) {
@@ -184,7 +194,10 @@ const AddLogForm = ({ refreshLogs }) => {
         });
         setErrors(backendErrors);
       } else {
-        alert('Failed to add log: ' + (error.response?.data?.error || error.message));
+        // More detailed error message
+        const errorMsg = error.response?.data?.error || error.message || 'Unknown error occurred';
+        const errorDetails = error.response?.data?.details ? ` Details: ${error.response.data.details}` : '';
+        alert(`Failed to add log: ${errorMsg}${errorDetails}\n\nCheck console for more details.`);
       }
     } finally {
       setIsSubmitting(false);
