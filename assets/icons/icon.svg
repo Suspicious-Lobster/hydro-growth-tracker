@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563eb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0891b2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="leaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="water" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1d4ed8;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="url(#bg)" stroke="#1e293b" stroke-width="4"/>
+  
+  <!-- Hydroponic container/pot -->
+  <rect x="80" y="160" width="96" height="60" rx="8" fill="url(#water)" stroke="#0f172a" stroke-width="2"/>
+  
+  <!-- Plant stem -->
+  <rect x="125" y="100" width="6" height="80" fill="#059669" rx="3"/>
+  
+  <!-- Main leaf (left) -->
+  <ellipse cx="105" cy="110" rx="25" ry="15" fill="url(#leaf)" stroke="#047857" stroke-width="1" transform="rotate(-30 105 110)"/>
+  
+  <!-- Main leaf (right) -->
+  <ellipse cx="150" cy="110" rx="25" ry="15" fill="url(#leaf)" stroke="#047857" stroke-width="1" transform="rotate(30 150 110)"/>
+  
+  <!-- Top leaf -->
+  <ellipse cx="128" cy="85" rx="20" ry="12" fill="url(#leaf)" stroke="#047857" stroke-width="1"/>
+  
+  <!-- Small growth indicators -->
+  <circle cx="115" cy="95" r="3" fill="#34d399" opacity="0.8"/>
+  <circle cx="140" cy="95" r="3" fill="#34d399" opacity="0.8"/>
+  <circle cx="128" cy="75" r="3" fill="#34d399" opacity="0.8"/>
+  
+  <!-- Water level indicators -->
+  <circle cx="95" cy="180" r="2" fill="#60a5fa" opacity="0.6"/>
+  <circle cx="110" cy="185" r="2" fill="#60a5fa" opacity="0.6"/>
+  <circle cx="145" cy="185" r="2" fill="#60a5fa" opacity="0.6"/>
+  <circle cx="160" cy="180" r="2" fill="#60a5fa" opacity="0.6"/>
+  
+  <!-- Tech/monitoring element -->
+  <rect x="185" y="170" width="20" height="12" rx="2" fill="#f8fafc" stroke="#64748b" stroke-width="1"/>
+  <rect x="187" y="172" width="16" height="3" fill="#10b981"/>
+  <rect x="187" y="176" width="12" height="2" fill="#3b82f6"/>
+  <rect x="187" y="179" width="8" height="2" fill="#f59e0b"/>
+  
+  <!-- Optional text at bottom -->
+  <text x="128" y="240" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#f8fafc">HYDRO</text>
+</svg>

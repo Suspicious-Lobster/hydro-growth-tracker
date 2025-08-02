@@ -7,13 +7,56 @@ const AddLogForm = ({ refreshLogs }) => {
   const { colors } = useTheme();
   const [form, setForm] = useState({
     plant_name: '',
-    date: '',
-    height: '',
+    date: new Date().toISOString().split('T')[0], // Set to today's date
+    height: '0', // Set default height to 0
     nutrients: '',
     notes: '',
     image: null,
   });
   const [isDirty, setIsDirty] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  // Form validation
+  const validateForm = () => {
+    const newErrors = {};
+
+    if (!form.plant_name.trim()) {
+      newErrors.plant_name = 'Plant name is required';
+    } else if (form.plant_name.length > 100) {
+      newErrors.plant_name = 'Plant name must be less than 100 characters';
+    }
+
+    if (!form.date) {
+      newErrors.date = 'Date is required';
+    } else if (isNaN(Date.parse(form.date))) {
+      newErrors.date = 'Please enter a valid date';
+    }
+
+    const heightNum = parseFloat(form.height);
+    if (form.height === '' || isNaN(heightNum)) {
+      newErrors.height = 'Height is required';
+    } else if (heightNum < 0 || heightNum > 1000) {
+      newErrors.height = 'Height must be between 0 and 1000 cm';
+    }
+
+    if (!form.nutrients.trim()) {
+      newErrors.nutrients = 'Nutrients information is required';
+    } else if (form.nutrients.length > 500) {
+      newErrors.nutrients = 'Nutrients description must be less than 500 characters';
+    }
+
+    if (form.notes.length > 1000) {
+      newErrors.notes = 'Notes must be less than 1000 characters';
+    }
+
+    if (form.image && form.image.size > 5 * 1024 * 1024) {
+      newErrors.image = 'Image must be smaller than 5MB';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   // Load draft from localStorage on mount
   useEffect(() => {
@@ -68,37 +111,91 @@ const AddLogForm = ({ refreshLogs }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const formData = new FormData();
-      Object.entries(form).forEach(([key, value]) => {
-        if (value) formData.append(key, value);
-      });
+    
+    if (!validateForm()) {
+      return;
+    }
 
-      await api.post('/logs', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+    setIsSubmitting(true);
+    console.log('Submitting form:', form);
+    
+    try {
+      let response;
+      
+      if (form.image) {
+        // If there's an image, use FormData
+        const formData = new FormData();
+        // Always include required fields, even if empty
+        formData.append('plant_name', form.plant_name || '');
+        formData.append('date', form.date || '');
+        formData.append('height', form.height || '0');
+        formData.append('nutrients', form.nutrients || '');
+        formData.append('notes', form.notes || '');
+        if (form.image) {
+          formData.append('image', form.image);
+        }
+
+        console.log('Sending FormData with image');
+        response = await api.post('/logs', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        // If no image, send JSON
+        const jsonData = {
+          plant_name: form.plant_name,
+          date: form.date,
+          height: form.height,
+          nutrients: form.nutrients,
+          notes: form.notes,
+        };
+        
+        console.log('Sending JSON data:', jsonData);
+        response = await api.post('/logs', jsonData, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      
+      console.log('Success response:', response.data);
       
       setForm({
         plant_name: '',
-        date: '',
-        height: '',
+        date: new Date().toISOString().split('T')[0], // Reset to today's date
+        height: '0', // Reset height to 0
         nutrients: '',
         notes: '',
         image: null,
       });
+      setErrors({});
       clearDraft();
       refreshLogs();
     } catch (error) {
-      alert('Failed to add log: ' + (error.response?.data?.error || error.message));
-      console.error(error);
+      console.error('Submit error:', error);
+      console.error('Error response:', error.response?.data);
+      
+      // Handle validation errors from backend
+      if (error.response?.status === 400 && error.response?.data?.details) {
+        const backendErrors = {};
+        error.response.data.details.forEach(detail => {
+          if (detail.includes('Plant name')) backendErrors.plant_name = detail;
+          else if (detail.includes('Date')) backendErrors.date = detail;
+          else if (detail.includes('Height')) backendErrors.height = detail;
+          else if (detail.includes('Nutrients')) backendErrors.nutrients = detail;
+          else if (detail.includes('Notes')) backendErrors.notes = detail;
+        });
+        setErrors(backendErrors);
+      } else {
+        alert('Failed to add log: ' + (error.response?.data?.error || error.message));
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleClearDraft = () => {
     setForm({
       plant_name: '',
-      date: '',
-      height: '',
+      date: new Date().toISOString().split('T')[0], // Reset to today's date
+      height: '0', // Reset height to 0
       nutrients: '',
       notes: '',
       image: null,
@@ -158,9 +255,12 @@ const AddLogForm = ({ refreshLogs }) => {
             value={form.plant_name}
             onChange={handleChange}
             placeholder="e.g., Tomato Plant #1, Basil, Lettuce"
-            className={`w-full px-4 py-3 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200`}
+            className={`w-full px-4 py-3 ${colors.bgAccent} border ${errors.plant_name ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.plant_name ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200`}
             required
           />
+          {errors.plant_name && (
+            <p className="text-red-500 text-sm mt-1">{errors.plant_name}</p>
+          )}
         </div>
 
         <div>
@@ -172,8 +272,11 @@ const AddLogForm = ({ refreshLogs }) => {
             type="date"
             value={form.date}
             onChange={handleChange}
-            className={`w-full px-4 py-3 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200`}
+            className={`w-full px-4 py-3 ${colors.bgAccent} border ${errors.date ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.date ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200`}
           />
+          {errors.date && (
+            <p className="text-red-500 text-sm mt-1">{errors.date}</p>
+          )}
         </div>
 
         <div>
@@ -193,10 +296,11 @@ const AddLogForm = ({ refreshLogs }) => {
               type="number"
               step="0.1"
               min="0"
+              max="1000"
               value={form.height}
               onChange={handleChange}
               placeholder="0.0"
-              className={`flex-1 px-4 py-3 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 text-center font-mono`}
+              className={`flex-1 px-4 py-3 ${colors.bgAccent} border ${errors.height ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.height ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200 text-center font-mono`}
               required
             />
             <button
@@ -207,9 +311,13 @@ const AddLogForm = ({ refreshLogs }) => {
               <Plus size={16} className={colors.text} />
             </button>
           </div>
-          <p className={`text-xs ${colors.textMuted} mt-1`}>
-            Use +/- buttons for precise adjustments (±0.5 cm)
-          </p>
+          {errors.height ? (
+            <p className="text-red-500 text-sm mt-1">{errors.height}</p>
+          ) : (
+            <p className={`text-xs ${colors.textMuted} mt-1`}>
+              Use +/- buttons for precise adjustments (±0.5 cm)
+            </p>
+          )}
         </div>
 
         <div>
@@ -221,9 +329,12 @@ const AddLogForm = ({ refreshLogs }) => {
             value={form.nutrients}
             onChange={handleChange}
             placeholder="e.g., General Hydroponics Flora Series, 5ml/L"
-            className={`w-full px-4 py-3 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200`}
+            className={`w-full px-4 py-3 ${colors.bgAccent} border ${errors.nutrients ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.nutrients ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200`}
             required
           />
+          {errors.nutrients && (
+            <p className="text-red-500 text-sm mt-1">{errors.nutrients}</p>
+          )}
         </div>
 
         <div>
@@ -236,8 +347,19 @@ const AddLogForm = ({ refreshLogs }) => {
             onChange={handleChange}
             placeholder="Additional observations, changes, or notes..."
             rows="4"
-            className={`w-full px-4 py-3 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 resize-none`}
+            maxLength="1000"
+            className={`w-full px-4 py-3 ${colors.bgAccent} border ${errors.notes ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.notes ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200 resize-none`}
           />
+          <div className="flex justify-between items-center mt-1">
+            {errors.notes ? (
+              <p className="text-red-500 text-sm">{errors.notes}</p>
+            ) : (
+              <span></span>
+            )}
+            <span className={`text-xs ${colors.textMuted}`}>
+              {form.notes.length}/1000
+            </span>
+          </div>
         </div>
 
         <div>
@@ -249,11 +371,17 @@ const AddLogForm = ({ refreshLogs }) => {
             name="image"
             accept="image/*"
             onChange={handleChange}
-            className={`w-full px-4 py-3 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100`}
+            className={`w-full px-4 py-3 ${colors.bgAccent} border ${errors.image ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.image ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100`}
           />
-          {form.image && (
+          {errors.image ? (
+            <p className="text-red-500 text-sm mt-1">{errors.image}</p>
+          ) : form.image ? (
             <p className={`text-xs ${colors.textMuted} mt-1`}>
-              Selected: {form.image.name}
+              Selected: {form.image.name} ({(form.image.size / 1024 / 1024).toFixed(2)} MB)
+            </p>
+          ) : (
+            <p className={`text-xs ${colors.textMuted} mt-1`}>
+              Maximum file size: 5MB. Supported formats: JPEG, PNG, GIF
             </p>
           )}
         </div>
@@ -261,10 +389,11 @@ const AddLogForm = ({ refreshLogs }) => {
         <div className="flex gap-3 pt-4">
           <button
             type="submit"
-            className={`flex-1 ${colors.primaryBg} text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2`}
+            disabled={isSubmitting}
+            className={`flex-1 ${colors.primaryBg} text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             <Save size={16} />
-            Add Growth Log
+            {isSubmitting ? 'Adding Log...' : 'Add Growth Log'}
           </button>
           {isDirty && (
             <button

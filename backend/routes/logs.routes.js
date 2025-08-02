@@ -5,24 +5,42 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import db from '../database/db.js';
 import { Parser } from 'json2csv';
+import { validateLogData, validateFileUpload } from '../middleware/validation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// Configure Multer for file uploads
+// Configure Multer for file uploads with enhanced security
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadsDir = path.join(__dirname, '../uploads');
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
+    // Sanitize filename and add timestamp
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
+    cb(null, `${uniqueSuffix}-${sanitizedName}`);
   },
 });
-const upload = multer({ storage });
+
+const upload = multer({ 
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+    files: 1 // Only one file at a time
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG, and GIF images are allowed.'));
+    }
+  }
+});
 
 /* -----------------------------------------------------------
    1. GET /logs  – return JSON array                        */
@@ -37,16 +55,18 @@ router.get('/', async (_req, res) => {
 });
 
 /* -----------------------------------------------------------
-   2. POST /logs – insert new log                           */
-router.post('/', upload.single('image'), async (req, res) => {
+   2. POST /logs – insert new log with enhanced validation */
+router.post('/', upload.single('image'), validateLogData, validateFileUpload, async (req, res) => {
   console.log('Received POST /logs', req.body);
+  console.log('Request file:', req.file);
+  
   try {
     const { plant_name, date, height, nutrients, notes } = req.body;
     const image_url = req.file ? `/uploads/${req.file.filename}` : null;
 
     const result = await db.run(
       'INSERT INTO logs (plant_name, date, height, nutrients, notes, image_url) VALUES (?, ?, ?, ?, ?, ?)',
-      [plant_name, date, height, nutrients, notes, image_url]
+      [plant_name.trim(), date, parseFloat(height), nutrients.trim(), notes?.trim() || '', image_url]
     );
     
     // Get the inserted row
@@ -54,7 +74,10 @@ router.post('/', upload.single('image'), async (req, res) => {
     res.status(201).json(insertedRow);
   } catch (err) {
     console.error('Error adding log:', err);
-    res.status(500).json({ error: 'Failed to add log' });
+    res.status(500).json({ 
+      error: 'Failed to add log', 
+      details: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    });
   }
 });
 

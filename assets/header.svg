@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="150" height="57" viewBox="0 0 150 57" xmlns="http://www.w3.org/2000/svg">
+  <!-- Header/banner for installer -->
+  <defs>
+    <linearGradient id="headerBg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1e40af;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0891b2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect x="0" y="0" width="150" height="57" fill="url(#headerBg)"/>
+  
+  <!-- Plant icon -->
+  <rect x="10" y="25" width="12" height="8" rx="1" fill="#3b82f6"/>
+  <rect x="15" y="20" width="2" height="8" fill="#059669"/>
+  <ellipse cx="12" cy="22" rx="3" ry="2" fill="#10b981" transform="rotate(-25 12 22)"/>
+  <ellipse cx="18" cy="22" rx="3" ry="2" fill="#10b981" transform="rotate(25 18 22)"/>
+  
+  <!-- Text -->
+  <text x="30" y="25" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#f8fafc">HYDRO</text>
+  <text x="30" y="35" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#f8fafc">GROWTH</text>
+  <text x="30" y="45" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#f8fafc">TRACKER</text>
+  
+  <!-- Version -->
+  <text x="120" y="45" font-family="Arial, sans-serif" font-size="8" fill="#cbd5e1">v1.0.0</text>
+</svg>
