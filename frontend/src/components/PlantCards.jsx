@@ -66,77 +66,92 @@ const PlantCard = ({ plantName, plantLogs }) => {
             <FileText size={16} className="text-orange-400" />
           </div>
           <div className={`text-xl font-bold ${colors.text}`}>{plantLogs.length}</div>
-          <div className={`text-xs ${colors.textMuted}`}>Total Logs</div>
+          <div className={`text-xs ${colors.textMuted}`}>Total Entries</div>
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="mb-6">
-        <h4 className={`text-lg font-semibold ${colors.text} mb-3`}>Growth Chart</h4>
-        <div className="h-64">
-          <GrowthChart data={chartData} />
+      {/* Growth Chart */}
+      {chartData.length > 1 && (
+        <div className="mb-12">
+          <h4 className={`text-lg font-semibold ${colors.text} mb-3`}>Growth Progress</h4>
+          <div className="h-64">
+            <GrowthChart data={chartData} />
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Recent Logs */}
-      <div>
-        <h4 className={`text-lg font-semibold ${colors.text} mb-3`}>Recent Logs</h4>
-        <div className="space-y-2 max-h-64 overflow-y-auto">
-          {sortedLogs.slice(-5).reverse().map((log) => (
-            <div key={log.id} className={`${colors.bgAccent} rounded-lg p-3 flex items-center gap-3`}>
-              {log.image_url && (
-                <img
-                  src={`http://localhost:5000${log.image_url}`}
-                  alt="Plant"
-                  className="w-12 h-12 rounded-lg object-cover"
-                />
-              )}
-              <div className="flex-1">
-                <div className={`flex items-center gap-2 text-sm ${colors.textMuted}`}>
-                  <Calendar size={14} />
-                  {new Date(log.created_at).toLocaleDateString()}
-                </div>
-                <div className={`${colors.text} font-medium`}>
-                  Height: {log.height} cm
-                </div>
-                {log.notes && (
-                  <div className={`text-sm ${colors.textMuted} italic`}>
-                    "{log.notes}"
+      {/* Recent Logs - Fixed spacing to prevent overlap */}
+      <div className="mt-12">
+        <h4 className={`text-lg font-semibold ${colors.text} mb-3 flex items-center gap-2`}>
+          <FileText size={18} />
+          Recent Logs
+        </h4>
+        <div className="space-y-3 max-h-64 overflow-y-auto">
+          {sortedLogs.slice(-3).reverse().map((log) => (
+            <div
+              key={log.id}
+              className={`${colors.bgAccent} rounded-lg p-4 ${colors.border} border transition-colors duration-200`}
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className={`text-sm font-medium ${colors.text}`}>
+                    {new Date(log.created_at).toLocaleDateString()}
                   </div>
-                )}
+                  {log.image_url && (
+                    <Camera size={14} className="text-blue-400" />
+                  )}
+                </div>
+                <div className={`text-lg font-bold ${colors.primary}`}>
+                  {log.height} cm
+                </div>
               </div>
-              <div className="text-right">
-                <div className={`text-xs ${colors.textMuted}`}>Nutrients</div>
-                <div className={`text-sm ${colors.text}`}>{log.nutrients}</div>
+              
+              <div className={`text-sm ${colors.textMuted} mb-2`}>
+                <strong>Nutrients:</strong> {log.nutrients}
               </div>
+              
+              {log.notes && (
+                <div className={`text-sm ${colors.text} italic`}>
+                  "{log.notes}"
+                </div>
+              )}
             </div>
           ))}
+          
+          {plantLogs.length === 0 && (
+            <div className={`text-center ${colors.textMuted} py-8`}>
+              <FileText size={48} className="mx-auto mb-2 opacity-50" />
+              <p>No logs yet. Add your first growth entry!</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-const PlantCards = ({ plants, selectedPlant }) => {
+const PlantCards = ({ plants }) => {
   const { colors } = useTheme();
 
-  const plantsToShow = selectedPlant 
-    ? { [selectedPlant]: plants[selectedPlant] }
-    : plants;
+  if (!plants || Object.keys(plants).length === 0) {
+    return (
+      <div className={`${colors.bgSecondary} rounded-xl shadow-xl p-8 text-center ${colors.border} border transition-colors duration-300`}>
+        <TrendingUp size={64} className={`mx-auto mb-4 ${colors.textMuted} opacity-50`} />
+        <h3 className={`text-xl font-semibold ${colors.text} mb-2`}>
+          No Plants Yet
+        </h3>
+        <p className={`${colors.textMuted}`}>
+          Add your first plant to start tracking its growth journey!
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {Object.entries(plantsToShow).map(([plantName, plantLogs]) => (
-        <PlantCard key={plantName} plantName={plantName} plantLogs={plantLogs} />
+      {Object.entries(plants).map(([plantName, logs]) => (
+        <PlantCard key={plantName} plantName={plantName} plantLogs={logs} />
       ))}
-      
-      {Object.keys(plantsToShow).length === 0 && (
-        <div className={`text-center ${colors.textMuted} py-12`}>
-          <div className="text-6xl mb-4">🌱</div>
-          <h3 className="text-xl font-semibold mb-2">No plants to display</h3>
-          <p>Add your first plant log to get started!</p>
-        </div>
-      )}
     </div>
   );
 };
