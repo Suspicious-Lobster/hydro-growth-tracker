@@ -16,6 +16,9 @@ const AddLogForm = ({ refreshLogs }) => {
   const [isDirty, setIsDirty] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [existingPlants, setExistingPlants] = useState([]);
+  const [isNewPlant, setIsNewPlant] = useState(false);
+  const [lastUsedPlant, setLastUsedPlant] = useState('');
 
   // Form validation
   const validateForm = () => {
@@ -70,7 +73,40 @@ const AddLogForm = ({ refreshLogs }) => {
         console.error('Error loading draft:', error);
       }
     }
+    
+    // Load last used plant from localStorage
+    const savedLastPlant = localStorage.getItem('lastUsedPlant');
+    if (savedLastPlant) {
+      setLastUsedPlant(savedLastPlant);
+      // Auto-select the last used plant if no draft exists
+      if (!savedDraft) {
+        setForm(prev => ({ ...prev, plant_name: savedLastPlant }));
+      }
+    }
   }, []);
+
+  // Fetch existing plants on mount
+  useEffect(() => {
+    const fetchPlants = async () => {
+      try {
+        const res = await api.get('/logs');
+        const logs = res.data;
+        
+        // Extract unique plant names
+        const plantNames = [...new Set(logs.map(log => log.plant_name))].sort();
+        setExistingPlants(plantNames);
+        
+        // If no last used plant is set and there are plants, use the first one
+        if (!lastUsedPlant && plantNames.length > 0) {
+          setLastUsedPlant(plantNames[0]);
+        }
+      } catch (error) {
+        console.error('Error fetching plants:', error);
+      }
+    };
+    
+    fetchPlants();
+  }, [lastUsedPlant]);
 
   // Save draft to localStorage when form changes
   useEffect(() => {
@@ -100,6 +136,29 @@ const AddLogForm = ({ refreshLogs }) => {
       setForm({ ...form, [name]: value });
     }
     setIsDirty(true);
+  };
+
+  // Handle plant selection from dropdown
+  const handlePlantSelect = (plantName) => {
+    setForm({ ...form, plant_name: plantName });
+    setIsNewPlant(false);
+    setIsDirty(true);
+  };
+
+  // Handle creating new plant
+  const handleNewPlant = () => {
+    setForm({ ...form, plant_name: '' });
+    setIsNewPlant(true);
+    setIsDirty(true);
+  };
+
+  // Quick add for last used plant
+  const handleQuickAdd = () => {
+    if (lastUsedPlant) {
+      setForm({ ...form, plant_name: lastUsedPlant });
+      setIsNewPlant(false);
+      setIsDirty(true);
+    }
   };
 
   const handleHeightChange = (delta) => {
@@ -164,8 +223,12 @@ const AddLogForm = ({ refreshLogs }) => {
       
       console.log('Success response:', response.data);
       
+      // Save the last used plant
+      localStorage.setItem('lastUsedPlant', form.plant_name);
+      setLastUsedPlant(form.plant_name);
+      
       setForm({
-        plant_name: '',
+        plant_name: form.plant_name, // Keep the same plant for next entry
         date: new Date().toISOString().split('T')[0], // Reset to today's date
         height: '0', // Reset height to 0
         nutrients: '',
@@ -263,14 +326,57 @@ const AddLogForm = ({ refreshLogs }) => {
           <label className={`block text-sm font-medium ${colors.text} mb-2`}>
             Plant Name
           </label>
-          <input
-            name="plant_name"
-            value={form.plant_name}
-            onChange={handleChange}
-            placeholder="e.g., Tomato Plant #1, Basil, Lettuce"
-            className={`w-full px-4 py-3 ${colors.bgAccent} border ${errors.plant_name ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.plant_name ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200`}
-            required
-          />
+          
+          {/* Quick Actions */}
+          <div className="flex gap-2 mb-3">
+            {lastUsedPlant && (
+              <button
+                type="button"
+                onClick={handleQuickAdd}
+                className={`px-3 py-2 text-sm ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} hover:bg-opacity-80 transition-colors duration-200`}
+              >
+                Quick Add to "{lastUsedPlant}"
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleNewPlant}
+              className={`px-3 py-2 text-sm ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} hover:bg-opacity-80 transition-colors duration-200`}
+            >
+              + New Plant
+            </button>
+          </div>
+
+          {/* Plant Selection */}
+          {!isNewPlant && existingPlants.length > 0 && (
+            <div className="mb-3">
+              <select
+                value={form.plant_name}
+                onChange={(e) => handlePlantSelect(e.target.value)}
+                className={`w-full px-4 py-3 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200`}
+              >
+                <option value="">Select existing plant...</option>
+                {existingPlants.map((plantName) => (
+                  <option key={plantName} value={plantName}>
+                    {plantName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Manual Input */}
+          {(isNewPlant || existingPlants.length === 0 || !form.plant_name) && (
+            <input
+              name="plant_name"
+              value={form.plant_name}
+              onChange={handleChange}
+              placeholder="e.g., Tomato Plant #1, Basil, Lettuce"
+              className={`w-full px-4 py-3 ${colors.bgAccent} border ${errors.plant_name ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.plant_name ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200`}
+              required
+            />
+          )}
+          
           {errors.plant_name && (
             <p className="text-red-500 text-sm mt-1">{errors.plant_name}</p>
           )}
