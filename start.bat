@@ -57,19 +57,18 @@ echo ✅ npm %NPM_VERSION% detected
 echo.
 echo 🔧 Setting up dependencies...
 
-:: Install backend dependencies
-echo 📦 Installing backend dependencies...
-cd backend
+:: Install application dependencies (Electron shell + embedded backend)
+echo 📦 Installing application dependencies...
 call npm install --silent
 if %errorlevel% neq 0 (
-    echo ❌ Failed to install backend dependencies
+    echo ❌ Failed to install application dependencies
     pause
     exit /b 1
 )
 
 :: Install frontend dependencies
 echo 📦 Installing frontend dependencies...
-cd ..\frontend
+cd frontend
 call npm install --silent
 if %errorlevel% neq 0 (
     echo ❌ Failed to install frontend dependencies
@@ -110,15 +109,9 @@ echo │  💾 Auto-save: Never lose your data with draft protection      │
 echo └─────────────────────────────────────────────────────────────────┘
 echo.
 
-:: Start backend in new styled window
-start "🌿 Hydro Growth Tracker - Backend API Server 🖥️" cmd /k "color 0B && echo ======================================== && echo   HYDRO GROWTH TRACKER - BACKEND API    && echo ======================================== && echo 🚀 Starting backend server... && echo 📡 API running on http://localhost:5000 && echo 🗄️ SQLite database ready && echo. && cd backend && npm start"
-
-:: Wait for backend to initialize
-echo 🔄 Initializing backend server...
-timeout /t 4 /nobreak >nul
-
-:: Start frontend in new styled window  
-start "🌿 Hydro Growth Tracker - Frontend Development Server 🌐" cmd /k "color 0A && echo ======================================== && echo  HYDRO GROWTH TRACKER - FRONTEND DEV     && echo ======================================== && echo 🚀 Starting frontend server... && echo 🌐 App running on http://localhost:5173 && echo 🎨 Hot reload enabled && echo. && cd frontend && npm run dev"
+:: Launch the desktop app (Vite dev server + Electron with embedded backend)
+echo 🚀 Launching Hydro Growth Tracker...
+call npm run dev
 
 echo.
 echo 🎉 Hydro Growth Tracker is starting up!

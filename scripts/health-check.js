@@ -56,10 +56,10 @@ const checkFrontendHealth = () => {
 
 const checkDatabaseHealth = async () => {
   try {
-    await fs.access('./backend/database/hydro-growth-tracker.db');
-    const stats = await fs.stat('./backend/database/hydro-growth-tracker.db');
-    return { 
-      status: 'exists', 
+    await fs.access('./hydro-data.json');
+    const stats = await fs.stat('./hydro-data.json');
+    return {
+      status: 'exists',
       size: `${(stats.size / 1024).toFixed(2)} KB`,
       modified: stats.mtime.toISOString().split('T')[0]
     };
@@ -69,7 +69,7 @@ const checkDatabaseHealth = async () => {
 };
 
 const checkNodeModules = async () => {
-  const modules = ['./node_modules', './backend/node_modules', './frontend/node_modules'];
+  const modules = ['./node_modules', './frontend/node_modules'];
   const results = {};
   
   for (const mod of modules) {

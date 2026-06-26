@@ -22,16 +22,7 @@ const preBuild = async () => {
   log('=' .repeat(40), 'blue');
 
   try {
-    // 1. Create database backup (skip if database doesn't exist yet)
-    log('📁 Checking for database backup...', 'yellow');
-    try {
-      await fs.access('./backend/database/hydro-growth-tracker.db');
-      log('ℹ️  Database found - backup would be created in production', 'blue');
-    } catch (error) {
-      log('ℹ️  No database file found - will be created on first run', 'blue');
-    }
-
-    // 2. Clean previous builds
+    // 1. Clean previous builds
     log('🧹 Cleaning previous builds...', 'yellow');
     try {
       await fs.rm('./dist', { recursive: true, force: true });
@@ -41,34 +32,7 @@ const preBuild = async () => {
       log('ℹ️  No previous builds to clean', 'blue');
     }
 
-    // 3. Validate environment
-    log('🔍 Validating environment...', 'yellow');
-    
-    // Check if .env.example exists
-    try {
-      await fs.access('./backend/.env.example');
-      log('✅ Environment template exists', 'green');
-    } catch (error) {
-      log('⚠️  .env.example not found', 'yellow');
-    }
-
-    // 4. Check package versions consistency
-    log('📦 Checking package consistency...', 'yellow');
-    
-    const rootPkg = JSON.parse(await fs.readFile('./package.json', 'utf8'));
-    const backendPkg = JSON.parse(await fs.readFile('./backend/package.json', 'utf8'));
-    const frontendPkg = JSON.parse(await fs.readFile('./frontend/package.json', 'utf8'));
-
-    if (rootPkg.version === backendPkg.version && rootPkg.version === frontendPkg.version) {
-      log(`✅ All package versions match: ${rootPkg.version}`, 'green');
-    } else {
-      log('⚠️  Package versions don\'t match:', 'yellow');
-      log(`   Root: ${rootPkg.version}`, 'yellow');
-      log(`   Backend: ${backendPkg.version}`, 'yellow');
-      log(`   Frontend: ${frontendPkg.version}`, 'yellow');
-    }
-
-    // 5. Ensure production files
+    // 2. Ensure production files
     log('📄 Ensuring production files...', 'yellow');
     
     const productionFiles = [
@@ -115,19 +79,12 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Start the application
-echo Starting backend server...
-start "Backend" cmd /k "cd /d backend && npm start"
-
-timeout /t 3 /nobreak >nul
-
-echo Starting frontend...
-start "Frontend" cmd /k "cd /d frontend && npm run dev"
+REM Start the application (Vite dev server + Electron with embedded backend)
+echo Starting Hydro Growth Tracker...
+call npm run dev
 
 echo.
-echo Hydro Growth Tracker is starting...
-echo Backend will be available at: http://localhost:5000
-echo Frontend will be available at: http://localhost:5173
+echo The app will open automatically. Frontend dev server: http://localhost:5173
 echo.
 pause`;
 
@@ -146,21 +103,12 @@ try {
     exit 1
 }
 
-# Start backend
-Write-Host "Starting backend server..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; npm start" -WindowStyle Normal
-
-# Wait a moment for backend to start
-Start-Sleep -Seconds 3
-
-# Start frontend
-Write-Host "Starting frontend..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npm run dev" -WindowStyle Normal
+# Start the application (Vite dev server + Electron with embedded backend)
+Write-Host "Starting Hydro Growth Tracker..." -ForegroundColor Yellow
+npm run dev
 
 Write-Host ""
-Write-Host "Hydro Growth Tracker is starting..." -ForegroundColor Green
-Write-Host "Backend will be available at: http://localhost:5000" -ForegroundColor Cyan
-Write-Host "Frontend will be available at: http://localhost:5173" -ForegroundColor Cyan
+Write-Host "The app will open automatically. Frontend dev server: http://localhost:5173" -ForegroundColor Cyan
 Write-Host ""
 Read-Host "Press Enter to continue"`;
 
