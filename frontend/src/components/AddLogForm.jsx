@@ -172,17 +172,12 @@ const AddLogForm = ({ refreshLogs }) => {
     e.preventDefault();
     
     if (!validateForm()) {
-      console.log('Form validation failed');
       return;
     }
 
     setIsSubmitting(true);
-    console.log('Submitting form:', form);
-    console.log('API base URL:', 'http://localhost:5000');
-    
+
     try {
-      let response;
-      
       if (form.image) {
         // If there's an image, use FormData
         const formData = new FormData();
@@ -196,13 +191,7 @@ const AddLogForm = ({ refreshLogs }) => {
           formData.append('image', form.image);
         }
 
-        console.log('Sending FormData with image');
-        console.log('FormData entries:');
-        for (let [key, value] of formData.entries()) {
-          console.log(key, value);
-        }
-        
-        response = await api.post('/logs', formData, {
+        await api.post('/logs', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
       } else {
@@ -214,15 +203,12 @@ const AddLogForm = ({ refreshLogs }) => {
           nutrients: form.nutrients,
           notes: form.notes,
         };
-        
-        console.log('Sending JSON data:', jsonData);
-        response = await api.post('/logs', jsonData, {
+
+        await api.post('/logs', jsonData, {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      
-      console.log('Success response:', response.data);
-      
+
       // Save the last used plant
       localStorage.setItem('lastUsedPlant', form.plant_name);
       setLastUsedPlant(form.plant_name);
@@ -239,12 +225,8 @@ const AddLogForm = ({ refreshLogs }) => {
       clearDraft();
       refreshLogs();
     } catch (error) {
-      console.error('Submit error:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      console.error('Error message:', error.message);
-      console.error('Full error object:', error);
-      
+      console.error('Error submitting log:', error.response?.data || error.message);
+
       // Handle validation errors from backend
       if (error.response?.status === 400 && error.response?.data?.details) {
         const backendErrors = {};

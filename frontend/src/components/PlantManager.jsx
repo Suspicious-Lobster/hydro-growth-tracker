@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, AlertTriangle, CheckCircle, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import api from '../api/api';
 
 const PlantManager = ({ plants, onRefresh }) => {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -22,26 +23,17 @@ const PlantManager = ({ plants, onRefresh }) => {
       }
 
       // Create an initial log entry for the new plant
-      const response = await fetch('http://localhost:5000/logs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          plant_name: newPlantName.trim(),
-          height: 0,
-          nutrients: 'Initial setup',
-          notes: 'Plant added to tracking system',
-        }),
+      await api.post('/logs', {
+        plant_name: newPlantName.trim(),
+        date: new Date().toISOString().split('T')[0],
+        height: 0,
+        nutrients: 'Initial setup',
+        notes: 'Plant added to tracking system',
       });
 
-      if (response.ok) {
-        setNewPlantName('');
-        setShowAddForm(false);
-        onRefresh(); // Refresh the plants list
-      } else {
-        throw new Error('Failed to add plant');
-      }
+      setNewPlantName('');
+      setShowAddForm(false);
+      onRefresh(); // Refresh the plants list
     } catch (error) {
       console.error('Error adding plant:', error);
       alert('Failed to add plant. Please try again.');
@@ -54,16 +46,9 @@ const PlantManager = ({ plants, onRefresh }) => {
     setIsSubmitting(true);
     try {
       // Delete all logs for this plant
-      const response = await fetch(`http://localhost:5000/logs/plant/${encodeURIComponent(plantName)}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        setShowDeleteConfirm(null);
-        onRefresh(); // Refresh the plants list
-      } else {
-        throw new Error('Failed to delete plant');
-      }
+      await api.delete(`/logs/plant/${encodeURIComponent(plantName)}`);
+      setShowDeleteConfirm(null);
+      onRefresh(); // Refresh the plants list
     } catch (error) {
       console.error('Error deleting plant:', error);
       alert('Failed to delete plant. Please try again.');

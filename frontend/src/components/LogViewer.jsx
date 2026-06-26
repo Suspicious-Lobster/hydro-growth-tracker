@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Edit3, Save, X, Calendar, Camera, FileText, Trash2, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
-import api from '../api/api';
+import api, { resolveImageUrl } from '../api/api';
 
 const LogViewer = ({ onRefresh }) => {
   const { colors } = useTheme();
@@ -258,7 +258,7 @@ const LogViewer = ({ onRefresh }) => {
                     {log.image_url && (
                       <div className="mt-3">
                         <img
-                          src={log.image_url}
+                          src={resolveImageUrl(log.image_url)}
                           alt={`${log.plant_name} growth photo`}
                           className="max-w-xs rounded-lg shadow-md"
                         />
