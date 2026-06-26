@@ -1,9 +1,0 @@
-┣ 📂database
-┃ ┗ 📜db.js
-┣ 📂routes
-┃ ┣ 📜feeding.routes.js
-┃ ┗ 📜logs.routes.js
-┣ 📂uploads
-┣ 📜.env
-┣ 📜app.js
-┗ 📜package.json

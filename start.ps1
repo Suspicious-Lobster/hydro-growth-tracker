@@ -30,19 +30,18 @@ try {
 Write-Host ""
 Write-Host "🔧 Setting up dependencies..." -ForegroundColor Yellow
 
-# Install backend dependencies
-Write-Host "Installing backend dependencies..." -ForegroundColor Blue
-Set-Location "backend"
+# Install application dependencies (Electron shell + embedded backend)
+Write-Host "Installing application dependencies..." -ForegroundColor Blue
 npm install
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Failed to install backend dependencies" -ForegroundColor Red
+    Write-Host "❌ Failed to install application dependencies" -ForegroundColor Red
     Read-Host "Press Enter to exit"
     exit 1
 }
 
 # Install frontend dependencies
 Write-Host "Installing frontend dependencies..." -ForegroundColor Blue
-Set-Location "..\frontend"
+Set-Location "frontend"
 npm install
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Failed to install frontend dependencies" -ForegroundColor Red
@@ -74,14 +73,8 @@ Write-Host "3. Open your browser to http://localhost:5173" -ForegroundColor Gray
 Write-Host "4. To stop the application, press Ctrl+C in both windows" -ForegroundColor Gray
 Write-Host ""
 
-# Start backend in new window
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; npm start" -WindowStyle Normal
-
-# Wait a moment for backend to start
-Start-Sleep -Seconds 3
-
-# Start frontend in new window
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npm run dev" -WindowStyle Normal
+# Launch the desktop app (Vite dev server + Electron with embedded backend)
+npm run dev
 
 Write-Host ""
 Write-Host "🎉 Hydro Growth Tracker is starting up!" -ForegroundColor Green

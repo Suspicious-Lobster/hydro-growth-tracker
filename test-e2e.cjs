@@ -112,8 +112,8 @@ async function testPrerequisites() {
   const requiredFiles = [
     'package.json',
     'frontend/package.json',
-    'backend/package.json',
-    'backend/app.js',
+    'main.js',
+    'server.js',
     'frontend/src/App.jsx'
   ];
 
@@ -151,21 +151,21 @@ async function testDependencies() {
     return false;
   }
 
-  // Install backend dependencies
-  log('Installing backend dependencies...');
+  // Install root (Electron shell + embedded backend) dependencies
+  log('Installing application dependencies...');
   try {
-    const result = await spawnProcess('npm', ['install'], { 
-      cwd: path.join(projectRoot, 'backend') 
+    const result = await spawnProcess('npm', ['install'], {
+      cwd: projectRoot
     });
-    
+
     if (result.code === 0) {
-      logSuccess('Backend dependencies installed');
+      logSuccess('Application dependencies installed');
     } else {
-      logError(`Backend dependency installation failed: ${result.stderr}`);
+      logError(`Application dependency installation failed: ${result.stderr}`);
       return false;
     }
   } catch (error) {
-    logError(`Backend dependency installation error: ${error.message}`);
+    logError(`Application dependency installation error: ${error.message}`);
     return false;
   }
 
@@ -237,39 +237,38 @@ async function testLinting() {
 async function testBackendAPI() {
   logStep('5', 'Testing Backend Configuration');
   
-  // Test backend file structure and configuration
+  // Test embedded backend file structure and configuration
   try {
-    const appJsPath = path.join(projectRoot, 'backend', 'app.js');
-    const appJsContent = await fs.readFile(appJsPath, 'utf8');
-    
-    if (appJsContent.includes('express') && appJsContent.includes('cors')) {
+    const serverJsPath = path.join(projectRoot, 'server.js');
+    const serverJsContent = await fs.readFile(serverJsPath, 'utf8');
+
+    if (serverJsContent.includes('express') && serverJsContent.includes('cors')) {
       logSuccess('Backend dependencies properly configured');
     } else {
       logError('Backend dependencies not properly configured');
       return false;
     }
-    
-    // Check if routes exist
-    const routesPath = path.join(projectRoot, 'backend', 'routes');
-    const routesFiles = await fs.readdir(routesPath);
-    
-    if (routesFiles.includes('logs.routes.js') && routesFiles.includes('feeding.routes.js')) {
+
+    // Check that core routes are defined
+    const hasRoutes = ["'/logs'", "'/logs/export'", "'/feeding'"].every(
+      (r) => serverJsContent.includes(r)
+    );
+    if (hasRoutes) {
       logSuccess('Backend routes properly configured');
     } else {
       logError('Backend routes not properly configured');
       return false;
     }
-    
-    // Check if database configuration exists
-    const dbPath = path.join(projectRoot, 'backend', 'database', 'db.js');
-    try {
-      await fs.access(dbPath);
-      logSuccess('Database configuration exists');
-    } catch (error) {
-      logError('Database configuration not found');
+
+    // Check that the Electron main process starts the embedded backend
+    const mainJsContent = await fs.readFile(path.join(projectRoot, 'main.js'), 'utf8');
+    if (mainJsContent.includes('startServer')) {
+      logSuccess('Electron main process wires up the backend');
+    } else {
+      logError('Electron main process does not start the backend');
       return false;
     }
-    
+
     logSuccess('Backend configuration tests passed');
     return true;
   } catch (error) {
