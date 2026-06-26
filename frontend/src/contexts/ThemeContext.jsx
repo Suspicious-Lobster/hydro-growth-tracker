@@ -36,6 +36,7 @@ export const ThemeProvider = ({ children }) => {
     toggleTheme,
     colors: isDark ? {
       bg: 'bg-dark-bg',
+      bgPrimary: 'bg-dark-bg',
       bgSecondary: 'bg-dark-bg-secondary',
       bgAccent: 'bg-dark-bg-accent',
       text: 'text-dark-text',
@@ -52,6 +53,7 @@ export const ThemeProvider = ({ children }) => {
       border: 'border-dark-border',
     } : {
       bg: 'bg-light-bg',
+      bgPrimary: 'bg-light-bg',
       bgSecondary: 'bg-light-bg-secondary',
       bgAccent: 'bg-light-bg-accent',
       text: 'text-light-text',

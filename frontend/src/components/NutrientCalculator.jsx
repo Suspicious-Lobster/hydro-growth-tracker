@@ -7,6 +7,7 @@ const NutrientCalculator = ({ onClose }) => {
   const [reservoirSize, setReservoirSize] = useState(20);
   const [selectedWeek, setSelectedWeek] = useState(6);
   const [calculation, setCalculation] = useState(null);
+  const [reservoirError, setReservoirError] = useState('');
 
   // Professional feeding schedule with week-by-week nutrient amounts
   const feedingSchedule = [
@@ -29,18 +30,26 @@ const NutrientCalculator = ({ onClose }) => {
   ];
 
   const handleCalculate = () => {
+    const size = parseFloat(reservoirSize);
+    if (isNaN(size) || size <= 0 || size > 100000) {
+      setReservoirError('Enter a reservoir size greater than 0 (liters).');
+      setCalculation(null);
+      return;
+    }
+    setReservoirError('');
+
     const weekData = feedingSchedule.find(week => week.week === selectedWeek) || feedingSchedule[5]; // Default to week 6
-    
+
     // Calculate total amounts for reservoir
-    const totalA = Math.round((weekData.part_a_ml * reservoirSize) * 10) / 10;
-    const totalB = Math.round((weekData.part_b_ml * reservoirSize) * 10) / 10;
-    const totalMKP = weekData.mkp_ml ? Math.round((weekData.mkp_ml * reservoirSize) * 10) / 10 : 0;
+    const totalA = Math.round((weekData.part_a_ml * size) * 10) / 10;
+    const totalB = Math.round((weekData.part_b_ml * size) * 10) / 10;
+    const totalMKP = weekData.mkp_ml ? Math.round((weekData.mkp_ml * size) * 10) / 10 : 0;
 
     setCalculation({
       week: weekData.week,
       stage: weekData.stage,
       notes: weekData.notes,
-      reservoirSize: reservoirSize,
+      reservoirSize: size,
       targetEC: weekData.ec,
       perLiter: {
         a: weekData.part_a_ml,
@@ -92,11 +101,16 @@ const NutrientCalculator = ({ onClose }) => {
                 </label>
                 <input
                   type="number"
+                  min="0.1"
+                  step="0.1"
                   value={reservoirSize}
                   onChange={(e) => setReservoirSize(e.target.value)}
-                  className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`}
+                  className={`w-full px-3 py-2 ${colors.bgAccent} border ${reservoirError ? 'border-red-500' : colors.border} rounded-lg ${colors.text}`}
                   placeholder="20"
                 />
+                {reservoirError && (
+                  <p className="text-red-500 text-sm mt-1">{reservoirError}</p>
+                )}
               </div>
 
               <div>

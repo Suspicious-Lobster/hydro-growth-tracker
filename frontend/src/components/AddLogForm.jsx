@@ -9,6 +9,7 @@ const AddLogForm = ({ refreshLogs }) => {
     plant_name: '',
     date: new Date().toISOString().split('T')[0], // Set to today's date
     height: '0', // Set default height to 0
+    ph: '', // Optional pH reading
     nutrients: '',
     notes: '',
     image: null,
@@ -41,6 +42,13 @@ const AddLogForm = ({ refreshLogs }) => {
       newErrors.height = 'Height is required';
     } else if (heightNum < 0 || heightNum > 1000) {
       newErrors.height = 'Height must be between 0 and 1000 cm';
+    }
+
+    if (form.ph !== '' && form.ph !== null && form.ph !== undefined) {
+      const phNum = parseFloat(form.ph);
+      if (isNaN(phNum) || phNum < 0 || phNum > 14) {
+        newErrors.ph = 'pH must be between 0 and 14';
+      }
     }
 
     if (!form.nutrients.trim()) {
@@ -115,6 +123,7 @@ const AddLogForm = ({ refreshLogs }) => {
         plant_name: form.plant_name,
         date: form.date,
         height: form.height,
+        ph: form.ph,
         nutrients: form.nutrients,
         notes: form.notes,
       };
@@ -185,6 +194,7 @@ const AddLogForm = ({ refreshLogs }) => {
         formData.append('plant_name', form.plant_name || '');
         formData.append('date', form.date || '');
         formData.append('height', form.height || '0');
+        formData.append('ph', form.ph || '');
         formData.append('nutrients', form.nutrients || '');
         formData.append('notes', form.notes || '');
         if (form.image) {
@@ -200,6 +210,7 @@ const AddLogForm = ({ refreshLogs }) => {
           plant_name: form.plant_name,
           date: form.date,
           height: form.height,
+          ph: form.ph,
           nutrients: form.nutrients,
           notes: form.notes,
         };
@@ -217,6 +228,7 @@ const AddLogForm = ({ refreshLogs }) => {
         plant_name: form.plant_name, // Keep the same plant for next entry
         date: new Date().toISOString().split('T')[0], // Reset to today's date
         height: '0', // Reset height to 0
+        ph: '',
         nutrients: '',
         notes: '',
         image: null,
@@ -234,6 +246,7 @@ const AddLogForm = ({ refreshLogs }) => {
           if (detail.includes('Plant name')) backendErrors.plant_name = detail;
           else if (detail.includes('Date')) backendErrors.date = detail;
           else if (detail.includes('Height')) backendErrors.height = detail;
+          else if (detail.includes('pH')) backendErrors.ph = detail;
           else if (detail.includes('Nutrients')) backendErrors.nutrients = detail;
           else if (detail.includes('Notes')) backendErrors.notes = detail;
         });
@@ -254,6 +267,7 @@ const AddLogForm = ({ refreshLogs }) => {
       plant_name: '',
       date: new Date().toISOString().split('T')[0], // Reset to today's date
       height: '0', // Reset height to 0
+      ph: '',
       nutrients: '',
       notes: '',
       image: null,
@@ -366,7 +380,7 @@ const AddLogForm = ({ refreshLogs }) => {
 
         <div>
           <label className={`block text-sm font-medium ${colors.text} mb-2`}>
-            Date (optional)
+            Date
           </label>
           <input
             name="date"
@@ -417,6 +431,30 @@ const AddLogForm = ({ refreshLogs }) => {
           ) : (
             <p className={`text-xs ${colors.textMuted} mt-1`}>
               Use +/- buttons for precise adjustments (±0.5 cm)
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className={`block text-sm font-medium ${colors.text} mb-2`}>
+            pH (optional)
+          </label>
+          <input
+            name="ph"
+            type="number"
+            step="0.1"
+            min="0"
+            max="14"
+            value={form.ph}
+            onChange={handleChange}
+            placeholder="e.g., 6.0"
+            className={`w-full px-4 py-3 ${colors.bgAccent} border ${errors.ph ? 'border-red-500' : colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 ${errors.ph ? 'focus:ring-red-500 focus:border-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} transition-colors duration-200`}
+          />
+          {errors.ph ? (
+            <p className="text-red-500 text-sm mt-1">{errors.ph}</p>
+          ) : (
+            <p className={`text-xs ${colors.textMuted} mt-1`}>
+              Nutrient solution pH (0–14). Most hydro crops prefer 5.5–6.5.
             </p>
           )}
         </div>

@@ -54,6 +54,60 @@ export function validateLog(body, { requireDate } = { requireDate: true }) {
     errors.push('Notes must be less than 1000 characters');
   }
 
+  // pH is optional; when supplied it must be a number in the 0–14 range.
+  const { ph } = body;
+  if (ph !== undefined && ph !== null && ph !== '') {
+    const phNum = parseFloat(ph);
+    if (isNaN(phNum) || phNum < 0 || phNum > 14) {
+      errors.push('pH must be a number between 0 and 14');
+    }
+  }
+
+  return errors;
+}
+
+// Normalize an optional pH value to a number or null.
+function parsePh(ph) {
+  if (ph === undefined || ph === null || ph === '') return null;
+  const phNum = parseFloat(ph);
+  return isNaN(phNum) ? null : phNum;
+}
+
+// Validate a feeding-schedule payload. `partial` is true for updates, where
+// only the supplied fields are checked.
+export function validateSchedule(body, { partial } = { partial: false }) {
+  const { plant_name, nutrient_type, ec_level, frequency, notes } = body;
+  const errors = [];
+  const allowedFrequencies = ['daily', 'every-2-days', 'weekly'];
+
+  if (!partial || plant_name !== undefined) {
+    if (!plant_name || typeof plant_name !== 'string' || plant_name.trim().length === 0) {
+      errors.push('Plant name is required');
+    } else if (plant_name.length > 100) {
+      errors.push('Plant name must be less than 100 characters');
+    }
+  }
+
+  if (!partial || nutrient_type !== undefined) {
+    if (!nutrient_type || typeof nutrient_type !== 'string' || nutrient_type.trim().length === 0) {
+      errors.push('Nutrient type is required');
+    } else if (nutrient_type.length > 100) {
+      errors.push('Nutrient type must be less than 100 characters');
+    }
+  }
+
+  if (ec_level !== undefined && ec_level !== null && ec_level !== '' && String(ec_level).length > 20) {
+    errors.push('EC level must be less than 20 characters');
+  }
+
+  if (frequency !== undefined && frequency !== '' && !allowedFrequencies.includes(frequency)) {
+    errors.push(`Frequency must be one of: ${allowedFrequencies.join(', ')}`);
+  }
+
+  if (notes && notes.length > 1000) {
+    errors.push('Notes must be less than 1000 characters');
+  }
+
   return errors;
 }
 
@@ -78,8 +132,12 @@ export function createServer({ dataFile, uploadsDir }) {
     }
   };
 
+  // Write atomically: serialize to a temp file in the same directory, then
+  // rename over the target so a crash mid-write can't leave a corrupt file.
   const writeData = (data) => {
-    fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+    const tmpFile = `${dataFile}.${process.pid}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
+    fs.renameSync(tmpFile, dataFile);
   };
 
   const app = express();
@@ -134,7 +192,7 @@ export function createServer({ dataFile, uploadsDir }) {
   app.get('/logs/export', (_req, res) => {
     try {
       const data = readData();
-      const fields = ['id', 'plant_name', 'height', 'nutrients', 'notes', 'created_at'];
+      const fields = ['id', 'plant_name', 'date', 'height', 'ph', 'nutrients', 'notes', 'created_at'];
       const parser = new Parser({ fields });
       const csv = parser.parse(data.logs);
       res.header('Content-Type', 'text/csv');
@@ -154,7 +212,7 @@ export function createServer({ dataFile, uploadsDir }) {
         return res.status(400).json({ error: 'Validation failed', details: errors });
       }
 
-      const { plant_name, date, height, nutrients, notes } = req.body;
+      const { plant_name, date, height, nutrients, notes, ph } = req.body;
       const data = readData();
 
       const newLog = {
@@ -162,6 +220,7 @@ export function createServer({ dataFile, uploadsDir }) {
         plant_name: plant_name.trim(),
         date,
         height: parseFloat(height),
+        ph: parsePh(ph),
         nutrients: nutrients.trim(),
         notes: notes?.trim() || '',
         image_url: req.file ? `/uploads/${req.file.filename}` : null,
@@ -194,11 +253,14 @@ export function createServer({ dataFile, uploadsDir }) {
         return res.status(404).json({ error: 'Log not found' });
       }
 
-      const { plant_name, height, nutrients, notes } = req.body;
+      const { plant_name, height, nutrients, notes, ph, date } = req.body;
       log.plant_name = plant_name.trim();
       log.height = parseFloat(height);
       log.nutrients = nutrients.trim();
       log.notes = notes?.trim() || '';
+      if (ph !== undefined) log.ph = parsePh(ph);
+      // Allow editing the entry date, but keep the original when omitted.
+      if (date !== undefined && date !== '') log.date = date;
       log.updated_at = new Date().toISOString();
 
       writeData(data);
@@ -227,6 +289,44 @@ export function createServer({ dataFile, uploadsDir }) {
     } catch (error) {
       console.error('Error deleting plant logs:', error);
       res.status(500).json({ error: 'Failed to delete plant logs' });
+    }
+  });
+
+  // PUT /logs/plant/:plantName/rename – rename a plant across all its logs and
+  // feeding schedules. Body: { new_name }.
+  app.put('/logs/plant/:plantName/rename', (req, res) => {
+    try {
+      const oldName = decodeURIComponent(req.params.plantName);
+      const newName = (req.body.new_name || '').trim();
+
+      if (!newName) {
+        return res.status(400).json({ error: 'Validation failed', details: ['New plant name is required'] });
+      }
+      if (newName.length > 100) {
+        return res.status(400).json({ error: 'Validation failed', details: ['Plant name must be less than 100 characters'] });
+      }
+
+      const data = readData();
+      let renamed = 0;
+      data.logs.forEach((log) => {
+        if (log.plant_name === oldName) {
+          log.plant_name = newName;
+          renamed += 1;
+        }
+      });
+      data.schedules.forEach((schedule) => {
+        if (schedule.plant_name === oldName) schedule.plant_name = newName;
+      });
+
+      if (renamed === 0) {
+        return res.status(404).json({ error: `No logs found for plant "${oldName}"` });
+      }
+
+      writeData(data);
+      res.json({ message: `Renamed "${oldName}" to "${newName}"`, renamed });
+    } catch (error) {
+      console.error('Error renaming plant:', error);
+      res.status(500).json({ error: 'Failed to rename plant' });
     }
   });
 
@@ -268,11 +368,9 @@ export function createServer({ dataFile, uploadsDir }) {
     try {
       const { plant_name, nutrient_type, ec_level, frequency, notes } = req.body;
 
-      if (!plant_name || !nutrient_type) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: ['Plant name and nutrient type are required'],
-        });
+      const errors = validateSchedule(req.body, { partial: false });
+      if (errors.length > 0) {
+        return res.status(400).json({ error: 'Validation failed', details: errors });
       }
 
       const data = readData();
@@ -294,6 +392,83 @@ export function createServer({ dataFile, uploadsDir }) {
     } catch (error) {
       console.error('Error adding feeding schedule:', error);
       res.status(500).json({ error: 'Failed to add feeding schedule' });
+    }
+  });
+
+  // PUT /feeding/:id – update an existing feeding schedule.
+  app.put('/feeding/:id', (req, res) => {
+    try {
+      const errors = validateSchedule(req.body, { partial: true });
+      if (errors.length > 0) {
+        return res.status(400).json({ error: 'Validation failed', details: errors });
+      }
+
+      const scheduleId = parseInt(req.params.id, 10);
+      const data = readData();
+      const schedule = data.schedules.find((s) => s.id === scheduleId);
+
+      if (!schedule) {
+        return res.status(404).json({ error: 'Feeding schedule not found' });
+      }
+
+      const { plant_name, nutrient_type, ec_level, frequency, notes } = req.body;
+      if (plant_name !== undefined) schedule.plant_name = plant_name;
+      if (nutrient_type !== undefined) schedule.nutrient_type = nutrient_type;
+      if (ec_level !== undefined) schedule.ec_level = ec_level;
+      if (frequency !== undefined) schedule.frequency = frequency;
+      if (notes !== undefined) schedule.notes = notes;
+      schedule.updated_at = new Date().toISOString();
+
+      writeData(data);
+      res.json(schedule);
+    } catch (error) {
+      console.error('Error updating feeding schedule:', error);
+      res.status(500).json({ error: 'Failed to update feeding schedule' });
+    }
+  });
+
+  // POST /feeding/:id/fed – mark a schedule as fed now (or at a given date).
+  app.post('/feeding/:id/fed', (req, res) => {
+    try {
+      const scheduleId = parseInt(req.params.id, 10);
+      const data = readData();
+      const schedule = data.schedules.find((s) => s.id === scheduleId);
+
+      if (!schedule) {
+        return res.status(404).json({ error: 'Feeding schedule not found' });
+      }
+
+      const { fed_at } = req.body || {};
+      if (fed_at && isNaN(Date.parse(fed_at))) {
+        return res.status(400).json({ error: 'Validation failed', details: ['fed_at must be a valid date'] });
+      }
+      schedule.last_fed = fed_at ? new Date(fed_at).toISOString() : new Date().toISOString();
+
+      writeData(data);
+      res.json(schedule);
+    } catch (error) {
+      console.error('Error marking schedule fed:', error);
+      res.status(500).json({ error: 'Failed to mark schedule as fed' });
+    }
+  });
+
+  // DELETE /feeding/:id – delete a feeding schedule.
+  app.delete('/feeding/:id', (req, res) => {
+    try {
+      const scheduleId = parseInt(req.params.id, 10);
+      const data = readData();
+      const index = data.schedules.findIndex((s) => s.id === scheduleId);
+
+      if (index === -1) {
+        return res.status(404).json({ error: 'Feeding schedule not found' });
+      }
+
+      const [deleted] = data.schedules.splice(index, 1);
+      writeData(data);
+      res.json({ message: `Successfully deleted schedule with ID: ${scheduleId}`, deleted });
+    } catch (error) {
+      console.error('Error deleting feeding schedule:', error);
+      res.status(500).json({ error: 'Failed to delete feeding schedule' });
     }
   });
 

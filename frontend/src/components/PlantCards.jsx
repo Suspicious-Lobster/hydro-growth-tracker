@@ -3,17 +3,22 @@ import { TrendingUp, Calendar, Camera, FileText } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import GrowthChart from './GrowthChart';
 
+// The effective entry date: the user-entered date when present, otherwise the
+// timestamp the log was created.
+const logDate = (log) => log.date || log.created_at;
+
 const PlantCard = ({ plantName, plantLogs }) => {
   const { colors } = useTheme();
 
-  // Sort logs by date for charting
+  // Sort logs chronologically by their effective date for charting.
   const sortedLogs = [...plantLogs].sort(
-    (a, b) => new Date(a.created_at) - new Date(b.created_at)
+    (a, b) => new Date(logDate(a)) - new Date(logDate(b))
   );
-  
+
   const chartData = sortedLogs.map((log) => ({
-    date: new Date(log.created_at).toLocaleDateString(),
+    date: new Date(logDate(log)).toLocaleDateString(),
     height: parseFloat(log.height),
+    ph: log.ph ?? null,
   }));
 
   // Summary stats
@@ -95,7 +100,7 @@ const PlantCard = ({ plantName, plantLogs }) => {
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div className={`text-sm font-medium ${colors.text}`}>
-                    {new Date(log.created_at).toLocaleDateString()}
+                    {new Date(logDate(log)).toLocaleDateString()}
                   </div>
                   {log.image_url && (
                     <Camera size={14} className="text-blue-400" />
@@ -105,9 +110,12 @@ const PlantCard = ({ plantName, plantLogs }) => {
                   {log.height} cm
                 </div>
               </div>
-              
+
               <div className={`text-sm ${colors.textMuted} mb-2`}>
                 <strong>Nutrients:</strong> {log.nutrients}
+                {(log.ph !== null && log.ph !== undefined) && (
+                  <span className="ml-3"><strong>pH:</strong> {log.ph}</span>
+                )}
               </div>
               
               {log.notes && (

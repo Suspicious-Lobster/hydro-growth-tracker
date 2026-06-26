@@ -25,14 +25,21 @@ function AppContent() {
   const [plants, setPlants] = useState({});
   const [selectedPlant, setSelectedPlant] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const fetchLogs = async () => {
+    setLoadError(null);
     try {
       const res = await api.get('/logs');
-      setLogs(res.data);
-      setPlants(groupLogsByPlant(res.data));
+      const data = Array.isArray(res.data) ? res.data : [];
+      setLogs(data);
+      setPlants(groupLogsByPlant(data));
     } catch (err) {
       console.error('API fetch error:', err);
+      setLoadError('Could not reach the backend. Make sure the app is running, then retry.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -116,6 +123,27 @@ function AppContent() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-6 bg-light-bg dark:bg-dark-bg transition-colors duration-300">
+          {loadError && (
+            <div className="max-w-4xl mx-auto mb-6 bg-red-900/20 border border-red-500/30 rounded-lg p-4 flex items-center justify-between gap-4">
+              <p className="text-red-400 text-sm">{loadError}</p>
+              <button
+                onClick={fetchLogs}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700 transition-colors flex-shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+                <p className="text-light-text-muted dark:text-dark-text-muted mt-4">Loading your plants…</p>
+              </div>
+            </div>
+          ) : (
+          <>
           {activeTab === 'dashboard' && (
             <PlantCards plants={plants} selectedPlant={selectedPlant} />
           )}
@@ -142,6 +170,8 @@ function AppContent() {
             <div className="max-w-4xl mx-auto">
               <PlantManager plants={plants} onRefresh={refreshLogs} />
             </div>
+          )}
+          </>
           )}
         </div>
       </div>

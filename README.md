@@ -7,12 +7,14 @@ offline.
 
 ## ✨ Features
 
-- **Plant tracking** — log height, nutrients, notes and photos per plant, then
-  view, edit, or delete entries.
-- **Growth charts** — height-over-time visualizations and per-plant stats
-  (total growth, days tracked, growth rate).
-- **Feeding schedules** — create per-plant feeding schedules and see stage-based
-  recommendations (Seedling → Vegetative → Pre-Flowering → Flowering).
+- **Plant tracking** — log height, pH, nutrients, notes and photos per plant,
+  then view, edit, or delete entries. Rename a plant and every log and schedule
+  follows.
+- **Growth charts** — height- and pH-over-time visualizations and per-plant
+  stats (total growth, days tracked, growth rate).
+- **Feeding schedules** — create, edit, delete and mark-as-fed per-plant feeding
+  schedules, with stage-based recommendations (Seedling → Vegetative →
+  Pre-Flowering → Flowering).
 - **Nutrient calculator** — a 16-week professional feeding program with
   reservoir mixing amounts.
 - **Plant knowledge base** — built-in growth-stage, EC and environment guidance
@@ -71,12 +73,13 @@ Build the platform-native package on the matching OS (or use a CI matrix).
 ## 📱 Usage
 
 - **Dashboard** — overview of tracked plants and their stats.
-- **Add Log** — record a growth entry (plant, date, height, nutrients, notes,
-  optional photo). The form auto-saves a draft as you type.
-- **View Logs** — browse, edit, or delete entries.
-- **Feeding Schedule** — add schedules and view stage-based recommendations; open
-  the nutrient calculator or export a feeding calendar.
-- **Manage Plants** — add or remove tracked plants.
+- **Add Log** — record a growth entry (plant, date, height, optional pH,
+  nutrients, notes, optional photo). The form auto-saves a draft as you type.
+- **View Logs** — browse, edit (including date and pH), or delete entries.
+- **Feeding Schedule** — add, edit, delete and mark schedules as fed; view
+  stage-based recommendations; open the nutrient calculator or export a feeding
+  calendar.
+- **Manage Plants** — add, rename, or remove tracked plants.
 
 ## 🧰 Useful scripts
 

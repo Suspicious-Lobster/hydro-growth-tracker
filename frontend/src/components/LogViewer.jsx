@@ -36,7 +36,9 @@ const LogViewer = ({ onRefresh }) => {
     setEditingLog(log.id);
     setEditForm({
       plant_name: log.plant_name || '',
+      date: (log.date || log.created_at || '').split('T')[0],
       height: log.height || '',
+      ph: log.ph ?? '',
       nutrients: log.nutrients || '',
       notes: log.notes || ''
     });
@@ -80,6 +82,9 @@ const LogViewer = ({ onRefresh }) => {
       day: 'numeric'
     });
   };
+
+  // Prefer the user-entered date; fall back to the creation timestamp.
+  const effectiveDate = (log) => log.date || log.created_at;
 
   if (loading) {
     return (
@@ -141,13 +146,22 @@ const LogViewer = ({ onRefresh }) => {
                 {editingLog === log.id ? (
                   // Edit Form
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className={`block text-sm font-medium ${colors.text} mb-1`}>Plant Name</label>
                         <input
                           type="text"
                           value={editForm.plant_name}
                           onChange={(e) => setEditForm({...editForm, plant_name: e.target.value})}
+                          className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`}
+                        />
+                      </div>
+                      <div>
+                        <label className={`block text-sm font-medium ${colors.text} mb-1`}>Date</label>
+                        <input
+                          type="date"
+                          value={editForm.date}
+                          onChange={(e) => setEditForm({...editForm, date: e.target.value})}
                           className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`}
                         />
                       </div>
@@ -161,6 +175,18 @@ const LogViewer = ({ onRefresh }) => {
                         />
                       </div>
                       <div>
+                        <label className={`block text-sm font-medium ${colors.text} mb-1`}>pH</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="14"
+                          value={editForm.ph}
+                          onChange={(e) => setEditForm({...editForm, ph: e.target.value})}
+                          className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`}
+                        />
+                      </div>
+                      <div className="md:col-span-2">
                         <label className={`block text-sm font-medium ${colors.text} mb-1`}>Nutrients</label>
                         <input
                           type="text"
@@ -205,7 +231,7 @@ const LogViewer = ({ onRefresh }) => {
                         <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
                           <div className="flex items-center gap-1">
                             <Calendar size={14} />
-                            {formatDate(log.created_at)}
+                            {formatDate(effectiveDate(log))}
                           </div>
                           {log.image_url && (
                             <div className="flex items-center gap-1">
@@ -244,7 +270,7 @@ const LogViewer = ({ onRefresh }) => {
                       </div>
                       <div className={`${colors.bgAccent} p-3 rounded`}>
                         <span className={`text-sm ${colors.textMuted}`}>pH</span>
-                        <div className={`font-semibold ${colors.text}`}>{log.ph || 'Not measured'}</div>
+                        <div className={`font-semibold ${colors.text}`}>{(log.ph !== null && log.ph !== undefined) ? log.ph : 'Not measured'}</div>
                       </div>
                     </div>
 

@@ -138,6 +138,111 @@ try {
   logs = await j(await fetch(`${base}/logs`));
   check('all Tomato XL gone', logs.length === 0);
 
+  /* ---------------------- pH support ---------------------- */
+
+  r = await fetch(`${base}/logs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'PhPlant', date: '2026-06-26', height: 4, nutrients: 'x', ph: 6.2 }),
+  });
+  let phLog = await j(r);
+  check('POST /logs stores ph', r.status === 201 && phLog.ph === 6.2);
+
+  r = await fetch(`${base}/logs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'PhPlant2', date: '2026-06-26', height: 4, nutrients: 'x' }),
+  });
+  let noPhLog = await j(r);
+  check('POST /logs ph defaults null', r.status === 201 && noPhLog.ph === null);
+
+  r = await fetch(`${base}/logs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'PhBad', date: '2026-06-26', height: 4, nutrients: 'x', ph: 99 }),
+  });
+  check('POST /logs invalid ph -> 400', r.status === 400);
+
+  r = await fetch(`${base}/logs/${phLog.id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'PhPlant', height: 4, nutrients: 'x', ph: 5.5, date: '2026-07-01' }),
+  });
+  let phUpdated = await j(r);
+  check('PUT /logs updates ph and date', r.status === 200 && phUpdated.ph === 5.5 && phUpdated.date === '2026-07-01');
+
+  r = await fetch(`${base}/logs/export`);
+  let csv2 = await r.text();
+  check('CSV includes date and ph columns', csv2.includes('date') && csv2.includes('ph'));
+
+  /* ---------------------- Plant rename ---------------------- */
+
+  r = await fetch(`${base}/logs/plant/${encodeURIComponent('PhPlant')}/rename`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_name: 'RenamedPlant' }),
+  });
+  let renameResult = await j(r);
+  check('rename plant ok', r.status === 200 && renameResult.renamed === 1);
+  logs = await j(await fetch(`${base}/logs`));
+  check('rename applied to logs', logs.some((l) => l.plant_name === 'RenamedPlant') && !logs.some((l) => l.plant_name === 'PhPlant'));
+
+  r = await fetch(`${base}/logs/plant/${encodeURIComponent('PhPlant')}/rename`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_name: 'X' }),
+  });
+  check('rename missing plant -> 404', r.status === 404);
+
+  r = await fetch(`${base}/logs/plant/${encodeURIComponent('RenamedPlant')}/rename`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_name: '' }),
+  });
+  check('rename empty name -> 400', r.status === 400);
+
+  /* ---------------------- Feeding CRUD + mark-fed ---------------------- */
+
+  // schedule id=1 ("Tomato XL") still exists from earlier in the run.
+  r = await fetch(`${base}/feeding/1`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frequency: 'weekly', nutrient_type: 'Updated Nutrient' }),
+  });
+  let schedUpdated = await j(r);
+  check('PUT /feeding/1 updates', r.status === 200 && schedUpdated.frequency === 'weekly' && schedUpdated.nutrient_type === 'Updated Nutrient');
+
+  r = await fetch(`${base}/feeding/1`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frequency: 'hourly' }),
+  });
+  check('PUT /feeding invalid frequency -> 400', r.status === 400);
+
+  r = await fetch(`${base}/feeding/999`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frequency: 'weekly' }),
+  });
+  check('PUT /feeding missing -> 404', r.status === 404);
+
+  r = await fetch(`${base}/feeding/1/fed`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  let fedResult = await j(r);
+  check('POST /feeding/1/fed sets last_fed', r.status === 200 && !!fedResult.last_fed);
+
+  r = await fetch(`${base}/feeding/999/fed`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+  });
+  check('mark-fed missing -> 404', r.status === 404);
+
+  r = await fetch(`${base}/feeding/1`, { method: 'DELETE' });
+  check('DELETE /feeding/1', r.status === 200);
+  feeding = await j(await fetch(`${base}/feeding`));
+  check('feeding empty after delete', Array.isArray(feeding) && feeding.length === 0);
+
+  r = await fetch(`${base}/feeding/1`, { method: 'DELETE' });
+  check('DELETE /feeding missing -> 404', r.status === 404);
+
+  // Feeding validation: missing nutrient_type
+  r = await fetch(`${base}/feeding`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'NoNutrient2' }),
+  });
+  check('POST /feeding missing nutrient_type -> 400', r.status === 400);
+
   // Persistence
   const raw = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
   check('data file persisted shape', Array.isArray(raw.logs) && Array.isArray(raw.schedules) && typeof raw.nextId === 'number');

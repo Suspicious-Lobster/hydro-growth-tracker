@@ -1,11 +1,22 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Pencil, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import api from '../api/api';
+
+// The effective entry date: user-entered date when present, else created_at.
+const logDate = (log) => log.date || log.created_at;
+
+// Oldest and newest logs by effective date, regardless of incoming order.
+const chronoBounds = (logs) => {
+  const sorted = [...logs].sort((a, b) => new Date(logDate(a)) - new Date(logDate(b)));
+  return { first: sorted[0], latest: sorted[sorted.length - 1] };
+};
 
 const PlantManager = ({ plants, onRefresh }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [renaming, setRenaming] = useState(null); // plant name being renamed
+  const [renameValue, setRenameValue] = useState('');
   const [newPlantName, setNewPlantName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { colors } = useTheme();
@@ -52,6 +63,36 @@ const PlantManager = ({ plants, onRefresh }) => {
     } catch (error) {
       console.error('Error deleting plant:', error);
       alert('Failed to delete plant. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const startRename = (plantName) => {
+    setRenaming(plantName);
+    setRenameValue(plantName);
+  };
+
+  const handleRenamePlant = async (e) => {
+    e.preventDefault();
+    const newName = renameValue.trim();
+    if (!newName || newName === renaming) {
+      setRenaming(null);
+      return;
+    }
+    if (plants[newName]) {
+      alert('A plant with this name already exists!');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await api.put(`/logs/plant/${encodeURIComponent(renaming)}/rename`, { new_name: newName });
+      setRenaming(null);
+      onRefresh();
+    } catch (error) {
+      console.error('Error renaming plant:', error);
+      alert('Failed to rename plant. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -131,6 +172,59 @@ const PlantManager = ({ plants, onRefresh }) => {
         </div>
       )}
 
+      {/* Rename Modal */}
+      {renaming && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className={`${colors.bgSecondary} rounded-lg p-6 w-full max-w-md mx-4 ${colors.border} border`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-xl font-semibold ${colors.text}`}>Rename Plant</h3>
+              <button
+                onClick={() => setRenaming(null)}
+                className={`${colors.textMuted} hover:${colors.text} transition-colors`}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleRenamePlant} className="space-y-4">
+              <div>
+                <label className={`block text-sm font-medium ${colors.text} mb-2`}>
+                  New name for "{renaming}"
+                </label>
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  className="input-field"
+                  required
+                  autoFocus
+                  disabled={isSubmitting}
+                />
+                <p className={`text-sm ${colors.textMuted} mt-1`}>
+                  This updates every log and feeding schedule for this plant.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !renameValue.trim()}
+                  className={`flex-1 ${colors.primaryBg} text-white py-2 rounded-lg font-medium ${colors.primaryHover} transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {isSubmitting ? 'Renaming…' : 'Rename'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRenaming(null)}
+                  disabled={isSubmitting}
+                  className={`px-4 py-2 ${colors.bgAccent} ${colors.text} rounded-lg font-medium transition-colors duration-200`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -181,11 +275,10 @@ const PlantManager = ({ plants, onRefresh }) => {
           <div className="space-y-3">
             {plantNames.map((plantName) => {
               const plantLogs = plants[plantName];
-              const latestLog = plantLogs[plantLogs.length - 1];
-              const firstLog = plantLogs[0];
+              const { first: firstLog, latest: latestLog } = chronoBounds(plantLogs);
               const totalGrowth = latestLog && firstLog ? (parseFloat(latestLog.height) - parseFloat(firstLog.height)).toFixed(1) : '0';
-              const daysTracked = plantLogs.length > 1 
-                ? Math.ceil((new Date(latestLog.created_at) - new Date(firstLog.created_at)) / (1000 * 60 * 60 * 24))
+              const daysTracked = plantLogs.length > 1
+                ? Math.ceil((new Date(logDate(latestLog)) - new Date(logDate(firstLog))) / (1000 * 60 * 60 * 24))
                 : 0;
 
               return (
@@ -205,13 +298,22 @@ const PlantManager = ({ plants, onRefresh }) => {
                     </div>
                   </div>
                   
-                  <button
-                    onClick={() => setShowDeleteConfirm(plantName)}
-                    className="text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/20 p-2 rounded-lg transition-colors duration-200"
-                    title={`Delete ${plantName}`}
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => startRename(plantName)}
+                      className={`${colors.textMuted} hover:${colors.primary} hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-colors duration-200`}
+                      title={`Rename ${plantName}`}
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(plantName)}
+                      className="text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/20 p-2 rounded-lg transition-colors duration-200"
+                      title={`Delete ${plantName}`}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -243,7 +345,7 @@ const PlantManager = ({ plants, onRefresh }) => {
           <div className={`${colors.bgSecondary} rounded-lg p-4 text-center ${colors.border} border`}>
             <div className={`text-2xl font-bold ${colors.accent}`}>
               {Object.values(plants).reduce((total, logs) => {
-                const latest = logs[logs.length - 1];
+                const { latest } = chronoBounds(logs);
                 return total + (parseFloat(latest?.height) || 0);
               }, 0).toFixed(1)}
             </div>

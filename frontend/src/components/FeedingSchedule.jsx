@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Droplets, Scissors, Eye, AlertTriangle, CheckCircle, Clock, Calculator } from 'lucide-react';
+import { Calendar, Droplets, Scissors, Eye, AlertTriangle, CheckCircle, Clock, Calculator, Pencil, Trash2, Check, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import api from '../api/api';
 import NutrientCalculator from './NutrientCalculator';
@@ -14,24 +14,15 @@ const FeedingSchedule = () => {
   const [showCalculator, setShowCalculator] = useState(false);
   const [calculatorStage, setCalculatorStage] = useState('vegetative');
   const [showCalendarExport, setShowCalendarExport] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [busyScheduleId, setBusyScheduleId] = useState(null);
   const { colors } = useTheme();
 
   // Fetch data on component mount
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        await Promise.all([fetchSchedules(), fetchPlants()]);
-      } catch (err) {
-        setError('Failed to load data. Please try again.');
-        console.error('Error fetching data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadData();
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchData = async () => {
@@ -74,6 +65,57 @@ const FeedingSchedule = () => {
     } catch (err) {
       console.error('Plants API error:', err);
       setPlants({});
+    }
+  };
+
+  const handleMarkFed = async (id) => {
+    setBusyScheduleId(id);
+    try {
+      await api.post(`/feeding/${id}/fed`, {});
+      await fetchSchedules();
+    } catch (err) {
+      console.error('Error marking fed:', err);
+      alert('Failed to mark as fed. Please try again.');
+    } finally {
+      setBusyScheduleId(null);
+    }
+  };
+
+  const handleDeleteSchedule = async (id) => {
+    if (!window.confirm('Delete this feeding schedule?')) return;
+    setBusyScheduleId(id);
+    try {
+      await api.delete(`/feeding/${id}`);
+      await fetchSchedules();
+    } catch (err) {
+      console.error('Error deleting schedule:', err);
+      alert('Failed to delete schedule. Please try again.');
+    } finally {
+      setBusyScheduleId(null);
+    }
+  };
+
+  const startEditSchedule = (schedule) => {
+    setEditingSchedule(schedule.id);
+    setEditForm({
+      nutrient_type: schedule.nutrient_type || '',
+      ec_level: schedule.ec_level || '',
+      frequency: schedule.frequency || 'daily',
+      notes: schedule.notes || '',
+    });
+  };
+
+  const handleUpdateSchedule = async (id, updates) => {
+    setBusyScheduleId(id);
+    try {
+      await api.put(`/feeding/${id}`, updates);
+      setEditingSchedule(null);
+      await fetchSchedules();
+    } catch (err) {
+      console.error('Error updating schedule:', err);
+      alert('Failed to update schedule. Please try again.');
+    } finally {
+      setBusyScheduleId(null);
     }
   };
 
@@ -342,6 +384,8 @@ const FeedingSchedule = () => {
     );
   }
 
+  const upcomingTasks = getUpcomingTasks();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -377,7 +421,7 @@ const FeedingSchedule = () => {
           Today's Tasks
         </h3>
         <div className="space-y-3">
-          {getUpcomingTasks().slice(0, 6).map((task, index) => (
+          {upcomingTasks.slice(0, 6).map((task, index) => (
             <div key={index} className={`flex items-center gap-3 p-3 rounded-lg transition-colors duration-300 ${
               task.priority === 'high' ? 'bg-red-900/10 border border-red-500/30' :
               task.priority === 'medium' ? 'bg-yellow-900/10 border border-yellow-500/30' :
@@ -398,7 +442,13 @@ const FeedingSchedule = () => {
             </div>
           ))}
           
-          {getUpcomingTasks().length === 0 && (
+          {upcomingTasks.length > 6 && (
+            <div className={`text-center text-sm ${colors.textMuted} pt-1`}>
+              +{upcomingTasks.length - 6} more task{upcomingTasks.length - 6 === 1 ? '' : 's'} not shown
+            </div>
+          )}
+
+          {upcomingTasks.length === 0 && (
             <div className={`text-center ${colors.textMuted} py-8`}>
               <CheckCircle size={48} className="mx-auto mb-2 text-green-500" />
               <p>All caught up! No urgent tasks today.</p>
@@ -502,22 +552,107 @@ const FeedingSchedule = () => {
         ) : (
           <div className="space-y-3">
             {schedules.map(schedule => (
-              <div key={schedule.id} className={`${colors.bgAccent} rounded-lg p-4 flex items-center justify-between`}>
-                <div>
-                  <div className={`font-medium ${colors.text}`}>{schedule.plant_name}</div>
-                  <div className={`text-sm ${colors.textMuted}`}>
-                    {schedule.nutrient_type} • EC {schedule.ec_level} • {schedule.frequency}
+              <div key={schedule.id} className={`${colors.bgAccent} rounded-lg p-4`}>
+                {editingSchedule === schedule.id ? (
+                  /* Inline edit form */
+                  <div className="space-y-3">
+                    <div className={`font-medium ${colors.text}`}>{schedule.plant_name}</div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <input
+                        type="text"
+                        placeholder="Nutrient type"
+                        value={editForm.nutrient_type}
+                        onChange={(e) => setEditForm({ ...editForm, nutrient_type: e.target.value })}
+                        className={`w-full px-3 py-2 ${colors.bgSecondary} border ${colors.border} rounded-lg ${colors.text}`}
+                      />
+                      <input
+                        type="number"
+                        step="0.1"
+                        placeholder="EC level"
+                        value={editForm.ec_level}
+                        onChange={(e) => setEditForm({ ...editForm, ec_level: e.target.value })}
+                        className={`w-full px-3 py-2 ${colors.bgSecondary} border ${colors.border} rounded-lg ${colors.text}`}
+                      />
+                      <select
+                        value={editForm.frequency}
+                        onChange={(e) => setEditForm({ ...editForm, frequency: e.target.value })}
+                        className={`w-full px-3 py-2 ${colors.bgSecondary} border ${colors.border} rounded-lg ${colors.text}`}
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="every-2-days">Every 2 Days</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </div>
+                    <textarea
+                      placeholder="Notes..."
+                      value={editForm.notes}
+                      onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                      rows="2"
+                      className={`w-full px-3 py-2 ${colors.bgSecondary} border ${colors.border} rounded-lg ${colors.text}`}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleUpdateSchedule(schedule.id, editForm)}
+                        disabled={busyScheduleId === schedule.id}
+                        className={`${colors.primaryBg} text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2 disabled:opacity-50`}
+                      >
+                        <Check size={16} /> Save
+                      </button>
+                      <button
+                        onClick={() => setEditingSchedule(null)}
+                        className={`${colors.bgSecondary} ${colors.text} px-4 py-2 rounded-lg text-sm font-medium border ${colors.border} hover:opacity-80 transition-opacity flex items-center gap-2`}
+                      >
+                        <X size={16} /> Cancel
+                      </button>
+                    </div>
                   </div>
-                  {schedule.notes && (
-                    <div className={`text-sm ${colors.textMuted} italic mt-1`}>{schedule.notes}</div>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className={`text-sm ${colors.textMuted}`}>Last Fed</div>
-                  <div className={`text-sm ${colors.text}`}>
-                    {schedule.last_fed ? new Date(schedule.last_fed).toLocaleDateString() : 'Never'}
+                ) : (
+                  /* View row */
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className={`font-medium ${colors.text}`}>{schedule.plant_name}</div>
+                      <div className={`text-sm ${colors.textMuted}`}>
+                        {schedule.nutrient_type}{schedule.ec_level ? ` • EC ${schedule.ec_level}` : ''} • {schedule.frequency}
+                      </div>
+                      {schedule.notes && (
+                        <div className={`text-sm ${colors.textMuted} italic mt-1`}>{schedule.notes}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 flex-shrink-0">
+                      <div className="text-right">
+                        <div className={`text-sm ${colors.textMuted}`}>Last Fed</div>
+                        <div className={`text-sm ${colors.text}`}>
+                          {schedule.last_fed ? new Date(schedule.last_fed).toLocaleDateString() : 'Never'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleMarkFed(schedule.id)}
+                          disabled={busyScheduleId === schedule.id}
+                          className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-1 disabled:opacity-50"
+                          title="Mark as fed now"
+                        >
+                          <Droplets size={16} /> Fed
+                        </button>
+                        <button
+                          onClick={() => startEditSchedule(schedule)}
+                          className={`${colors.textMuted} hover:${colors.primary} p-2 rounded-lg transition-colors`}
+                          title="Edit schedule"
+                        >
+                          <Pencil size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSchedule(schedule.id)}
+                          disabled={busyScheduleId === schedule.id}
+                          className="text-red-500 hover:text-red-700 p-2 rounded-lg transition-colors disabled:opacity-50"
+                          title="Delete schedule"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ))}
           </div>
