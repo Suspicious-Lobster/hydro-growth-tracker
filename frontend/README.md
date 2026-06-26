@@ -1,12 +1,21 @@
-# React + Vite
+# Hydro Growth Tracker — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React 18 + Vite + Tailwind CSS frontend for Hydro Growth Tracker. It is
+served at `http://localhost:5173` in development and built to `dist/` for the
+packaged Electron app.
 
-Currently, two official plugins are available:
+It talks to the embedded backend at `http://localhost:5000` (configurable via
+the `VITE_API_BASE_URL` environment variable at build time).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Scripts
 
-## Expanding the ESLint configuration
+```bash
+npm install      # Install dependencies
+npm run dev      # Start the Vite dev server
+npm run build    # Build to dist/
+npm run lint     # Run ESLint
+```
 
-If you are developing a production application, we recommend using TypeScript and enable type-aware lint rules. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+> Normally you don't run these directly — use `npm run dev` / `npm run dist`
+> from the project root, which orchestrate the frontend and the Electron shell
+> together. See the root [README](../README.md).
