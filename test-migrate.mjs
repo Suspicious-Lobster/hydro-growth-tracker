@@ -36,9 +36,10 @@ try {
   check('migration ran', changed === true);
   check('schemaVersion bumped', data.schemaVersion === SCHEMA_VERSION);
 
-  // Plants derived from distinct names, including the sentinel-only "Lonely".
+  // Plants derived from distinct names across BOTH logs and schedules: the
+  // sentinel-only "Lonely" and the schedule-only "GhostPlant" are materialized.
   const names = data.plants.map((p) => p.name).sort();
-  check('plants derived from names', JSON.stringify(names) === JSON.stringify(['Basil', 'Lonely', 'Tomato']));
+  check('plants derived from names', JSON.stringify(names) === JSON.stringify(['Basil', 'GhostPlant', 'Lonely', 'Tomato']));
 
   const tomato = data.plants.find((p) => p.name === 'Tomato');
   const lonely = data.plants.find((p) => p.name === 'Lonely');
@@ -57,14 +58,16 @@ try {
   check('sentinel-only plant has start_date', lonely.start_date === '2026-01-02');
   check('sentinel-only plant has zero logs', !data.logs.some((l) => l.plant_id === lonely.id));
 
-  // Schedules linked; unknown name -> null plant_id.
+  // Schedules linked; a schedule-only name materializes its own plant.
   const tSched = data.schedules.find((s) => s.plant_name === 'Tomato');
   const gSched = data.schedules.find((s) => s.plant_name === 'GhostPlant');
+  const ghost = data.plants.find((p) => p.name === 'GhostPlant');
   check('schedule linked to plant', tSched.plant_id === tomato.id && tSched.active === true);
-  check('orphan schedule plant_id null', gSched.plant_id === null);
+  check('schedule-only plant materialized', !!ghost && gSched.plant_id === ghost.id);
+  check('schedule-only plant has zero logs', !data.logs.some((l) => l.plant_id === ghost.id));
 
   check('settings seeded metric', data.settings.units.length === 'cm' && data.settings.ppm_scale === 500);
-  check('nextPlantId set', data.nextPlantId === 4);
+  check('nextPlantId set', data.nextPlantId === 5);
 
   // Idempotency.
   const again = migrateData(data);
@@ -78,7 +81,7 @@ try {
   check('runMigration migrated', result.migrated === true);
   check('backup file created', fs.existsSync(result.backupPath));
   const onDisk = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-  check('on-disk file is v2', onDisk.schemaVersion === SCHEMA_VERSION && onDisk.plants.length === 3);
+  check('on-disk file is v2', onDisk.schemaVersion === SCHEMA_VERSION && onDisk.plants.length === 4);
   // Second run is a no-op.
   const second = runMigration(dataFile);
   check('runMigration no-op on v2', second.migrated === false);

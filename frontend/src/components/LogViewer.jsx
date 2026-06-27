@@ -4,7 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import { useToast } from '../contexts/ToastContext';
 import { resolveImageUrl, apiErrorMessage } from '../api/api';
-import { formatDate, formatLength, formatTemp } from '../utils/format';
+import { formatDate, formatLength, formatTemp, toCm, fromCm } from '../utils/format';
 import { stageLabel } from '../data/recommendations';
 
 const LogViewer = () => {
@@ -19,7 +19,8 @@ const LogViewer = () => {
     setEditingId(log.id);
     setEditForm({
       plant_name: log.plant_name || '',
-      height: log.height ?? '',
+      // Stored canonically in cm; show in the active display unit.
+      height: log.height == null ? '' : Math.round(fromCm(parseFloat(log.height), lengthUnit) * 100) / 100,
       nutrients: log.nutrients || '',
       ph: log.ph ?? '',
       ec: log.ec ?? '',
@@ -36,10 +37,12 @@ const LogViewer = () => {
     try {
       await updateLog(logId, {
         plant_name: editForm.plant_name.trim(),
-        height: parseFloat(editForm.height),
+        // Convert the display-unit input back to canonical cm for storage.
+        height: toCm(parseFloat(editForm.height), lengthUnit),
         nutrients: editForm.nutrients.trim(),
-        ph: editForm.ph === '' ? undefined : parseFloat(editForm.ph),
-        ec: editForm.ec === '' ? undefined : parseFloat(editForm.ec),
+        // Send null (not undefined) so a cleared field is actually wiped.
+        ph: editForm.ph === '' ? null : parseFloat(editForm.ph),
+        ec: editForm.ec === '' ? null : parseFloat(editForm.ec),
         notes: editForm.notes,
       });
       toast.success('Log updated');

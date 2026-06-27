@@ -69,7 +69,7 @@ const NutrientCalculator = ({ plantStage = null, onClose }) => {
           <div className={`${colors.bgSecondary} rounded-lg p-3 mb-4 grid grid-cols-3 gap-3 text-center`}>
             <Summary colors={colors} label="Reservoir" value={`${calculation.liters} L`} />
             <Summary colors={colors} label="Week" value={calculation.week} />
-            <Summary colors={colors} label="Target EC" value={calculation.targetEC ?? calculation.ec} />
+            <Summary colors={colors} label="Target EC" value={calculation.ec} />
           </div>
 
           <h4 className={`font-semibold ${colors.text} mb-2`}>Total for {calculation.liters} L:</h4>

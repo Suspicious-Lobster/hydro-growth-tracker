@@ -101,15 +101,22 @@ export function validatePlant(body) {
   return errors;
 }
 
-// Validate a feeding-schedule payload.
-export function validateSchedule(body) {
+// Validate a feeding-schedule payload. `partial` is true for updates, where the
+// edit form may send only the fields being changed, so absent fields are left
+// alone instead of being required.
+export function validateSchedule(body, { partial } = { partial: false }) {
   const errors = [];
   const hasPlantId = body.plant_id !== undefined && body.plant_id !== null && body.plant_id !== '';
-  if (!hasPlantId && !isNonEmptyString(body.plant_name)) {
-    errors.push('Plant name and nutrient type are required');
+
+  if (!partial || hasPlantId || 'plant_name' in body) {
+    if (!hasPlantId && !isNonEmptyString(body.plant_name)) {
+      errors.push('Plant name is required');
+    }
   }
-  if (!isNonEmptyString(body.nutrient_type)) {
-    errors.push('Plant name and nutrient type are required');
+  if (!partial || 'nutrient_type' in body) {
+    if (!isNonEmptyString(body.nutrient_type)) {
+      errors.push('Nutrient type is required');
+    }
   }
   const validFreq = ['daily', 'every-2-days', 'weekly', 'custom'];
   if (body.frequency && !validFreq.includes(body.frequency)) {

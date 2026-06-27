@@ -4,9 +4,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import GrowthChart from './GrowthChart';
 import { sortLogsByDate, latestLog, currentHeight, totalGrowth, daysTracked, growthRate } from '../utils/stats';
-import { formatLength, formatTemp, formatVolume, formatDate } from '../utils/format';
+import { formatLength, formatTemp, formatVolume, formatDate, fromCm } from '../utils/format';
 import { inferStage, stageLabel, getStageGuidance } from '../data/recommendations';
-import { measurementAlerts } from '../utils/ranges';
+import { measurementAlerts, describeAlert } from '../utils/ranges';
 
 const PlantDetail = ({ plant, onBack }) => {
   const { colors } = useTheme();
@@ -22,8 +22,10 @@ const PlantDetail = ({ plant, onBack }) => {
   const plantSchedules = schedules.filter((s) => s.plant_id === plant.id);
 
   const chartData = sorted.map((log) => ({
-    date: formatDate(log.created_at, { year: undefined }),
-    height: parseFloat(log.height),
+    date: formatDate(log.date ?? log.created_at, { year: undefined }),
+    // Convert canonical cm to the active display unit so the plotted line
+    // matches the axis label and the stat cards.
+    height: log.height == null ? null : Math.round(fromCm(parseFloat(log.height), lengthUnit) * 100) / 100,
     ec: log.ec != null ? parseFloat(log.ec) : null,
   }));
 
@@ -50,7 +52,7 @@ const PlantDetail = ({ plant, onBack }) => {
         <BigStat colors={colors} value={formatLength(currentHeight(logs), lengthUnit)} label="Current height" />
         <BigStat colors={colors} value={`+${formatLength(totalGrowth(logs), lengthUnit)}`} label="Total growth" />
         <BigStat colors={colors} value={daysTracked(logs)} label="Days tracked" />
-        <BigStat colors={colors} value={`${growthRate(logs)} ${lengthUnit}/d`} label="Growth rate" />
+        <BigStat colors={colors} value={`${Math.round(fromCm(growthRate(logs), lengthUnit) * 100) / 100} ${lengthUnit}/d`} label="Growth rate" />
       </div>
 
       {/* Alerts */}
@@ -58,9 +60,10 @@ const PlantDetail = ({ plant, onBack }) => {
         <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
           <h3 className="text-red-400 font-semibold mb-2">Out-of-range readings</h3>
           <ul className="text-sm text-red-300 space-y-1">
-            {alerts.map((a) => (
-              <li key={a.key}>{a.label}: {a.value} (target {a.range.min}–{a.range.max})</li>
-            ))}
+            {alerts.map((a) => {
+              const d = describeAlert(a, { temp: tempUnit });
+              return <li key={a.key}>{a.label}: {d.value} (target {d.range})</li>;
+            })}
           </ul>
         </div>
       )}

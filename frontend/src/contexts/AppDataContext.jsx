@@ -118,7 +118,9 @@ export const AppDataProvider = ({ children }) => {
     };
   }, [state.plants, state.logs]);
 
-  const value = { ...state, ...actions, ...derived };
+  // Memoize so consumers only re-render when state/actions/derived actually
+  // change, not on every provider render.
+  const value = useMemo(() => ({ ...state, ...actions, ...derived }), [state, actions, derived]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 };

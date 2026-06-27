@@ -7,7 +7,7 @@ import api, { apiErrorMessage } from '../api/api';
 import Modal from './ui/Modal';
 import { SPECIES_OPTIONS, getProfileStages, stageLabel } from '../data/recommendations';
 import { currentHeight, totalGrowth, daysTracked } from '../utils/stats';
-import { formatLength, formatVolume } from '../utils/format';
+import { formatLength, formatVolume, toLiters, fromLiters } from '../utils/format';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
 
 const SYSTEM_TYPES = ['DWC', 'NFT', 'Ebb & Flow', 'Drip', 'Aeroponics', 'Kratky', 'Wick'];
@@ -35,7 +35,8 @@ const PlantManager = ({ onSelectPlant }) => {
       species: plant.species || '',
       variety: plant.variety || '',
       system_type: plant.system_type || '',
-      reservoir_volume: plant.reservoir_volume ?? '',
+      // Stored canonically in liters; show in the active display unit.
+      reservoir_volume: plant.reservoir_volume == null ? '' : Math.round(fromLiters(parseFloat(plant.reservoir_volume), volumeUnit) * 100) / 100,
       start_date: plant.start_date || '',
       target_stage: plant.target_stage || '',
     });
@@ -47,7 +48,8 @@ const PlantManager = ({ onSelectPlant }) => {
     species: form.species || null,
     variety: form.variety || null,
     system_type: form.system_type || null,
-    reservoir_volume: form.reservoir_volume === '' ? null : parseFloat(form.reservoir_volume),
+    // Convert the display-unit input back to canonical liters for storage.
+    reservoir_volume: form.reservoir_volume === '' ? null : toLiters(parseFloat(form.reservoir_volume), volumeUnit),
     start_date: form.start_date || null,
     target_stage: form.target_stage || null,
   });

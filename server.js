@@ -30,11 +30,25 @@ export function createServer({ dataFile, uploadsDir }) {
   if (!fs.existsSync(dataFile)) {
     repo.save(dataFile, repo.emptyData());
   } else {
-    runMigration(dataFile);
+    // A migration failure (e.g. a read-only/full data dir) must not brick the
+    // app: log it and serve the existing data rather than aborting startup.
+    try {
+      runMigration(dataFile);
+    } catch (error) {
+      console.error('Data migration failed; serving existing data as-is:', error.message);
+    }
   }
 
   const readData = () => repo.load(dataFile);
   const writeData = (data) => repo.save(dataFile, data);
+
+  // A request may reference a plant by id; if so, that plant must exist.
+  // Returns true when an id was supplied but resolves to nothing.
+  const unknownPlantId = (data, body) => {
+    const pid = body.plant_id;
+    if (pid === undefined || pid === null || pid === '') return false;
+    return !repo.getPlant(data, parseInt(pid, 10));
+  };
 
   const app = express();
   app.use(express.json({ limit: '10mb' }));
@@ -118,6 +132,12 @@ export function createServer({ dataFile, uploadsDir }) {
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
+    if (req.body.name) {
+      const existing = repo.findPlantByName(data, req.body.name);
+      if (existing && !existing.archived && existing.id !== parseInt(req.params.id, 10)) {
+        return res.status(409).json({ error: 'A plant with this name already exists' });
+      }
+    }
     const plant = repo.updatePlant(data, parseInt(req.params.id, 10), req.body);
     if (!plant) return res.status(404).json({ error: 'Plant not found' });
     writeData(data);
@@ -175,6 +195,7 @@ export function createServer({ dataFile, uploadsDir }) {
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
+    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
     const body = { ...req.body, image_url: req.file ? `/uploads/${req.file.filename}` : null };
     const log = repo.createLog(data, body);
     writeData(data);
@@ -188,6 +209,7 @@ export function createServer({ dataFile, uploadsDir }) {
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
+    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
     const log = repo.updateLog(data, parseInt(req.params.id, 10), req.body);
     if (!log) return res.status(404).json({ error: 'Log not found' });
     writeData(data);
@@ -229,6 +251,7 @@ export function createServer({ dataFile, uploadsDir }) {
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
+    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
     const schedule = repo.createSchedule(data, req.body);
     writeData(data);
     res.status(201).json(schedule);
@@ -236,11 +259,12 @@ export function createServer({ dataFile, uploadsDir }) {
 
   // PUT /feeding/:id – edit a feeding schedule.
   app.put('/feeding/:id', handle((req, res) => {
-    const errors = validateSchedule(req.body);
+    const errors = validateSchedule(req.body, { partial: true });
     if (errors.length > 0) {
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
+    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
     const schedule = repo.updateSchedule(data, parseInt(req.params.id, 10), req.body);
     if (!schedule) return res.status(404).json({ error: 'Feeding schedule not found' });
     writeData(data);

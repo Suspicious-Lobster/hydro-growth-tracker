@@ -3,6 +3,7 @@ import { Download } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../contexts/ToastContext';
 import { FEEDING_SCHEDULE } from '../data/feedingSchedule';
+import { downloadBlob } from '../utils/download';
 
 const defaultStartDate = () => {
   const today = new Date();
@@ -37,7 +38,7 @@ const FeedingScheduleCalendarExport = () => {
         `Mixing: Part A first, then Part B${week.mkp_ml ? ', then MKP' : ''}`,
         `Notes: ${week.notes}`,
         'Remember: check pH (5.5-6.5), monitor plant response.',
-      ].join('\\n');
+      ].join('\n');
 
       rows.push([
         `"Week ${week.week} - ${week.stage} Feeding"`,
@@ -51,13 +52,7 @@ const FeedingScheduleCalendarExport = () => {
 
   const download = () => {
     const csv = generateCalendarCSV(new Date(startDate));
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `hydroponic_feeding_schedule_${startDate}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(`hydroponic_feeding_schedule_${startDate}.csv`, csv);
     toast.success('Calendar CSV downloaded');
   };
 

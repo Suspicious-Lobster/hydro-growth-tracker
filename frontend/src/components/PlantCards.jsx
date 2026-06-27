@@ -5,9 +5,9 @@ import { useAppData } from '../contexts/AppDataContext';
 import { latestLog, currentHeight, totalGrowth, daysTracked } from '../utils/stats';
 import { formatLength, formatTemp } from '../utils/format';
 import { inferStage, stageLabel } from '../data/recommendations';
-import { measurementAlerts } from '../utils/ranges';
+import { measurementAlerts, describeAlert } from '../utils/ranges';
 
-const PlantCard = ({ plant, logs, lengthUnit, tempUnit, onSelect }) => {
+const PlantCard = React.memo(({ plant, logs, lengthUnit, tempUnit, onSelect }) => {
   const { colors } = useTheme();
   const latest = latestLog(logs);
   const stage = latest ? inferStage(plant.species, latest.height, latest.growth_stage) : plant.target_stage;
@@ -51,9 +51,10 @@ const PlantCard = ({ plant, logs, lengthUnit, tempUnit, onSelect }) => {
           </div>
           {alerts.length > 0 && (
             <div className="mt-3 text-xs text-red-400 space-y-0.5">
-              {alerts.map((a) => (
-                <div key={a.key}>{a.label} {a.value} out of range ({a.range.min}–{a.range.max})</div>
-              ))}
+              {alerts.map((a) => {
+                const d = describeAlert(a, { temp: tempUnit });
+                return <div key={a.key}>{a.label} {d.value} out of range ({d.range})</div>;
+              })}
             </div>
           )}
         </>
@@ -64,7 +65,8 @@ const PlantCard = ({ plant, logs, lengthUnit, tempUnit, onSelect }) => {
       )}
     </button>
   );
-};
+});
+PlantCard.displayName = 'PlantCard';
 
 const Stat = ({ colors, icon, value, label }) => (
   <div className={`${colors.bgAccent} rounded-lg p-2 text-center`}>

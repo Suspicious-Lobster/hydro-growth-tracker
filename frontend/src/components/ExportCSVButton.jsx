@@ -3,6 +3,7 @@ import { Download } from 'lucide-react';
 import api from '../api/api';
 import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../contexts/ToastContext';
+import { downloadBlob } from '../utils/download';
 
 const ExportCSVButton = () => {
   const { colors } = useTheme();
@@ -13,12 +14,7 @@ const ExportCSVButton = () => {
     setBusy(true);
     try {
       const res = await api.get('/logs/export', { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `hydro_logs_${Date.now()}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(`hydro_logs_${Date.now()}.csv`, new Blob([res.data], { type: 'text/csv' }));
       toast.success('Logs exported to CSV');
     } catch {
       toast.error('Failed to export logs');

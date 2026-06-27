@@ -2,9 +2,20 @@
 // were copy-pasted across PlantCards, PlantManager, FeedingSchedule and
 // PlantSidebar; this is now the single source.
 
-// Return logs sorted oldest -> newest by created_at (does not mutate input).
+// Timestamp a log is ordered by: the user-entered measurement `date`, falling
+// back to the server insert time. Using `date` keeps backdated / out-of-order
+// entries in true chronological order.
+function logTime(log) {
+  const t = new Date(log?.date ?? log?.created_at).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+// Return logs sorted oldest -> newest (does not mutate input). Ties on the same
+// measurement date fall back to insert order.
 export function sortLogsByDate(logs) {
-  return [...(logs || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  return [...(logs || [])].sort(
+    (a, b) => logTime(a) - logTime(b) || new Date(a.created_at) - new Date(b.created_at),
+  );
 }
 
 export function firstLog(logs) {
@@ -34,7 +45,7 @@ export function totalGrowth(logs) {
 export function daysTracked(logs) {
   const sorted = sortLogsByDate(logs);
   if (sorted.length < 2) return 0;
-  const ms = new Date(sorted[sorted.length - 1].created_at) - new Date(sorted[0].created_at);
+  const ms = logTime(sorted[sorted.length - 1]) - logTime(sorted[0]);
   return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
 }
 

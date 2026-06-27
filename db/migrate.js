@@ -9,7 +9,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { SCHEMA_VERSION, emptyData, defaultSettings } from './repository.js';
+import { SCHEMA_VERSION, emptyData, defaultSettings, save } from './repository.js';
 
 const SENTINEL_NUTRIENTS = 'Initial setup';
 const SENTINEL_NOTES_PREFIX = 'Plant added';
@@ -38,19 +38,19 @@ export function migrateData(raw) {
   const rawSchedules = Array.isArray(raw?.schedules) ? raw.schedules.map((s) => ({ ...s })) : [];
 
   // 1. Derive plants from distinct plant_name, in first-seen order. created_at
-  //    is the earliest log timestamp for that name.
+  //    is the earliest known timestamp for that name. Both logs AND schedules
+  //    seed plants, so a v1 plant referenced only by a feeding schedule (no
+  //    growth logs) still becomes a first-class plant instead of being lost.
   const nameToPlant = new Map();
   let nextPlantId = 1;
-  for (const log of rawLogs) {
-    const name = log.plant_name;
-    if (!name || nameToPlant.has(name)) {
-      if (name && log.created_at) {
-        const p = nameToPlant.get(name);
-        if (p && new Date(log.created_at) < new Date(p.created_at)) p.created_at = log.created_at;
-      }
-      continue;
+  const seenName = (name, created) => {
+    if (!name) return;
+    if (nameToPlant.has(name)) {
+      const p = nameToPlant.get(name);
+      if (created && new Date(created) < new Date(p.created_at)) p.created_at = created;
+      return;
     }
-    const created = log.created_at || new Date().toISOString();
+    const ts = created || new Date().toISOString();
     nameToPlant.set(name, {
       id: nextPlantId++,
       name,
@@ -62,10 +62,12 @@ export function migrateData(raw) {
       start_date: null,
       target_stage: null,
       archived: false,
-      created_at: created,
-      updated_at: created,
+      created_at: ts,
+      updated_at: ts,
     });
-  }
+  };
+  for (const log of rawLogs) seenName(log.plant_name, log.created_at);
+  for (const s of rawSchedules) seenName(s.plant_name, s.created_at);
 
   // 2. Strip sentinel logs; use their date as the plant's start_date.
   const logs = [];
@@ -139,9 +141,7 @@ export function runMigration(dataFile) {
   fs.writeFileSync(backupPath, JSON.stringify(raw, null, 2));
 
   const { data } = migrateData(raw);
-  const tmp = `${dataFile}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, dataFile);
+  save(dataFile, data); // atomic temp-file + rename, shared with the repository
 
   console.log(`Migrated data file to schema v${SCHEMA_VERSION}. Backup: ${backupPath}`);
   return { migrated: true, backupPath };

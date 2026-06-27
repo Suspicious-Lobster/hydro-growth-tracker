@@ -7,7 +7,6 @@
 // would make a future swap to SQLite a localized change.
 
 import fs from 'fs';
-import path from 'path';
 
 export const SCHEMA_VERSION = 2;
 
@@ -239,7 +238,14 @@ export function updateLog(data, id, body) {
 
   if (body.height !== undefined) log.height = parseFloat(body.height);
   if (body.height_unit !== undefined) log.height_unit = body.height_unit === 'in' ? 'in' : 'cm';
-  Object.assign(log, measurementFields({ ...log, ...body }));
+  // Only touch measurement fields the caller actually sent. A field present and
+  // explicitly null clears it; an absent field keeps its stored value (so the
+  // partial edit form can't wipe measurements it never showed).
+  if ('growth_stage' in body) log.growth_stage = body.growth_stage || null;
+  if (body.temp_unit !== undefined) log.temp_unit = body.temp_unit === 'F' ? 'F' : 'C';
+  for (const f of ['ph', 'ec', 'ppm', 'water_temp', 'air_temp', 'humidity', 'light_hours', 'reservoir_volume']) {
+    if (f in body) log[f] = num(body[f]);
+  }
   if (body.nutrients !== undefined) log.nutrients = String(body.nutrients).trim();
   if (body.notes !== undefined) log.notes = body.notes ? String(body.notes).trim() : '';
   log.updated_at = now();

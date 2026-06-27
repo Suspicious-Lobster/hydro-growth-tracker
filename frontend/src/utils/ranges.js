@@ -2,6 +2,7 @@
 // dashboard can surface out-of-range alerts.
 
 import { getProfile, getStageGuidance } from '../data/recommendations';
+import { formatTemp } from './format';
 
 // 'ok' inside range, 'warn' just outside (within 10% of the span), 'out'
 // well outside, 'unknown' when there's no value or no target.
@@ -39,6 +40,24 @@ export function measurementAlerts(log, species, stage) {
     }
   }
   return alerts;
+}
+
+// Format an alert's value and target range for display in the active units.
+// Temperatures are stored canonically in °C, so they must be converted; the
+// other tracked measurements (pH, EC, humidity) are unitless.
+export function describeAlert(alert, units = {}) {
+  if (alert.key === 'air_temp' || alert.key === 'water_temp') {
+    const u = units.temp || 'C';
+    return {
+      value: formatTemp(alert.value, u),
+      range: `${formatTemp(alert.range.min, u)}–${formatTemp(alert.range.max, u)}`,
+    };
+  }
+  const suffix = alert.key === 'humidity' ? '%' : '';
+  return {
+    value: `${alert.value}${suffix}`,
+    range: `${alert.range.min}${suffix}–${alert.range.max}${suffix}`,
+  };
 }
 
 // Tailwind text-color class for a status (used for chips/badges).
