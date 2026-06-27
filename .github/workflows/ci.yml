@@ -32,5 +32,12 @@ jobs:
         run: npm run build
         working-directory: frontend
 
+      - name: Migration tests
+        run: npm run test:migrate
+
       - name: Backend integration tests
         run: npm run test:server
+
+      - name: Frontend unit tests
+        run: npm run test:unit
+        working-directory: frontend

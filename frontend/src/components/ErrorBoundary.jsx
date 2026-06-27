@@ -47,7 +47,7 @@ const ErrorFallback = ({ error, errorInfo, onReset }) => {
   const { colors } = useTheme();
 
   return (
-    <div className={`min-h-screen ${colors.bgPrimary} flex items-center justify-center p-4`}>
+    <div className={`min-h-screen ${colors.bg} flex items-center justify-center p-4`}>
       <div className={`max-w-md w-full ${colors.bgSecondary} rounded-lg shadow-xl p-6 border ${colors.border}`}>
         <div className="flex items-center gap-3 mb-4">
           <AlertTriangle className="text-red-500" size={24} />

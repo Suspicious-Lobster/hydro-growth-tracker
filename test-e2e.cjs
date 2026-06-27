@@ -301,9 +301,10 @@ async function testFrontendFeatures() {
     const addLogFormPath = path.join(projectRoot, 'frontend', 'src', 'components', 'AddLogForm.jsx');
     const addLogFormContent = await fs.readFile(addLogFormPath, 'utf8');
     
-    if (addLogFormContent.includes('handleHeightChange') && 
-        addLogFormContent.includes('localStorage') && 
-        addLogFormContent.includes('isDirty')) {
+    if (addLogFormContent.includes('localStorage') &&
+        addLogFormContent.includes('isDirty') &&
+        addLogFormContent.includes('growth_stage') &&
+        addLogFormContent.includes('useAppData')) {
       logSuccess('AddLogForm improvements implemented');
     } else {
       logError('AddLogForm improvements not properly implemented');
@@ -319,8 +320,8 @@ async function testFrontendFeatures() {
     const calendarExportPath = path.join(projectRoot, 'frontend', 'src', 'components', 'FeedingScheduleCalendarExport.jsx');
     const calendarExportContent = await fs.readFile(calendarExportPath, 'utf8');
     
-    if (calendarExportContent.includes('generateCalendarCSV') && 
-        calendarExportContent.includes('feedingSchedule')) {
+    if (calendarExportContent.includes('generateCalendarCSV') &&
+        calendarExportContent.includes('FEEDING_SCHEDULE')) {
       logSuccess('Calendar export feature implemented');
     } else {
       logError('Calendar export feature not properly implemented');

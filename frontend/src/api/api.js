@@ -13,6 +13,17 @@ export const resolveImageUrl = (imageUrl) => {
   return `${API_BASE_URL}${imageUrl}`;
 };
 
+// Pull a human-readable message out of an axios error, preferring the
+// backend's structured `{ error, details }` payload.
+export const apiErrorMessage = (error, fallback = 'Something went wrong') => {
+  const data = error?.response?.data;
+  if (data?.details && Array.isArray(data.details)) return data.details.join('. ');
+  if (data?.error) return data.error;
+  if (error?.message) return error.message;
+  return fallback;
+};
+
 export default axios.create({
   baseURL: API_BASE_URL,
+  timeout: 15000,
 });

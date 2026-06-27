@@ -1,133 +1,76 @@
-import React, { useState, useEffect } from 'react';
-import { Edit3, Save, X, Calendar, Camera, FileText, Trash2, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Edit3, Save, X, Calendar, Camera, FileText, Trash2 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
-import api, { resolveImageUrl } from '../api/api';
+import { useAppData } from '../contexts/AppDataContext';
+import { useToast } from '../contexts/ToastContext';
+import { resolveImageUrl, apiErrorMessage } from '../api/api';
+import { formatDate, formatLength, formatTemp } from '../utils/format';
+import { stageLabel } from '../data/recommendations';
 
-const LogViewer = ({ onRefresh }) => {
+const LogViewer = () => {
   const { colors } = useTheme();
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [editingLog, setEditingLog] = useState(null);
+  const { logs, settings, updateLog, deleteLog } = useAppData();
+  const toast = useToast();
+  const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
-
-  const fetchLogs = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get('/logs');
-      const logsData = Array.isArray(res.data) ? res.data : [];
-      // Sort logs by date, newest first
-      const sortedLogs = logsData.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      setLogs(sortedLogs);
-    } catch (err) {
-      setError('Failed to load logs. Please try again.');
-      console.error('Error fetching logs:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchLogs();
-  }, []);
+  const { length: lengthUnit, temp: tempUnit } = settings.units;
 
   const startEditing = (log) => {
-    setEditingLog(log.id);
+    setEditingId(log.id);
     setEditForm({
       plant_name: log.plant_name || '',
-      height: log.height || '',
+      height: log.height ?? '',
       nutrients: log.nutrients || '',
-      notes: log.notes || ''
+      ph: log.ph ?? '',
+      ec: log.ec ?? '',
+      notes: log.notes || '',
     });
   };
 
-  const cancelEditing = () => {
-    setEditingLog(null);
-    setEditForm({});
-  };
+  const cancelEditing = () => { setEditingId(null); setEditForm({}); };
 
   const saveLog = async (logId) => {
+    if (!editForm.plant_name.trim()) { toast.error('Plant name is required'); return; }
+    if (editForm.height === '' || parseFloat(editForm.height) < 0) { toast.error('Height must be a positive number'); return; }
+    if (!editForm.nutrients.trim()) { toast.error('Nutrients are required'); return; }
     try {
-      await api.put(`/logs/${logId}`, editForm);
-      setEditingLog(null);
-      setEditForm({});
-      fetchLogs(); // Refresh the list
-      if (onRefresh) onRefresh(); // Refresh parent data
+      await updateLog(logId, {
+        plant_name: editForm.plant_name.trim(),
+        height: parseFloat(editForm.height),
+        nutrients: editForm.nutrients.trim(),
+        ph: editForm.ph === '' ? undefined : parseFloat(editForm.ph),
+        ec: editForm.ec === '' ? undefined : parseFloat(editForm.ec),
+        notes: editForm.notes,
+      });
+      toast.success('Log updated');
+      cancelEditing();
     } catch (err) {
-      console.error('Error updating log:', err);
-      setError('Failed to update log. Please try again.');
+      toast.error(apiErrorMessage(err, 'Failed to update log'));
     }
   };
 
-  const deleteLog = async (logId) => {
-    if (!window.confirm('Are you sure you want to delete this log?')) return;
-    
+  const removeLog = async (logId) => {
+    if (!window.confirm('Delete this log?')) return;
     try {
-      await api.delete(`/logs/${logId}`);
-      fetchLogs(); // Refresh the list
-      if (onRefresh) onRefresh(); // Refresh parent data
+      await deleteLog(logId);
+      toast.success('Log deleted');
     } catch (err) {
-      console.error('Error deleting log:', err);
-      setError('Failed to delete log. Please try again.');
+      toast.error(apiErrorMessage(err, 'Failed to delete log'));
     }
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
-
-  if (loading) {
-    return (
-      <div className={`${colors.bgPrimary} rounded-xl shadow-lg w-full p-8`}>
-        <div className="text-center">
-          <div className={`animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto`}></div>
-          <p className={`${colors.textMuted} mt-4`}>Loading logs...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={`${colors.bgPrimary} rounded-xl shadow-lg w-full p-8`}>
-        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-6">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="text-red-400" size={20} />
-            <div>
-              <h3 className={`font-semibold ${colors.text}`}>Error Loading Logs</h3>
-              <p className={`${colors.textMuted} text-sm mt-1`}>{error}</p>
-            </div>
-          </div>
-          <button
-            onClick={fetchLogs}
-            className={`mt-4 px-4 py-2 ${colors.primaryBg} text-white rounded-lg text-sm hover:opacity-90 transition-opacity`}
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const inputCls = `w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`;
 
   return (
-    <div className={`${colors.bgPrimary} rounded-xl shadow-lg w-full`}>
-      {/* Header */}
-      <div className={`${colors.bgSecondary} p-6 rounded-t-xl border-b ${colors.border}`}>
+    <div className={`${colors.bgSecondary} rounded-xl shadow-lg w-full ${colors.border} border`}>
+      <div className={`p-6 border-b ${colors.border}`}>
         <div className="flex items-center gap-3">
           <Edit3 className="text-green-400" size={24} />
           <h2 className={`text-2xl font-bold ${colors.text}`}>View & Edit Logs</h2>
         </div>
-        <p className={`${colors.textMuted} mt-2`}>
-          View, edit, or delete your plant growth logs. Total logs: {logs.length}
-        </p>
+        <p className={`${colors.textMuted} mt-2`}>Total logs: {logs.length}</p>
       </div>
 
-      {/* Logs List */}
       <div className="p-6">
         {logs.length === 0 ? (
           <div className={`text-center ${colors.textMuted} py-12`}>
@@ -137,132 +80,61 @@ const LogViewer = ({ onRefresh }) => {
         ) : (
           <div className="space-y-4">
             {logs.map((log) => (
-              <div key={log.id} className={`${colors.bgSecondary} rounded-lg p-4 border ${colors.border}`}>
-                {editingLog === log.id ? (
-                  // Edit Form
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className={`block text-sm font-medium ${colors.text} mb-1`}>Plant Name</label>
-                        <input
-                          type="text"
-                          value={editForm.plant_name}
-                          onChange={(e) => setEditForm({...editForm, plant_name: e.target.value})}
-                          className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`}
-                        />
-                      </div>
-                      <div>
-                        <label className={`block text-sm font-medium ${colors.text} mb-1`}>Height (cm)</label>
-                        <input
-                          type="number"
-                          value={editForm.height}
-                          onChange={(e) => setEditForm({...editForm, height: e.target.value})}
-                          className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`}
-                        />
-                      </div>
-                      <div>
-                        <label className={`block text-sm font-medium ${colors.text} mb-1`}>Nutrients</label>
-                        <input
-                          type="text"
-                          value={editForm.nutrients}
-                          onChange={(e) => setEditForm({...editForm, nutrients: e.target.value})}
-                          className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`}
-                        />
-                      </div>
+              <div key={log.id} className={`${colors.bgAccent} rounded-lg p-4 border ${colors.border}`}>
+                {editingId === log.id ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <LabeledInput label="Plant" colors={colors} cls={inputCls} value={editForm.plant_name} onChange={(v) => setEditForm({ ...editForm, plant_name: v })} />
+                      <LabeledInput label={`Height (${lengthUnit})`} colors={colors} cls={inputCls} type="number" value={editForm.height} onChange={(v) => setEditForm({ ...editForm, height: v })} />
+                      <LabeledInput label="Nutrients" colors={colors} cls={inputCls} value={editForm.nutrients} onChange={(v) => setEditForm({ ...editForm, nutrients: v })} />
+                      <LabeledInput label="pH" colors={colors} cls={inputCls} type="number" value={editForm.ph} onChange={(v) => setEditForm({ ...editForm, ph: v })} />
+                      <LabeledInput label="EC" colors={colors} cls={inputCls} type="number" value={editForm.ec} onChange={(v) => setEditForm({ ...editForm, ec: v })} />
                     </div>
                     <div>
-                      <label className={`block text-sm font-medium ${colors.text} mb-1`}>Notes</label>
-                      <textarea
-                        value={editForm.notes}
-                        onChange={(e) => setEditForm({...editForm, notes: e.target.value})}
-                        className={`w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text}`}
-                        rows={3}
-                      />
+                      <label className={`block text-sm ${colors.text} mb-1`}>Notes</label>
+                      <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} className={inputCls} rows={2} />
                     </div>
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => saveLog(log.id)}
-                        className={`px-4 py-2 ${colors.primaryBg} text-white rounded-lg text-sm hover:opacity-90 transition-opacity flex items-center gap-2`}
-                      >
-                        <Save size={16} />
-                        Save Changes
+                      <button onClick={() => saveLog(log.id)} className={`px-4 py-2 ${colors.primaryBg} text-white rounded-lg text-sm flex items-center gap-2`}>
+                        <Save size={16} /> Save
                       </button>
-                      <button
-                        onClick={cancelEditing}
-                        className={`px-4 py-2 ${colors.bgAccent} ${colors.text} rounded-lg text-sm hover:opacity-80 transition-opacity flex items-center gap-2`}
-                      >
-                        <X size={16} />
-                        Cancel
+                      <button onClick={cancelEditing} className={`px-4 py-2 ${colors.bgSecondary} ${colors.text} rounded-lg text-sm border ${colors.border} flex items-center gap-2`}>
+                        <X size={16} /> Cancel
                       </button>
                     </div>
                   </div>
                 ) : (
-                  // View Mode
                   <div>
                     <div className="flex justify-between items-start mb-3">
                       <div>
                         <h3 className={`text-lg font-semibold ${colors.text}`}>{log.plant_name}</h3>
-                        <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
-                          <div className="flex items-center gap-1">
-                            <Calendar size={14} />
-                            {formatDate(log.created_at)}
-                          </div>
-                          {log.image_url && (
-                            <div className="flex items-center gap-1">
-                              <Camera size={14} />
-                              Has Image
-                            </div>
-                          )}
+                        <div className={`flex items-center gap-4 text-sm ${colors.textMuted} mt-1`}>
+                          <span className="flex items-center gap-1"><Calendar size={14} /> {formatDate(log.created_at)}</span>
+                          {log.growth_stage && <span>{stageLabel(log.growth_stage)}</span>}
+                          {log.image_url && <span className="flex items-center gap-1"><Camera size={14} /> Photo</span>}
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button
-                          onClick={() => startEditing(log)}
-                          className={`${colors.textMuted} hover:${colors.primary} transition-colors p-2 rounded`}
-                          title="Edit log"
-                        >
-                          <Edit3 size={18} />
-                        </button>
-                        <button
-                          onClick={() => deleteLog(log.id)}
-                          className={`${colors.textMuted} hover:text-red-500 transition-colors p-2 rounded`}
-                          title="Delete log"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <button onClick={() => startEditing(log)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit"><Edit3 size={18} /></button>
+                        <button onClick={() => removeLog(log.id)} className={`${colors.textMuted} hover:text-red-500 p-2`} title="Delete"><Trash2 size={18} /></button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                      <div className={`${colors.bgAccent} p-3 rounded`}>
-                        <span className={`text-sm ${colors.textMuted}`}>Height</span>
-                        <div className={`font-semibold ${colors.text}`}>{log.height} cm</div>
-                      </div>
-                      <div className={`${colors.bgAccent} p-3 rounded`}>
-                        <span className={`text-sm ${colors.textMuted}`}>Nutrients</span>
-                        <div className={`font-semibold ${colors.text}`}>{log.nutrients || 'Not specified'}</div>
-                      </div>
-                      <div className={`${colors.bgAccent} p-3 rounded`}>
-                        <span className={`text-sm ${colors.textMuted}`}>pH</span>
-                        <div className={`font-semibold ${colors.text}`}>{log.ph || 'Not measured'}</div>
-                      </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                      <Cell colors={colors} label="Height" value={formatLength(log.height, lengthUnit)} />
+                      <Cell colors={colors} label="pH" value={log.ph ?? '—'} />
+                      <Cell colors={colors} label="EC" value={log.ec ?? '—'} />
+                      <Cell colors={colors} label="PPM" value={log.ppm ?? '—'} />
+                      <Cell colors={colors} label="Water" value={log.water_temp != null ? formatTemp(log.water_temp, tempUnit) : '—'} />
+                      <Cell colors={colors} label="Air" value={log.air_temp != null ? formatTemp(log.air_temp, tempUnit) : '—'} />
+                      <Cell colors={colors} label="Humidity" value={log.humidity != null ? `${log.humidity}%` : '—'} />
+                      <Cell colors={colors} label="Light" value={log.light_hours != null ? `${log.light_hours} h` : '—'} />
                     </div>
 
-                    {log.notes && (
-                      <div className={`${colors.bgAccent} p-3 rounded mb-3`}>
-                        <span className={`text-sm ${colors.textMuted}`}>Notes</span>
-                        <div className={`${colors.text} mt-1`}>{log.notes}</div>
-                      </div>
-                    )}
-
+                    <div className={`text-sm ${colors.textMuted} mb-2`}><strong>Nutrients:</strong> {log.nutrients || 'Not specified'}</div>
+                    {log.notes && <div className={`${colors.bgSecondary} p-3 rounded text-sm ${colors.text} italic`}>{log.notes}</div>}
                     {log.image_url && (
-                      <div className="mt-3">
-                        <img
-                          src={resolveImageUrl(log.image_url)}
-                          alt={`${log.plant_name} growth photo`}
-                          className="max-w-xs rounded-lg shadow-md"
-                        />
-                      </div>
+                      <img src={resolveImageUrl(log.image_url)} alt={`${log.plant_name} growth`} className="max-w-xs rounded-lg shadow-md mt-3" />
                     )}
                   </div>
                 )}
@@ -274,5 +146,19 @@ const LogViewer = ({ onRefresh }) => {
     </div>
   );
 };
+
+const Cell = ({ colors, label, value }) => (
+  <div className={`${colors.bgSecondary} p-2 rounded`}>
+    <span className={`text-xs ${colors.textMuted}`}>{label}</span>
+    <div className={`font-semibold ${colors.text}`}>{value}</div>
+  </div>
+);
+
+const LabeledInput = ({ label, colors, cls, value, onChange, type = 'text' }) => (
+  <div>
+    <label className={`block text-sm ${colors.text} mb-1`}>{label}</label>
+    <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className={cls} />
+  </div>
+);
 
 export default LogViewer;
