@@ -7,7 +7,7 @@ import GrowthChart from './GrowthChart';
 // timestamp the log was created.
 const logDate = (log) => log.date || log.created_at;
 
-const PlantCard = ({ plantName, plantLogs }) => {
+const PlantCard = ({ plantName, plantLogs, large = false }) => {
   const { colors } = useTheme();
 
   // Sort logs chronologically by their effective date for charting.
@@ -76,17 +76,22 @@ const PlantCard = ({ plantName, plantLogs }) => {
       </div>
 
       {/* Growth Chart */}
-      {chartData.length > 1 && (
-        <div className="mb-12">
+      {chartData.length > 1 ? (
+        <div className="mb-8">
           <h4 className={`text-lg font-semibold ${colors.text} mb-3`}>Growth Progress</h4>
-          <div className="h-64">
-            <GrowthChart data={chartData} />
-          </div>
+          <GrowthChart data={chartData} large={large} />
+        </div>
+      ) : (
+        <div className={`mb-8 ${colors.bgAccent} rounded-xl p-6 text-center`}>
+          <TrendingUp size={28} className={`mx-auto mb-2 ${colors.textMuted} opacity-60`} />
+          <p className={`text-sm ${colors.textMuted}`}>
+            Add another log to see the growth trend.
+          </p>
         </div>
       )}
 
       {/* Recent Logs - Fixed spacing to prevent overlap */}
-      <div className="mt-12">
+      <div>
         <h4 className={`text-lg font-semibold ${colors.text} mb-3 flex items-center gap-2`}>
           <FileText size={18} />
           Recent Logs
@@ -138,7 +143,7 @@ const PlantCard = ({ plantName, plantLogs }) => {
   );
 };
 
-const PlantCards = ({ plants }) => {
+const PlantCards = ({ plants, selectedPlant }) => {
   const { colors } = useTheme();
 
   if (!plants || Object.keys(plants).length === 0) {
@@ -151,6 +156,20 @@ const PlantCards = ({ plants }) => {
         <p className={`${colors.textMuted}`}>
           Add your first plant to start tracking its growth journey!
         </p>
+      </div>
+    );
+  }
+
+  // A single selected plant gets a larger, focused detail chart.
+  if (selectedPlant && plants[selectedPlant]) {
+    return (
+      <div className="space-y-6">
+        <PlantCard
+          key={selectedPlant}
+          plantName={selectedPlant}
+          plantLogs={plants[selectedPlant]}
+          large
+        />
       </div>
     );
   }
