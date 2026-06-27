@@ -18,8 +18,9 @@
     "dist": "npm run pre-build && npm run build:frontend && electron-builder",
     "health": "node scripts/health-check.js",
     "test:server": "node test-server.mjs",
+    "test:migrate": "node test-migrate.mjs",
     "test:e2e": "node test-e2e.cjs",
-    "test": "npm run test:server",
+    "test": "npm run test:migrate && npm run test:server",
     "package": "npm run test:e2e && package.bat"
   },
   "build": {
@@ -32,6 +33,8 @@
     "files": [
       "main.js",
       "server.js",
+      "validation.js",
+      "db/**/*",
       "preload.js",
       "frontend/dist/**/*",
       "node_modules/**/*",

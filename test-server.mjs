@@ -138,9 +138,104 @@ try {
   logs = await j(await fetch(`${base}/logs`));
   check('all Tomato XL gone', logs.length === 0);
 
+  /* ---------------------- Plants (first-class) ---------------------- */
+
+  r = await fetch(`${base}/plants`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Cherry', variety: 'Sungold', species: 'tomato', reservoir_volume: 50 }),
+  });
+  let plant = await j(r);
+  check('POST /plants created', r.status === 201 && plant.id > 0 && plant.name === 'Cherry' && plant.archived === false);
+  check('POST /plants keeps metadata', plant.variety === 'Sungold' && plant.species === 'tomato' && plant.reservoir_volume === 50);
+
+  r = await fetch(`${base}/plants`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Cherry' }),
+  });
+  check('POST /plants duplicate -> 409', r.status === 409);
+
+  let plants = await j(await fetch(`${base}/plants`));
+  check('GET /plants includes new plant', plants.some((p) => p.id === plant.id));
+
+  // Log referencing plant_id with rich measurements.
+  r = await fetch(`${base}/logs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_id: plant.id, date: '2026-06-26', height: 30, nutrients: 'GH', ph: 6.1, ec: 1.8, ppm: 900, water_temp: 19, humidity: 65, growth_stage: 'vegetative' }),
+  });
+  let richLog = await j(r);
+  check('POST /logs with plant_id + measurements', r.status === 201 && richLog.plant_id === plant.id && richLog.ph === 6.1 && richLog.ec === 1.8 && richLog.growth_stage === 'vegetative');
+  check('POST /logs denormalizes plant_name', richLog.plant_name === 'Cherry');
+
+  let filtered = await j(await fetch(`${base}/logs?plant_id=${plant.id}`));
+  check('GET /logs?plant_id filters', filtered.length === 1 && filtered[0].id === richLog.id);
+
+  // Rename cascades to logs.
+  r = await fetch(`${base}/plants/${plant.id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Cherry Bomb' }),
+  });
+  let renamed = await j(r);
+  check('PUT /plants rename', r.status === 200 && renamed.name === 'Cherry Bomb');
+  filtered = await j(await fetch(`${base}/logs?plant_id=${plant.id}`));
+  check('rename cascades to log plant_name', filtered[0].plant_name === 'Cherry Bomb');
+
+  // Archive hides from default list, keeps logs.
+  r = await fetch(`${base}/plants/${plant.id}/archive`, { method: 'POST' });
+  check('POST /plants/:id/archive', r.status === 200);
+  plants = await j(await fetch(`${base}/plants`));
+  check('archived excluded by default', !plants.some((p) => p.id === plant.id));
+  plants = await j(await fetch(`${base}/plants?archived=true`));
+  check('archived included with ?archived=true', plants.some((p) => p.id === plant.id));
+  filtered = await j(await fetch(`${base}/logs?plant_id=${plant.id}`));
+  check('archive keeps logs', filtered.length === 1);
+
+  // Hard delete cascades.
+  r = await fetch(`${base}/plants/${plant.id}`, { method: 'DELETE' });
+  let delPlant = await j(r);
+  check('DELETE /plants cascades logs', r.status === 200 && delPlant.deletedLogs === 1);
+  filtered = await j(await fetch(`${base}/logs?plant_id=${plant.id}`));
+  check('logs gone after plant delete', filtered.length === 0);
+
+  /* ---------------------- Feeding edit/delete/fed ---------------------- */
+
+  r = await fetch(`${base}/feeding`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'Basil', nutrient_type: 'GH', ec_level: '1.0', frequency: 'weekly' }),
+  });
+  let sched2 = await j(r);
+  check('POST /feeding for edit tests', r.status === 201);
+
+  r = await fetch(`${base}/feeding/${sched2.id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'Basil', nutrient_type: 'Masterblend', ec_level: '1.4', frequency: 'daily' }),
+  });
+  let editedSched = await j(r);
+  check('PUT /feeding edits', r.status === 200 && editedSched.nutrient_type === 'Masterblend' && editedSched.frequency === 'daily');
+
+  r = await fetch(`${base}/feeding/${sched2.id}/fed`, { method: 'POST' });
+  let fedSched = await j(r);
+  check('POST /feeding/:id/fed sets last_fed', r.status === 200 && !!fedSched.last_fed);
+
+  r = await fetch(`${base}/feeding/${sched2.id}`, { method: 'DELETE' });
+  check('DELETE /feeding removes', r.status === 200);
+  r = await fetch(`${base}/feeding/${sched2.id}/fed`, { method: 'POST' });
+  check('feeding fed on missing -> 404', r.status === 404);
+
+  /* ---------------------------- Settings ---------------------------- */
+
+  let settings = await j(await fetch(`${base}/settings`));
+  check('GET /settings defaults metric', settings.units.length === 'cm' && settings.ppm_scale === 500);
+
+  r = await fetch(`${base}/settings`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ units: { length: 'in', temp: 'F', volume: 'bogus' }, ppm_scale: 999 }),
+  });
+  settings = await j(r);
+  check('PUT /settings clamps enums', settings.units.length === 'in' && settings.units.temp === 'F' && settings.units.volume === 'liters' && settings.ppm_scale === 500);
+
   // Persistence
   const raw = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-  check('data file persisted shape', Array.isArray(raw.logs) && Array.isArray(raw.schedules) && typeof raw.nextId === 'number');
+  check('data file persisted shape', Array.isArray(raw.logs) && Array.isArray(raw.schedules) && Array.isArray(raw.plants) && typeof raw.nextId === 'number' && raw.schemaVersion === 2);
 
   // Backward-compat: old-shape file without schedules
   fs.writeFileSync(dataFile, JSON.stringify({ logs: [], nextId: 1 }));

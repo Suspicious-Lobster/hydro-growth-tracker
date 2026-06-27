@@ -1,86 +1,40 @@
 // Embedded backend for Hydro Growth Tracker.
 //
-// This Express app is backed by a single JSON file and is the app's only
-// data service in both development and production. It is created as a factory
-// so the Electron main process can supply storage paths, and so it can be
-// exercised in isolation by tests.
+// This Express app is backed by a single JSON file and is the app's only data
+// service in both development and production. File I/O and the data shape live
+// in db/repository.js; this module is just the HTTP layer. It is created as a
+// factory so the Electron main process can supply storage paths, and so it can
+// be exercised in isolation by tests.
 
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { Parser } from 'json2csv';
 import fs from 'fs';
-import path from 'path';
 
-// Default shape of the JSON data file.
-export const emptyData = () => ({ logs: [], schedules: [], nextId: 1, nextScheduleId: 1 });
+import * as repo from './db/repository.js';
+import { runMigration } from './db/migrate.js';
+import { validateLog, validatePlant, validateSchedule } from './validation.js';
 
-// Validate a log payload. `requireDate` is false for updates, where the edit
-// form does not resend the date.
-export function validateLog(body, { requireDate } = { requireDate: true }) {
-  const { plant_name, date, height, nutrients, notes } = body;
-  const errors = [];
-
-  if (!plant_name || typeof plant_name !== 'string' || plant_name.trim().length === 0) {
-    errors.push('Plant name is required and must be a non-empty string');
-  } else if (plant_name.length > 100) {
-    errors.push('Plant name must be less than 100 characters');
-  }
-
-  if (requireDate) {
-    if (!date) {
-      errors.push('Date is required');
-    } else if (isNaN(Date.parse(date))) {
-      errors.push('Date must be a valid date format');
-    }
-  }
-
-  if (height === undefined || height === null || height === '') {
-    errors.push('Height is required');
-  } else {
-    const heightNum = parseFloat(height);
-    if (isNaN(heightNum) || heightNum < 0 || heightNum > 1000) {
-      errors.push('Height must be a number between 0 and 1000 cm');
-    }
-  }
-
-  if (!nutrients || typeof nutrients !== 'string' || nutrients.trim().length === 0) {
-    errors.push('Nutrients information is required');
-  } else if (nutrients.length > 500) {
-    errors.push('Nutrients description must be less than 500 characters');
-  }
-
-  if (notes && notes.length > 1000) {
-    errors.push('Notes must be less than 1000 characters');
-  }
-
-  return errors;
-}
+// Re-exported for backward compatibility with existing importers/tests.
+export const emptyData = repo.emptyData;
+export { validateLog };
 
 // Build the Express app. `dataFile` is the JSON store path; `uploadsDir` is
-// where images are written and served from. Both are created if missing.
+// where images are written and served from. Both are created if missing, and
+// any older-schema data file is migrated up before the app serves a request.
 export function createServer({ dataFile, uploadsDir }) {
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
   if (!fs.existsSync(dataFile)) {
-    fs.writeFileSync(dataFile, JSON.stringify(emptyData(), null, 2));
+    repo.save(dataFile, repo.emptyData());
+  } else {
+    runMigration(dataFile);
   }
 
-  // Read data, tolerating older files that predate the `schedules` collection.
-  const readData = () => {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-      return { ...emptyData(), ...parsed };
-    } catch (error) {
-      console.error('Error reading data:', error);
-      return emptyData();
-    }
-  };
-
-  const writeData = (data) => {
-    fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
-  };
+  const readData = () => repo.load(dataFile);
+  const writeData = (data) => repo.save(dataFile, data);
 
   const app = express();
   app.use(express.json({ limit: '10mb' }));
@@ -110,192 +64,222 @@ export function createServer({ dataFile, uploadsDir }) {
     },
   });
 
+  // Small wrapper so each handler gets fresh data and a uniform 500 on throw.
+  const handle = (fn) => (req, res) => {
+    try {
+      fn(req, res);
+    } catch (error) {
+      console.error(`Error handling ${req.method} ${req.path}:`, error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  };
+
   app.get('/', (_req, res) => {
     res.json({ status: 'Backend running', timestamp: new Date().toISOString() });
   });
 
+  /* ---------------------------- Plants ---------------------------- */
+
+  // GET /plants – all plants (active only unless ?archived=true), A→Z.
+  app.get('/plants', handle((req, res) => {
+    const data = readData();
+    const includeArchived = req.query.archived === 'true';
+    res.json(repo.listPlants(data, { includeArchived }));
+  }));
+
+  // GET /plants/:id – one plant.
+  app.get('/plants/:id', handle((req, res) => {
+    const data = readData();
+    const plant = repo.getPlant(data, parseInt(req.params.id, 10));
+    if (!plant) return res.status(404).json({ error: 'Plant not found' });
+    res.json(plant);
+  }));
+
+  // POST /plants – create a plant (name unique among active plants).
+  app.post('/plants', handle((req, res) => {
+    const errors = validatePlant(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    const existing = repo.findPlantByName(data, req.body.name);
+    if (existing && !existing.archived) {
+      return res.status(409).json({ error: 'A plant with this name already exists' });
+    }
+    const plant = repo.createPlant(data, req.body);
+    writeData(data);
+    res.status(201).json(plant);
+  }));
+
+  // PUT /plants/:id – update a plant; renaming cascades to logs & schedules.
+  app.put('/plants/:id', handle((req, res) => {
+    const errors = validatePlant(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    const plant = repo.updatePlant(data, parseInt(req.params.id, 10), req.body);
+    if (!plant) return res.status(404).json({ error: 'Plant not found' });
+    writeData(data);
+    res.json(plant);
+  }));
+
+  // POST /plants/:id/archive – soft delete (keeps logs).
+  app.post('/plants/:id/archive', handle((req, res) => {
+    const data = readData();
+    const plant = repo.archivePlant(data, parseInt(req.params.id, 10));
+    if (!plant) return res.status(404).json({ error: 'Plant not found' });
+    writeData(data);
+    res.json(plant);
+  }));
+
+  // DELETE /plants/:id – hard delete plant + cascade logs & schedules.
+  app.delete('/plants/:id', handle((req, res) => {
+    const data = readData();
+    const result = repo.deletePlantCascade(data, parseInt(req.params.id, 10));
+    if (!result) return res.status(404).json({ error: 'Plant not found' });
+    writeData(data);
+    res.json({
+      message: `Deleted plant "${result.plant.name}" and ${result.deletedLogs} logs`,
+      deletedLogs: result.deletedLogs,
+    });
+  }));
+
   /* ---------------------------- Logs ---------------------------- */
 
-  // GET /logs – all logs, newest first.
-  app.get('/logs', (_req, res) => {
-    try {
-      const data = readData();
-      const logs = [...data.logs].sort(
-        (a, b) => new Date(b.created_at) - new Date(a.created_at)
-      );
-      res.json(logs);
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-      res.status(500).json({ error: 'Failed to fetch logs' });
-    }
-  });
+  // GET /logs – all logs, newest first; optional ?plant_id= filter.
+  app.get('/logs', handle((req, res) => {
+    const data = readData();
+    res.json(repo.listLogs(data, { plant_id: req.query.plant_id }));
+  }));
 
-  // GET /logs/export – CSV download.
-  app.get('/logs/export', (_req, res) => {
-    try {
-      const data = readData();
-      const fields = ['id', 'plant_name', 'height', 'nutrients', 'notes', 'created_at'];
-      const parser = new Parser({ fields });
-      const csv = parser.parse(data.logs);
-      res.header('Content-Type', 'text/csv');
-      res.attachment(`hydro_logs_${Date.now()}.csv`);
-      res.send(csv);
-    } catch (error) {
-      console.error('Error exporting logs:', error);
-      res.status(500).json({ error: 'Failed to export logs' });
-    }
-  });
+  // GET /logs/export – CSV download (includes measurement columns).
+  app.get('/logs/export', handle((req, res) => {
+    const data = readData();
+    const fields = [
+      'id', 'plant_id', 'plant_name', 'date', 'height', 'height_unit', 'growth_stage',
+      'ph', 'ec', 'ppm', 'water_temp', 'air_temp', 'temp_unit', 'humidity',
+      'light_hours', 'reservoir_volume', 'nutrients', 'notes', 'created_at',
+    ];
+    const parser = new Parser({ fields });
+    const csv = parser.parse(data.logs);
+    res.header('Content-Type', 'text/csv');
+    res.attachment(`hydro_logs_${Date.now()}.csv`);
+    res.send(csv);
+  }));
 
   // POST /logs – create a log, with optional image upload.
-  app.post('/logs', upload.single('image'), (req, res) => {
-    try {
-      const errors = validateLog(req.body, { requireDate: true });
-      if (errors.length > 0) {
-        return res.status(400).json({ error: 'Validation failed', details: errors });
-      }
-
-      const { plant_name, date, height, nutrients, notes } = req.body;
-      const data = readData();
-
-      const newLog = {
-        id: data.nextId,
-        plant_name: plant_name.trim(),
-        date,
-        height: parseFloat(height),
-        nutrients: nutrients.trim(),
-        notes: notes?.trim() || '',
-        image_url: req.file ? `/uploads/${req.file.filename}` : null,
-        created_at: new Date().toISOString(),
-      };
-
-      data.logs.push(newLog);
-      data.nextId += 1;
-      writeData(data);
-      res.status(201).json(newLog);
-    } catch (error) {
-      console.error('Error adding log:', error);
-      res.status(500).json({ error: 'Failed to add log' });
+  app.post('/logs', upload.single('image'), handle((req, res) => {
+    const errors = validateLog(req.body, { requireDate: true });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
     }
-  });
+    const data = readData();
+    const body = { ...req.body, image_url: req.file ? `/uploads/${req.file.filename}` : null };
+    const log = repo.createLog(data, body);
+    writeData(data);
+    res.status(201).json(log);
+  }));
 
   // PUT /logs/:id – update a log (date and image are preserved).
-  app.put('/logs/:id', (req, res) => {
-    try {
-      const errors = validateLog(req.body, { requireDate: false });
-      if (errors.length > 0) {
-        return res.status(400).json({ error: 'Validation failed', details: errors });
-      }
-
-      const logId = parseInt(req.params.id, 10);
-      const data = readData();
-      const log = data.logs.find((l) => l.id === logId);
-
-      if (!log) {
-        return res.status(404).json({ error: 'Log not found' });
-      }
-
-      const { plant_name, height, nutrients, notes } = req.body;
-      log.plant_name = plant_name.trim();
-      log.height = parseFloat(height);
-      log.nutrients = nutrients.trim();
-      log.notes = notes?.trim() || '';
-      log.updated_at = new Date().toISOString();
-
-      writeData(data);
-      res.json(log);
-    } catch (error) {
-      console.error('Error updating log:', error);
-      res.status(500).json({ error: 'Failed to update log' });
+  app.put('/logs/:id', handle((req, res) => {
+    const errors = validateLog(req.body, { requireDate: false });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
     }
-  });
+    const data = readData();
+    const log = repo.updateLog(data, parseInt(req.params.id, 10), req.body);
+    if (!log) return res.status(404).json({ error: 'Log not found' });
+    writeData(data);
+    res.json(log);
+  }));
 
-  // DELETE /logs/plant/:plantName – delete all logs for a plant.
-  app.delete('/logs/plant/:plantName', (req, res) => {
-    try {
-      const plantName = decodeURIComponent(req.params.plantName);
-      const data = readData();
-      const initialCount = data.logs.length;
-
-      data.logs = data.logs.filter((log) => log.plant_name !== plantName);
-      const deletedCount = initialCount - data.logs.length;
-
-      writeData(data);
-      res.json({
-        message: `Deleted ${deletedCount} logs for plant "${plantName}"`,
-        deletedCount,
-      });
-    } catch (error) {
-      console.error('Error deleting plant logs:', error);
-      res.status(500).json({ error: 'Failed to delete plant logs' });
-    }
-  });
+  // DELETE /logs/plant/:plantName – delete all logs for a plant name.
+  // Deprecated: prefer DELETE /plants/:id. Kept as a thin alias during the
+  // transition so older clients keep working.
+  app.delete('/logs/plant/:plantName', handle((req, res) => {
+    const plantName = decodeURIComponent(req.params.plantName);
+    const data = readData();
+    const deletedCount = repo.deleteLogsByPlantName(data, plantName);
+    writeData(data);
+    res.json({ message: `Deleted ${deletedCount} logs for plant "${plantName}"`, deletedCount });
+  }));
 
   // DELETE /logs/:id – delete a single log.
-  app.delete('/logs/:id', (req, res) => {
-    try {
-      const logId = parseInt(req.params.id, 10);
-      const data = readData();
-      const logIndex = data.logs.findIndex((log) => log.id === logId);
-
-      if (logIndex === -1) {
-        return res.status(404).json({ error: 'Log not found' });
-      }
-
-      const [deletedLog] = data.logs.splice(logIndex, 1);
-      writeData(data);
-      res.json({ message: `Successfully deleted log with ID: ${logId}`, deletedLog });
-    } catch (error) {
-      console.error('Error deleting log:', error);
-      res.status(500).json({ error: 'Failed to delete log' });
-    }
-  });
+  app.delete('/logs/:id', handle((req, res) => {
+    const data = readData();
+    const deleted = repo.deleteLog(data, parseInt(req.params.id, 10));
+    if (!deleted) return res.status(404).json({ error: 'Log not found' });
+    writeData(data);
+    res.json({ message: `Successfully deleted log with ID: ${deleted.id}`, deletedLog: deleted });
+  }));
 
   /* -------------------------- Feeding --------------------------- */
 
   // GET /feeding – all saved feeding schedules.
-  app.get('/feeding', (_req, res) => {
-    try {
-      const data = readData();
-      res.json(data.schedules);
-    } catch (error) {
-      console.error('Error fetching feeding schedules:', error);
-      res.status(500).json({ error: 'Failed to fetch feeding schedules' });
-    }
-  });
+  app.get('/feeding', handle((_req, res) => {
+    const data = readData();
+    res.json(repo.listSchedules(data));
+  }));
 
   // POST /feeding – create a feeding schedule.
-  app.post('/feeding', (req, res) => {
-    try {
-      const { plant_name, nutrient_type, ec_level, frequency, notes } = req.body;
-
-      if (!plant_name || !nutrient_type) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: ['Plant name and nutrient type are required'],
-        });
-      }
-
-      const data = readData();
-      const newSchedule = {
-        id: data.nextScheduleId,
-        plant_name,
-        nutrient_type,
-        ec_level: ec_level || '',
-        frequency: frequency || 'daily',
-        notes: notes || '',
-        last_fed: null,
-        created_at: new Date().toISOString(),
-      };
-
-      data.schedules.push(newSchedule);
-      data.nextScheduleId += 1;
-      writeData(data);
-      res.status(201).json(newSchedule);
-    } catch (error) {
-      console.error('Error adding feeding schedule:', error);
-      res.status(500).json({ error: 'Failed to add feeding schedule' });
+  app.post('/feeding', handle((req, res) => {
+    const errors = validateSchedule(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
     }
-  });
+    const data = readData();
+    const schedule = repo.createSchedule(data, req.body);
+    writeData(data);
+    res.status(201).json(schedule);
+  }));
+
+  // PUT /feeding/:id – edit a feeding schedule.
+  app.put('/feeding/:id', handle((req, res) => {
+    const errors = validateSchedule(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    const schedule = repo.updateSchedule(data, parseInt(req.params.id, 10), req.body);
+    if (!schedule) return res.status(404).json({ error: 'Feeding schedule not found' });
+    writeData(data);
+    res.json(schedule);
+  }));
+
+  // POST /feeding/:id/fed – mark a schedule as fed now (drives reminders).
+  app.post('/feeding/:id/fed', handle((req, res) => {
+    const data = readData();
+    const schedule = repo.markFed(data, parseInt(req.params.id, 10));
+    if (!schedule) return res.status(404).json({ error: 'Feeding schedule not found' });
+    writeData(data);
+    res.json(schedule);
+  }));
+
+  // DELETE /feeding/:id – delete a feeding schedule.
+  app.delete('/feeding/:id', handle((req, res) => {
+    const data = readData();
+    const deleted = repo.deleteSchedule(data, parseInt(req.params.id, 10));
+    if (!deleted) return res.status(404).json({ error: 'Feeding schedule not found' });
+    writeData(data);
+    res.json({ message: `Deleted feeding schedule ${deleted.id}`, deleted });
+  }));
+
+  /* -------------------------- Settings -------------------------- */
+
+  // GET /settings – app settings (units, ppm scale, default species).
+  app.get('/settings', handle((_req, res) => {
+    const data = readData();
+    res.json(repo.getSettings(data));
+  }));
+
+  // PUT /settings – merge a settings patch (enums clamped).
+  app.put('/settings', handle((req, res) => {
+    const data = readData();
+    const settings = repo.updateSettings(data, req.body);
+    writeData(data);
+    res.json(settings);
+  }));
 
   // Multer / upload errors land here as JSON instead of an HTML stack trace.
   // eslint-disable-next-line no-unused-vars
