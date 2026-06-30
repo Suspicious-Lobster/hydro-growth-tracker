@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Save } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
+import { useAssistant } from '../contexts/AssistantContext';
 import { useToast } from '../contexts/ToastContext';
 import { apiErrorMessage } from '../api/api';
 import { SPECIES_OPTIONS } from '../data/recommendations';
@@ -9,6 +10,7 @@ import { SPECIES_OPTIONS } from '../data/recommendations';
 const SettingsPanel = () => {
   const { colors } = useTheme();
   const { settings, updateSettings } = useAppData();
+  const { effectsEnabled, muted, toggleEffects, setMuted, resetDismissed, startTour } = useAssistant();
   const toast = useToast();
 
   const [form, setForm] = useState({
@@ -39,6 +41,7 @@ const SettingsPanel = () => {
   const selectCls = `w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500`;
 
   return (
+    <div className="space-y-6">
     <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-6 ${colors.border} border space-y-6`}>
       <div>
         <h2 className={`text-2xl font-bold ${colors.primary}`}>⚙️ Settings</h2>
@@ -82,8 +85,52 @@ const SettingsPanel = () => {
         <Save size={16} /> {busy ? 'Saving…' : 'Save Settings'}
       </button>
     </div>
+
+    {/* Fun & effects — saved instantly to this device (no Save button needed). */}
+    <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-6 ${colors.border} border space-y-4`}>
+      <div>
+        <h2 className={`text-2xl font-bold ${colors.primary}`}>🌿 Fun &amp; Effects</h2>
+        <p className={colors.textMuted}>Bud the assistant and the app's ambient animations. Saved on this device.</p>
+      </div>
+      <Toggle colors={colors} label="Animated effects" description="Swaying leaves and mascot animations." checked={effectsEnabled} onChange={toggleEffects} />
+      <Toggle colors={colors} label="Bud the assistant" description="Proactive grow tips. Turn off to mute pop-ups." checked={!muted} onChange={() => setMuted(!muted)} />
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => { resetDismissed(); toast.success('Tips reset — Bud will share them again'); }}
+          className={`${colors.bgAccent} ${colors.text} border ${colors.border} px-4 py-2 rounded-lg text-sm font-medium`}
+        >
+          Reset dismissed tips
+        </button>
+        <button
+          onClick={() => { startTour(); toast.success('Bud will show you around 🌿'); }}
+          className={`${colors.bgAccent} ${colors.text} border ${colors.border} px-4 py-2 rounded-lg text-sm font-medium`}
+        >
+          Replay the welcome tour
+        </button>
+      </div>
+    </div>
+    </div>
   );
 };
+
+const Toggle = ({ colors, label, description, checked, onChange }) => (
+  <div className="flex items-center justify-between gap-4">
+    <div>
+      <div className={`font-medium ${colors.text}`}>{label}</div>
+      {description && <div className={`text-sm ${colors.textMuted}`}>{description}</div>}
+    </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onChange}
+      className={`relative w-12 h-6 rounded-full flex-shrink-0 transition-colors ${checked ? colors.primaryBg : colors.bgAccent} border ${colors.border}`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-6' : ''}`} />
+    </button>
+  </div>
+);
 
 const Field = ({ label, colors, children }) => (
   <div>

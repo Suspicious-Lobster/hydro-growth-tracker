@@ -3,7 +3,11 @@ import React, { useState } from 'react';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { AppDataProvider, useAppData } from './contexts/AppDataContext';
+import { AssistantProvider, useAssistant } from './contexts/AssistantContext';
+import { TOUR_STEPS } from './data/onboarding';
 import ErrorBoundary from './components/ErrorBoundary';
+import BudMascot from './components/Assistant/BudMascot';
+import AmbientLeaves from './components/Ambient/AmbientLeaves';
 import AddLogForm from './components/AddLogForm';
 import FeedingSchedule from './components/FeedingSchedule';
 import ExportCSVButton from './components/ExportCSVButton';
@@ -26,10 +30,16 @@ const TABS = [
 
 function AppContent() {
   const { plants, logs, loading, error, refresh } = useAppData();
+  const { tourStep, tourDone } = useAssistant();
   const [selectedPlantId, setSelectedPlantId] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
 
   const selectedPlant = plants.find((p) => p.id === selectedPlantId) || null;
+
+  // While the welcome tour is running, gently highlight the tab its current step
+  // wants the user to visit.
+  const tourActive = !tourDone && tourStep != null && tourStep < TOUR_STEPS.length;
+  const tourTab = tourActive ? TOUR_STEPS[tourStep].tab : null;
 
   const handlePlantSelect = (id) => {
     setSelectedPlantId(id);
@@ -47,6 +57,8 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text flex transition-colors duration-300">
+      <AmbientLeaves />
+      <BudMascot activeTab={activeTab} selectedPlant={selectedPlant} onNavigate={setActiveTab} />
       <PlantSidebar
         selectedPlantId={selectedPlantId}
         onPlantSelect={handlePlantSelect}
@@ -80,7 +92,7 @@ function AppContent() {
                   activeTab === tab.key
                     ? 'bg-light-primary dark:bg-dark-primary text-white shadow-md'
                     : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-bg-accent dark:hover:bg-dark-bg-accent'
-                }`}
+                } ${tourTab === tab.key ? 'ring-2 ring-light-primary dark:ring-dark-primary animate-pulse' : ''}`}
               >
                 {tab.label}
               </button>
@@ -139,7 +151,9 @@ function App() {
       <ErrorBoundary>
         <ToastProvider>
           <AppDataProvider>
-            <AppContent />
+            <AssistantProvider>
+              <AppContent />
+            </AssistantProvider>
           </AppDataProvider>
         </ToastProvider>
       </ErrorBoundary>

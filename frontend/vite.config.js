@@ -14,6 +14,9 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom'],
           charts: ['recharts'],
+          // three.js is heavy and only needed for the 3D Lush mascot, which is
+          // lazy-loaded. Keep it in its own chunk, out of the entry bundle.
+          three: ['three'],
         },
       },
     },
