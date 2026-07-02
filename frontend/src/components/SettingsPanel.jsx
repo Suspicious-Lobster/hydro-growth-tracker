@@ -10,7 +10,7 @@ import { SPECIES_OPTIONS } from '../data/recommendations';
 const SettingsPanel = () => {
   const { colors } = useTheme();
   const { settings, updateSettings } = useAppData();
-  const { effectsEnabled, muted, toggleEffects, setMuted, resetDismissed, startTour } = useAssistant();
+  const { effectsEnabled, muted, soundEnabled, toggleEffects, setMuted, setSoundEnabled, resetDismissed, startTour } = useAssistant();
   const toast = useToast();
 
   const [form, setForm] = useState({
@@ -94,6 +94,7 @@ const SettingsPanel = () => {
       </div>
       <Toggle colors={colors} label="Animated effects" description="Swaying leaves and mascot animations." checked={effectsEnabled} onChange={toggleEffects} />
       <Toggle colors={colors} label="Bud the assistant" description="Proactive grow tips. Turn off to mute pop-ups." checked={!muted} onChange={() => setMuted(!muted)} />
+      <Toggle colors={colors} label="Sound effects" description="Tiny pops, snores, and lighter flicks from Bud. Quiet by design." checked={soundEnabled} onChange={() => setSoundEnabled(!soundEnabled)} />
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => { resetDismissed(); toast.success('Tips reset — Bud will share them again'); }}

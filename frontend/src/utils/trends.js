@@ -5,6 +5,7 @@
 
 import { sortLogsByDate, growthRate } from './stats';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
+import { getProfile } from '../data/recommendations';
 
 const num = (v) => {
   const n = parseFloat(v);
@@ -58,4 +59,45 @@ export function strongGrowth(logs) {
 // True once the plant is in (or past) late flowering — harvest is near.
 export function isHarvestWindow(stage) {
   return stage === GROWTH_STAGES.LATE_FLOWER || stage === GROWTH_STAGES.HARVEST;
+}
+
+// "14-21 days" -> 21. Falls back through a single leading number, else null.
+const parseMaxDays = (str) => {
+  const range = /(\d+)\s*-\s*(\d+)/.exec(str || '');
+  if (range) return parseInt(range[2], 10);
+  const single = /(\d+)/.exec(str || '');
+  return single ? parseInt(single[1], 10) : null;
+};
+
+// Estimated days until harvest, or null when the plant isn't in the home stretch.
+// Anchored on the first log recorded in late flowering plus the species' typical
+// late-flower duration (default 21 days). `now` is injected for purity.
+// Returns { ready, days }: ready flips once a harvest-stage log exists or the
+// estimate reaches zero.
+export function harvestCountdown(logs, species, now) {
+  const sorted = sortLogsByDate(logs);
+  if (sorted.some((l) => l.growth_stage === GROWTH_STAGES.HARVEST)) return { ready: true, days: 0 };
+  const start = sorted.find((l) => l.growth_stage === GROWTH_STAGES.LATE_FLOWER);
+  if (!start) return null;
+  const profile = getProfile(species);
+  const dur = parseMaxDays(profile?.stages?.[GROWTH_STAGES.LATE_FLOWER]?.duration) ?? 21;
+  const eta = logDay(start) + dur * 86400000;
+  const days = Math.max(0, Math.ceil((eta - now) / 86400000));
+  return { ready: days === 0, days };
+}
+
+// Consecutive calendar days (UTC buckets) with at least one log, counting back from
+// today — or yesterday, so the streak isn't "broken" before the user logs today.
+export function careStreak(logs, now) {
+  const days = new Set(
+    (logs || [])
+      .map((l) => Math.floor(logDay(l) / 86400000))
+      .filter((d) => Number.isFinite(d)),
+  );
+  const today = Math.floor(now / 86400000);
+  const anchor = days.has(today) ? today : days.has(today - 1) ? today - 1 : null;
+  if (anchor === null) return 0;
+  let n = 0;
+  while (days.has(anchor - n)) n += 1;
+  return n;
 }

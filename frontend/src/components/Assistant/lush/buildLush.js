@@ -250,6 +250,11 @@ export const ARM_SMOKE = {
 // Right arm raised up-and-out to the side to wave hello (clear of the leaf), with a
 // side-to-side wiggle added on top.
 export const ARM_WAVE = { R: { x: -0.4, y: 0.0, z: 2.4 } };
+// Both arms thrown up high for a big morning stretch (mirrors of each other).
+export const ARM_STRETCH = {
+  L: { x: -0.3, y: 0.0, z: -2.55 },
+  R: { x: -0.3, y: 0.0, z: 2.55 },
+};
 
 // One articulated arm: a shoulder pivot Group with the capsule hanging from it and a
 // `hand` Group at the wrist that props (joint / lighter) can be parented to.
@@ -340,6 +345,95 @@ function makeLighter(track) {
   return { group, flame, flameMaterial: flameMat };
 }
 
+// A chunky chocolate-chip cookie for the munchies emote. Lives in the LEFT fist in
+// the lighter's spot; BudThree swaps their visibility while he snacks.
+function makeSnack(track) {
+  const group = new THREE.Group();
+  const doughMat = new THREE.MeshStandardMaterial({ color: '#d9a05b', roughness: 0.9 });
+  track.materials.push(doughMat);
+  const doughGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.09, 16);
+  track.geometries.push(doughGeo);
+  const cookie = new THREE.Mesh(doughGeo, doughMat);
+  group.add(cookie);
+
+  const chipMat = new THREE.MeshStandardMaterial({ color: '#4a2c17', roughness: 0.6 });
+  track.materials.push(chipMat);
+  const chipGeo = new THREE.SphereGeometry(0.045, 8, 8);
+  track.geometries.push(chipGeo);
+  const spots = [[0.1, 0.05, 0.06], [-0.08, 0.05, -0.1], [0.02, 0.05, -0.02], [-0.12, 0.05, 0.09], [0.13, 0.05, -0.08]];
+  for (const [x, y, z] of spots) {
+    const chip = new THREE.Mesh(chipGeo, chipMat);
+    chip.position.set(x, y, z);
+    cookie.add(chip);
+  }
+
+  // Same fist slot as the lighter, tilted so the cookie face points at the mouth
+  // when the left arm is up in the smoke/munch pose.
+  group.position.set(0, 0.06, 0.12);
+  group.rotation.set(1.6, 0.5, 0.4);
+  group.visible = false;
+  return { group, cookie };
+}
+
+// Cool-guy sunglasses that slide down over the eyes when the grow is dialed in.
+// Built in FACE space (the eyes sit at ±0.62, 0.3), floating just in front of the
+// eyeballs. BudThree slides them in from above and hides them when not earned.
+function makeShades(track) {
+  const group = new THREE.Group();
+  const lensMat = new THREE.MeshStandardMaterial({ color: '#101014', roughness: 0.25, metalness: 0.35 });
+  track.materials.push(lensMat);
+
+  const lensGeo = new THREE.CircleGeometry(0.56, 24);
+  track.geometries.push(lensGeo);
+  const left = new THREE.Mesh(lensGeo, lensMat);
+  left.position.set(-0.62, 0.3, 0.62);
+  const right = new THREE.Mesh(lensGeo, lensMat);
+  right.position.set(0.62, 0.3, 0.62);
+  group.add(left, right);
+
+  const barGeo = new THREE.BoxGeometry(0.55, 0.09, 0.05);
+  track.geometries.push(barGeo);
+  const bridge = new THREE.Mesh(barGeo, lensMat);
+  bridge.position.set(0, 0.42, 0.62);
+  group.add(bridge);
+
+  group.visible = false;
+  return { group };
+}
+
+// A jaunty party hat perched on the leaf for celebrations: striped cone + pompom.
+function makePartyHat(track) {
+  const group = new THREE.Group();
+  const coneMat = new THREE.MeshStandardMaterial({ color: '#e857a1', roughness: 0.55 });
+  track.materials.push(coneMat);
+  const coneGeo = new THREE.ConeGeometry(0.42, 0.95, 18);
+  track.geometries.push(coneGeo);
+  const cone = new THREE.Mesh(coneGeo, coneMat);
+  group.add(cone);
+
+  const bandMat = new THREE.MeshStandardMaterial({ color: '#ffd23f', roughness: 0.55 });
+  track.materials.push(bandMat);
+  const bandGeo = new THREE.ConeGeometry(0.29, 0.66, 18);
+  track.geometries.push(bandGeo);
+  const band = new THREE.Mesh(bandGeo, bandMat);
+  band.position.y = 0.16;
+  group.add(band);
+
+  const pomMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 });
+  track.materials.push(pomMat);
+  const pomGeo = new THREE.SphereGeometry(0.13, 10, 10);
+  track.geometries.push(pomGeo);
+  const pom = new THREE.Mesh(pomGeo, pomMat);
+  pom.position.y = 0.52;
+  group.add(pom);
+
+  // Perched up and slightly right on the big back leaf, tilted for maximum jaunt.
+  group.position.set(0.55, 2.3, 0.15);
+  group.rotation.z = -0.35;
+  group.visible = false;
+  return { group };
+}
+
 // A small pool of rising smoke puffs (each its own material so opacity is independent).
 function makeSmoke(track, count = 8) {
   const group = new THREE.Group();
@@ -427,11 +521,14 @@ export function buildLush() {
   const limbs = makeLimbs(track);
   body.add(limbs.group);
 
-  // Smoking props: joint in the right fist, lighter in the left.
+  // Smoking props: joint in the right fist, lighter in the left. The snack shares
+  // the left fist — BudThree swaps lighter/snack visibility during the munch emote.
   const joint = makeJoint(track);
   limbs.handR.add(joint.group);
   const lighter = makeLighter(track);
   limbs.handL.add(lighter.group);
+  const snack = makeSnack(track);
+  limbs.handL.add(snack.group);
   // Smoke rises in body space so it tracks Bud but isn't squashed by the breathe.
   const smoke = makeSmoke(track);
   body.add(smoke.group);
@@ -451,6 +548,12 @@ export function buildLush() {
   mouth.group.position.set(0, -0.55, 0.15);
   face.add(mouth.group);
 
+  // Accessories (hidden until earned): shades over the eyes, party hat up top.
+  const shades = makeShades(track);
+  face.add(shades.group);
+  const hat = makePartyHat(track);
+  body.add(hat.group);
+
   const shadow = makeShadow(track);
   root.add(shadow);
 
@@ -468,7 +571,7 @@ export function buildLush() {
 
   return {
     root, body, leaf, face, eyes: [left, right], mouth, shadow,
-    limbs, joint, lighter, smoke, zzz,
+    limbs, joint, lighter, snack, smoke, zzz, shades, hat,
     dispose,
   };
 }

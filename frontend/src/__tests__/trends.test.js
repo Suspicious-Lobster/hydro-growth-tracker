@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { phTrend, growthStall, strongGrowth, isHarvestWindow } from '../utils/trends';
+import { phTrend, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
 
 const log = (date, fields) => ({ date, created_at: `${date}T00:00:00Z`, ...fields });
 const PH_RANGE = { min: 5.8, max: 6.2 };
@@ -61,5 +61,59 @@ describe('trends.isHarvestWindow', () => {
   it('is false earlier in the lifecycle', () => {
     expect(isHarvestWindow('vegetative')).toBe(false);
     expect(isHarvestWindow(null)).toBe(false);
+  });
+});
+
+describe('trends.harvestCountdown', () => {
+  const day = (d) => new Date(`2026-01-${String(d).padStart(2, '0')}`).getTime();
+
+  it('counts down from the first late-flowering log (default 21 days)', () => {
+    const logs = [
+      log('2026-01-01', { growth_stage: 'mid_flowering' }),
+      log('2026-01-05', { growth_stage: 'late_flowering' }),
+    ];
+    // 10 days into a 21-day late-flower window -> ~11 days left
+    const hc = harvestCountdown(logs, 'generic', day(15));
+    expect(hc.ready).toBe(false);
+    expect(hc.days).toBe(11);
+  });
+
+  it('is ready once the estimate reaches zero', () => {
+    const logs = [log('2026-01-01', { growth_stage: 'late_flowering' })];
+    expect(harvestCountdown(logs, 'generic', day(25))).toMatchObject({ ready: true, days: 0 });
+  });
+
+  it('is ready immediately when a harvest-stage log exists', () => {
+    const logs = [log('2026-01-01', { growth_stage: 'harvest_ready' })];
+    expect(harvestCountdown(logs, 'generic', day(2))).toMatchObject({ ready: true, days: 0 });
+  });
+
+  it('returns null before late flowering is ever logged', () => {
+    const logs = [log('2026-01-01', { growth_stage: 'vegetative' })];
+    expect(harvestCountdown(logs, 'generic', day(2))).toBeNull();
+  });
+});
+
+describe('trends.careStreak', () => {
+  const now = new Date('2026-01-10T12:00:00Z').getTime();
+
+  it('counts consecutive logging days ending today', () => {
+    const logs = [log('2026-01-08', {}), log('2026-01-09', {}), log('2026-01-10', {})];
+    expect(careStreak(logs, now)).toBe(3);
+  });
+
+  it("doesn't break the streak before today's log is in (anchors on yesterday)", () => {
+    const logs = [log('2026-01-07', {}), log('2026-01-08', {}), log('2026-01-09', {})];
+    expect(careStreak(logs, now)).toBe(3);
+  });
+
+  it('resets across a gap', () => {
+    const logs = [log('2026-01-05', {}), log('2026-01-06', {}), log('2026-01-09', {}), log('2026-01-10', {})];
+    expect(careStreak(logs, now)).toBe(2);
+  });
+
+  it('is zero when the latest log is older than yesterday', () => {
+    const logs = [log('2026-01-05', {}), log('2026-01-06', {})];
+    expect(careStreak(logs, now)).toBe(0);
   });
 });

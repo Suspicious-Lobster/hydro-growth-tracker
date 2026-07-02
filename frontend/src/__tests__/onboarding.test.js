@@ -29,16 +29,27 @@ describe('onboarding TOUR_STEPS', () => {
     expect(plant.tab).toBe('plants');
     expect(plant.autoCompleteOn).toBe('plantAdded');
   });
+
+  it('includes an optional first-measurement step right after the plant step', () => {
+    const idx = TOUR_STEPS.findIndex((s) => s.id === 'log');
+    expect(idx).toBe(TOUR_STEPS.findIndex((s) => s.id === 'plant') + 1);
+    const log = TOUR_STEPS[idx];
+    expect(log.tab).toBe('add-log');
+    expect(log.optional).toBe(true);
+    expect(log.autoCompleteOn).toBe('logAdded');
+  });
 });
 
 describe('onboarding stepCompleted', () => {
   const plantStep = { autoCompleteOn: 'plantAdded' };
   const feedStep = { autoCompleteOn: 'scheduleAdded' };
+  const logStep = { autoCompleteOn: 'logAdded' };
   const infoStep = { primary: 'next' };
 
   it('advances when the relevant collection grows', () => {
     expect(stepCompleted(plantStep, { plants: 0, schedules: 0 }, { plants: 1, schedules: 0 })).toBe(true);
     expect(stepCompleted(feedStep, { plants: 1, schedules: 0 }, { plants: 1, schedules: 1 })).toBe(true);
+    expect(stepCompleted(logStep, { plants: 1, logs: 0, schedules: 0 }, { plants: 1, logs: 1, schedules: 0 })).toBe(true);
   });
 
   it('does not advance when the count is unchanged', () => {

@@ -107,6 +107,39 @@ describe('assistantTips.buildCandidates', () => {
     const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: [], stage: 'harvest_ready' });
     expect(cands.some((c) => c.id === 'insight:harvest:1:harvest_ready' && c.kind === 'insight')).toBe(true);
   });
+
+  it('emits a day-count harvest countdown once late flowering is logged', () => {
+    const now = new Date('2026-01-15').getTime();
+    const logs = [{ height: 90, date: '2026-01-05', created_at: '2026-01-05T00:00:00Z', growth_stage: 'late_flowering' }];
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs, stage: 'late_flowering' }, now);
+    const cd = cands.find((c) => c.id.startsWith('insight:harvestcd:1:'));
+    expect(cd).toBeTruthy();
+    expect(cd.text).toMatch(/days until/);
+  });
+
+  it('celebrates harvest day as a milestone', () => {
+    const now = new Date('2026-02-01').getTime();
+    const logs = [{ height: 95, date: '2026-01-30', created_at: '2026-01-30T00:00:00Z', growth_stage: 'harvest_ready' }];
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs, stage: 'harvest_ready' }, now);
+    const hd = cands.find((c) => c.id === 'milestone:harvestday:1');
+    expect(hd).toBeTruthy();
+    expect(hd.kind).toBe('milestone');
+  });
+
+  it('praises a 3-day logging streak (and picks the highest earned tier)', () => {
+    const now = new Date('2026-01-10T12:00:00Z').getTime();
+    const logs = ['08', '09', '10'].map((d) => ({ height: 10, date: `2026-01-${d}`, created_at: `2026-01-${d}T00:00:00Z` }));
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs }, now);
+    expect(cands.some((c) => c.id === 'milestone:streak:1:3')).toBe(true);
+    expect(cands.some((c) => c.id === 'milestone:streak:1:7')).toBe(false);
+  });
+
+  it('does not praise a broken streak', () => {
+    const now = new Date('2026-01-10T12:00:00Z').getTime();
+    const logs = [{ height: 10, date: '2026-01-05', created_at: '2026-01-05T00:00:00Z' }];
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs }, now);
+    expect(cands.some((c) => c.id.startsWith('milestone:streak:'))).toBe(false);
+  });
 });
 
 describe('assistantTips.answerQuestion', () => {
@@ -140,6 +173,30 @@ describe('assistantTips.answerQuestion', () => {
     expect(a.id).toBe('answer:fun');
     expect(typeof a.text).toBe('string');
     expect(a.text.length).toBeGreaterThan(0);
+  });
+
+  it('week summarizes logs, growth, pH spread, and feedings', () => {
+    const now = new Date('2026-01-10T12:00:00Z').getTime();
+    const logs = [
+      { height: 20, ph: 6.0, date: '2026-01-05', created_at: '2026-01-05T00:00:00Z' },
+      { height: 24.5, ph: 6.4, date: '2026-01-09', created_at: '2026-01-09T00:00:00Z' },
+      { height: 10, ph: 5.0, date: '2025-12-01', created_at: '2025-12-01T00:00:00Z' }, // outside the window
+    ];
+    const schedules = [{ id: 1, plant_id: 1, frequency: 'weekly', last_fed: '2026-01-06', active: true }];
+    const a = answerQuestion({ selectedPlant: plant, alerts: [], logs, schedules }, 'week', { now });
+    expect(a.id).toBe('answer:week');
+    expect(a.text).toMatch(/2 logs/);
+    expect(a.text).toMatch(/4\.5cm/);
+    expect(a.text).toMatch(/pH ranged 6–6\.4/);
+    expect(a.text).toMatch(/1 feeding/);
+  });
+
+  it('week reports a quiet week when there are no recent logs', () => {
+    const now = new Date('2026-01-10T12:00:00Z').getTime();
+    const logs = [{ height: 10, date: '2025-12-01', created_at: '2025-12-01T00:00:00Z' }];
+    const a = answerQuestion({ selectedPlant: plant, alerts: [], logs, schedules: [] }, 'week', { now });
+    expect(a.id).toBe('answer:week:quiet');
+    expect(a.text).toMatch(/quiet/i);
   });
 });
 

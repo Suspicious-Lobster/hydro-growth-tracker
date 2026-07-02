@@ -16,6 +16,7 @@ export const useAssistant = () => {
 const KEYS = {
   effects: 'bud.effectsEnabled',
   muted: 'bud.muted',
+  sound: 'bud.soundEnabled',
   position: 'bud.position',
   minimized: 'bud.minimized',
   dismissed: 'bud.dismissedTipIds',
@@ -43,6 +44,8 @@ const write = (key, value) => {
 export const AssistantProvider = ({ children }) => {
   const [effectsEnabled, setEffectsEnabled] = useState(() => read(KEYS.effects, true));
   const [muted, setMutedState] = useState(() => read(KEYS.muted, false));
+  // Tiny synthesized sound effects (bubble pop, snore, lighter flick). Opt-in.
+  const [soundEnabled, setSoundEnabledState] = useState(() => read(KEYS.sound, false));
   const [position, setPositionState] = useState(() => read(KEYS.position, DEFAULT_POSITION));
   const [minimized, setMinimizedState] = useState(() => read(KEYS.minimized, false));
   const [dismissedTipIds, setDismissedTipIds] = useState(() => read(KEYS.dismissed, []));
@@ -54,6 +57,7 @@ export const AssistantProvider = ({ children }) => {
 
   useEffect(() => write(KEYS.effects, effectsEnabled), [effectsEnabled]);
   useEffect(() => write(KEYS.muted, muted), [muted]);
+  useEffect(() => write(KEYS.sound, soundEnabled), [soundEnabled]);
   useEffect(() => write(KEYS.position, position), [position]);
   useEffect(() => write(KEYS.minimized, minimized), [minimized]);
   useEffect(() => write(KEYS.dismissed, dismissedTipIds), [dismissedTipIds]);
@@ -63,6 +67,7 @@ export const AssistantProvider = ({ children }) => {
 
   const toggleEffects = useCallback(() => setEffectsEnabled((v) => !v), []);
   const setMuted = useCallback((v) => setMutedState(Boolean(v)), []);
+  const setSoundEnabled = useCallback((v) => setSoundEnabledState(Boolean(v)), []);
   const setPosition = useCallback((p) => setPositionState(p), []);
   const setMinimized = useCallback((v) => setMinimizedState(Boolean(v)), []);
   const markShown = useCallback((now) => setLastShownAtState(now), []);
@@ -76,13 +81,13 @@ export const AssistantProvider = ({ children }) => {
   const endTour = useCallback(() => { setTourDone(true); setTourStepState(null); }, []);
 
   const value = useMemo(() => ({
-    effectsEnabled, muted, position, minimized, dismissedTipIds, lastShownAt,
+    effectsEnabled, muted, soundEnabled, position, minimized, dismissedTipIds, lastShownAt,
     tourStep, tourDone,
-    toggleEffects, setMuted, setPosition, setMinimized, markShown, dismissTip, resetDismissed,
+    toggleEffects, setMuted, setSoundEnabled, setPosition, setMinimized, markShown, dismissTip, resetDismissed,
     startTour, setTourStep, endTour,
-  }), [effectsEnabled, muted, position, minimized, dismissedTipIds, lastShownAt,
+  }), [effectsEnabled, muted, soundEnabled, position, minimized, dismissedTipIds, lastShownAt,
     tourStep, tourDone,
-    toggleEffects, setMuted, setPosition, setMinimized, markShown, dismissTip, resetDismissed,
+    toggleEffects, setMuted, setSoundEnabled, setPosition, setMinimized, markShown, dismissTip, resetDismissed,
     startTour, setTourStep, endTour]);
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;

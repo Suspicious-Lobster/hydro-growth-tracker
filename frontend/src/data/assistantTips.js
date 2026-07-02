@@ -9,7 +9,7 @@
 import { totalGrowth, daysTracked, latestLog, currentHeight } from '../utils/stats';
 import { stageLabel, getStageGuidance, getProfile } from './recommendations';
 import { feedingStatus } from '../utils/feeding';
-import { phTrend, growthStall, strongGrowth, isHarvestWindow } from '../utils/trends';
+import { phTrend, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
 
 // Higher number = more important. Alerts always outrank chit-chat. Reminders
 // (feeding/logging) sit just below alerts; insights (trends) below milestones.
@@ -42,6 +42,14 @@ const IDLE_TIPS = [
   "Clean reservoir, happy roots. Just sayin'.",
   "Good things grow to those who track.",
 ];
+
+// Logging-streak praise, biggest first (find() picks the highest earned tier).
+const STREAK_MILESTONES = [14, 7, 3];
+const STREAK_COPY = {
+  3: (name) => `Three days straight of logging ${name} — Bud salutes the dedication. 🫡`,
+  7: (name) => `A full WEEK of daily logs for ${name}. You're officially a grow nerd (compliment). 🏅`,
+  14: (name) => `Fourteen-day logging streak on ${name}?! Legendary. The chart thanks you. 👑`,
+};
 
 // Chill little hellos for when Bud pops up (dashboard, no plant picked yet).
 const GREETING_TIPS = [
@@ -114,6 +122,18 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         priority: TIP_KINDS.milestone,
       });
     }
+    // Care streaks — praise runs of consecutive logging days at 3 / 7 / 14.
+    const streak = careStreak(logs, now);
+    const streakHit = STREAK_MILESTONES.find((m) => streak >= m);
+    if (streakHit) {
+      candidates.push({
+        id: `milestone:streak:${pid}:${streakHit}`,
+        kind: 'milestone',
+        expression: 'celebrating',
+        text: STREAK_COPY[streakHit](selectedPlant.name),
+        priority: TIP_KINDS.milestone,
+      });
+    }
   }
 
   // 3. Reminders + insights — need a selected plant with data.
@@ -166,7 +186,26 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         priority: TIP_KINDS.insight,
       });
     }
-    if (isHarvestWindow(stage)) {
+    // Harvest countdown: once late flowering is logged, Bud gets giddy and counts
+    // down; harvest day itself is a full-blown milestone.
+    const hc = harvestCountdown(logs, selectedPlant.species, now);
+    if (hc && hc.ready) {
+      candidates.push({
+        id: `milestone:harvestday:${pid}`,
+        kind: 'milestone', expression: 'celebrating',
+        text: `IT'S HARVEST TIME for ${selectedPlant.name}!! 🎉🌾 Months of care, all paid off. Enjoy the fruits (well... buds) of your labor!`,
+        priority: TIP_KINDS.milestone,
+      });
+    } else if (hc && hc.days <= 14) {
+      candidates.push({
+        id: `insight:harvestcd:${pid}:${hc.days}`,
+        kind: 'insight', expression: 'celebrating',
+        text: hc.days === 1
+          ? `ONE day until ${selectedPlant.name}'s harvest window. Bud can barely sit still. 🌾`
+          : `~${hc.days} days until ${selectedPlant.name} hits the harvest window. The countdown is ON. 🌾`,
+        priority: TIP_KINDS.insight,
+      });
+    } else if (isHarvestWindow(stage)) {
       candidates.push({
         id: `insight:harvest:${pid}:${stage}`,
         kind: 'insight', expression: 'celebrating',
@@ -236,6 +275,49 @@ export function answerQuestion(input = {}, key = 'status', opts = {}) {
       text: key === 'action'
         ? "Pick a plant from the sidebar and I'll tell you the next move. 🌱"
         : "Pick a plant and I'll give you the rundown. 🌿",
+    };
+  }
+
+  if (key === 'week') {
+    // A 7-day rundown: logging activity, height gain, pH spread, feedings done/due.
+    const weekAgo = now - 7 * 86400000;
+    const logTime = (l) => new Date(l.date ?? l.created_at).getTime();
+    const weekLogs = logs.filter((l) => {
+      const t = logTime(l);
+      return t >= weekAgo && t <= now;
+    });
+    if (!weekLogs.length) {
+      return {
+        ...base,
+        id: 'answer:week:quiet',
+        expression: 'idle',
+        text: `Pretty quiet week for ${selectedPlant.name} — no logs in the last 7 days. A fresh reading would make next week's report way juicier. 📋`,
+      };
+    }
+    const parts = [`${weekLogs.length} log${weekLogs.length === 1 ? '' : 's'}`];
+    const heights = weekLogs.map((l) => parseFloat(l.height)).filter((h) => !Number.isNaN(h));
+    if (heights.length >= 2) {
+      const gain = Math.round((Math.max(...heights) - Math.min(...heights)) * 10) / 10;
+      if (gain > 0) parts.push(`~${gain}cm of growth`);
+    }
+    const phs = weekLogs.map((l) => parseFloat(l.ph)).filter((p) => !Number.isNaN(p));
+    if (phs.length) {
+      const lo = Math.min(...phs);
+      const hi = Math.max(...phs);
+      parts.push(hi - lo <= 0.3 ? `pH rock-steady around ${hi}` : `pH ranged ${lo}–${hi}`);
+    }
+    const fed = schedules.filter((s) => s && s.last_fed && (() => {
+      const t = new Date(s.last_fed).getTime();
+      return t >= weekAgo && t <= now;
+    })()).length;
+    if (fed) parts.push(`${fed} feeding${fed === 1 ? '' : 's'} done`);
+    const dueNow = schedules.filter((s) => s && s.active !== false && feedingStatus(s, new Date(now)).due).length;
+    const ps = dueNow ? ` P.S. ${dueNow === 1 ? 'a feed is' : `${dueNow} feeds are`} due — just sayin'. 🍽️` : '';
+    return {
+      ...base,
+      id: 'answer:week',
+      expression: 'happy',
+      text: `${selectedPlant.name}'s week: ${parts.join(', ')}. Solid work. 🌿${ps}`,
     };
   }
 

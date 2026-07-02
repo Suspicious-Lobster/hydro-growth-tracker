@@ -6,6 +6,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 // calls onPick(key); the parent turns that into an answer in the speech bubble.
 const ITEMS = [
   { key: 'status', label: "How's my plant?" },
+  { key: 'week', label: 'How was my week?' },
   { key: 'action', label: 'What should I do?' },
   { key: 'fun', label: 'Tell me something' },
 ];

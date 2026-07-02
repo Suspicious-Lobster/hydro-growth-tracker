@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { buildLush, ARM_REST, ARM_SMOKE, ARM_WAVE, BLOODSHOT } from './lush/buildLush';
+import { buildLush, ARM_REST, ARM_SMOKE, ARM_WAVE, ARM_STRETCH, BLOODSHOT } from './lush/buildLush';
+import { flick, snore } from '../../utils/sound';
 
 // The living, 3D incarnation of Bud ("Lush"). Boots a tiny three.js scene, builds
 // the procedural leaf character, and runs one rAF loop that drives the four "alive"
@@ -31,12 +32,26 @@ const MOUTH_BASE = {
   celebrating: { open: 0.55, wide: 1.0 },
 };
 
-// Idle "spark up a smoke" emote: phase durations (seconds) and the body-space point
-// the smoke rises from (near Bud's mouth). Only fires while he's idle and undisturbed.
-const EMOTE = { raise: 1.0, spark: 1.4, puff: 2.4, wave: 1.5, cooldown: 8 };
+// Idle emote timing (seconds): the smoke bit runs raise→spark→puff→lower; the
+// single-phase emotes (wave / stretch / groove / munch) just run for their duration.
+// The smoke point is where the plume rises from (near Bud's mouth). Emotes only fire
+// while he's idle and undisturbed.
+const EMOTE = { raise: 1.0, spark: 1.4, puff: 2.4, wave: 2.4, stretch: 2.6, groove: 3.4, munch: 3.2, cooldown: 8 };
+// Cumulative pick weights for the idle emote roulette.
+const EMOTE_PICKS = [
+  [0.22, 'wave'], [0.5, 'smoke'], [0.68, 'stretch'], [0.85, 'groove'], [1.01, 'munch'],
+];
 const SMOKE_EMIT = { x: 0.26, y: 0.0, z: 0.97 };
 const COUGH_EMIT = { x: 0.05, y: -0.05, z: 0.78 }; // from the mouth, when he coughs
 const SLEEP_AFTER = 28; // seconds of stillness before Bud dozes off
+
+// Time-of-day awareness: at night he's heavy-lidded, breathes slower, and dozes off
+// sooner; in the morning he's a touch perkier. Returns multipliers the loop applies.
+const dayMood = (hour) => {
+  if (hour >= 22 || hour < 6) return { lid: 0.8, breathe: 0.85, sleepAfter: 0.5 }; // night owl
+  if (hour < 11) return { lid: 1.05, breathe: 1.15, sleepAfter: 1.2 };             // morning person
+  return { lid: 1, breathe: 1, sleepAfter: 1 };
+};
 
 // Bloodshot ramps from this resting amount up to MAX while he smokes, then fades.
 const VEIN_REST = 0.55 * BLOODSHOT;
@@ -52,19 +67,21 @@ const applyArmPose = (pivot, rest, smoke, t) => {
   pivot.rotation.z = lerp(rest.z, smoke.z, t);
 };
 
-export default function BudThree({ expression = 'idle', size = 108, dragging = false, talking = false, mood = 'neutral' }) {
+export default function BudThree({ expression = 'idle', size = 108, dragging = false, talking = false, mood = 'neutral', shades = false }) {
   const mountRef = useRef(null);
   // Live prop mirrors so the animation loop sees fresh values without re-init.
   const exprRef = useRef(expression);
   const dragRef = useRef(dragging);
   const talkRef = useRef(talking);
   const moodRef = useRef(mood);
+  const shadesRef = useRef(shades);
   const sceneApi = useRef(null);
 
   useEffect(() => { moodRef.current = mood; }, [mood]);
   useEffect(() => { exprRef.current = expression; }, [expression]);
   useEffect(() => { dragRef.current = dragging; }, [dragging]);
   useEffect(() => { talkRef.current = talking; }, [talking]);
+  useEffect(() => { shadesRef.current = shades; }, [shades]);
 
   // Boot the scene once on mount.
   useEffect(() => {
@@ -124,12 +141,15 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
 
     // ---- input + timing state ----
     const cursor = { x: 0, y: 0 };
+    const cursorPx = { x: 0, y: 0 }; // raw pixels, for drag-velocity physics
     const doze = { idle: 0, sleeping: false }; // idle seconds; flips to sleeping past SLEEP_AFTER
     const onPointerMove = (e) => {
       const w = window.innerWidth || 1;
       const h = window.innerHeight || 1;
       cursor.x = (e.clientX / w) * 2 - 1;
       cursor.y = (e.clientY / h) * 2 - 1;
+      cursorPx.x = e.clientX;
+      cursorPx.y = e.clientY;
       doze.idle = 0;          // any cursor movement wakes him / resets the idle clock
       doze.sleeping = false;
     };
@@ -153,9 +173,24 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
     let prevTalking = false;
     let prevExpr = exprRef.current;
     let sleepLid = 0;     // eased eyes-shut amount while dozing (0..1)
-    // emote.kind: 'smoke' (raise→spark→puff→lower) or 'wave' (a quick hello).
+    // emote.kind: 'smoke' (raise→spark→puff→lower) or a single-phase bit
+    // ('wave' | 'stretch' | 'groove' | 'munch').
     const emote = { phase: 'wait', kind: null, t: 0, next: 5 + Math.random() * 6 };
     const cough = { active: false, t: 0, dur: 0.85 };
+    // ---- physics-y dragging: pointer velocity drives a limb pendulum + body tilt,
+    // and letting go leaves a decaying wobble.
+    const vel = { x: 0, y: 0 };                  // smoothed px/s
+    const prevPx = { x: 0, y: 0, primed: false };
+    const swing = { a: 0, v: 0 };                // arm pendulum (radians)
+    const wobble = { t: 99, amp: 0 };            // drop reaction; t counts up
+    let prevDragging = false;
+    // ---- accessories + time-of-day + sound edge-detectors
+    let shadesBlend = 0;
+    let hatBlend = 0;
+    let hour = new Date().getHours();
+    let hourCheck = 0;
+    let prevFlameOn = false;
+    let prevBreathUp = false;
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
@@ -178,39 +213,76 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         }
       }
 
+      // --- time of day: refresh the hour once a minute ---
+      hourCheck += dt;
+      if (hourCheck >= 60) { hourCheck = 0; hour = new Date().getHours(); }
+      const tod = dayMood(hour);
+      const excited = moodRef.current === 'excited' && !doze.sleeping;
+
       // --- drag squash easing ---
       squash = lerp(squash, dragRef.current ? 1 : 0, 1 - Math.pow(0.001, dt));
 
-      // --- breathe (slow + deep while dozing) ---
-      breathePhase += dt * (doze.sleeping ? 0.45 : pose.breathe);
+      // --- drag physics: smoothed pointer velocity feeds an arm pendulum + a body
+      // tilt; releasing him leaves a decaying wobble sized by how fast he was moving.
+      if (prevPx.primed && dt > 0) {
+        const ivx = (cursorPx.x - prevPx.x) / dt;
+        const ivy = (cursorPx.y - prevPx.y) / dt;
+        vel.x = lerp(vel.x, dragRef.current ? ivx : 0, 0.3);
+        vel.y = lerp(vel.y, dragRef.current ? ivy : 0, 0.3);
+      }
+      prevPx.x = cursorPx.x; prevPx.y = cursorPx.y; prevPx.primed = true;
+      const drive = dragRef.current ? THREE.MathUtils.clamp(vel.x * 0.0035, -2.5, 2.5) : 0;
+      swing.v += (-32 * swing.a - 6.5 * swing.v + drive * 18) * dt;
+      swing.a = THREE.MathUtils.clamp(swing.a + swing.v * dt, -0.9, 0.9);
+      if (prevDragging && !dragRef.current) {
+        wobble.t = 0;
+        wobble.amp = THREE.MathUtils.clamp(Math.hypot(vel.x, vel.y) * 0.0006, 0.08, 0.4);
+        swing.v += THREE.MathUtils.clamp(vel.x * 0.008, -4, 4); // arms keep going a beat
+      }
+      prevDragging = dragRef.current;
+      wobble.t += dt;
+      const WOBBLE_DUR = 1.1;
+      const wobbling = wobble.t < WOBBLE_DUR;
+      const wob = wobbling
+        ? Math.sin(wobble.t * 14) * wobble.amp * (1 - wobble.t / WOBBLE_DUR)
+        : 0;
+
+      // --- breathe (slow + deep while dozing; perkier in the morning) ---
+      breathePhase += dt * (doze.sleeping ? 0.45 : pose.breathe * tod.breathe);
       const breath = Math.sin(breathePhase);
-      const bounce = pose.bounce ? Math.abs(Math.sin(elapsed * 6)) * 0.18 : 0;
+      const bounce = (pose.bounce ? Math.abs(Math.sin(elapsed * 6)) * 0.18 : 0)
+        + (excited ? Math.abs(Math.sin(elapsed * 3.2)) * 0.07 : 0);
       const sx = 1 + breath * 0.02 + squash * 0.14;
-      const sy = 1 + breath * 0.025 - squash * 0.12;
+      const sy = (1 + breath * 0.025 - squash * 0.12) * (1 + wob * 0.25);
       body.scale.set(sx, sy, 1 + breath * 0.02);
       body.position.y = breath * 0.05 + bounce - squash * 0.1;
 
-      // --- cursor lean (whole body) ---
+      // --- cursor lean (whole body), plus the drag tilt + drop wobble ---
+      const dragTilt = THREE.MathUtils.clamp(vel.x * 0.0009, -0.35, 0.35) * squash;
       const leanY = cursor.x * 0.4;
       const leanX = -cursor.y * 0.22 + breath * 0.03;
       body.rotation.y = lerp(body.rotation.y, leanY + squash * 0.12, 1 - Math.pow(0.0005, dt));
       body.rotation.x = lerp(body.rotation.x, leanX, 1 - Math.pow(0.002, dt));
-      body.rotation.z = lerp(body.rotation.z, squash * 0.06 * Math.sin(elapsed * 9), 0.2);
+      body.rotation.z = lerp(body.rotation.z, dragTilt + wob + squash * 0.04 * Math.sin(elapsed * 9), 0.25);
 
-      // --- idle emote machine: occasionally wave hello or spark up a smoke ---
+      // --- idle emote machine: wave, spark up, stretch, groove, or snack ---
       const idleOk = exprRef.current === 'idle' && !dragRef.current;
       emote.t += dt;
       switch (emote.phase) {
         case 'wait':
           if (!idleOk || doze.sleeping) emote.t = 0; // only count toward it while awake + chilling
           else if (emote.t >= emote.next) {
-            emote.kind = Math.random() < 0.45 ? 'wave' : 'smoke';
-            emote.phase = emote.kind === 'wave' ? 'wave' : 'raise';
+            const roll = Math.random();
+            emote.kind = (EMOTE_PICKS.find(([p]) => roll < p) || EMOTE_PICKS[0])[1];
+            emote.phase = emote.kind === 'smoke' ? 'raise' : emote.kind;
             emote.t = 0;
           }
           break;
         case 'wave':
-          if (emote.t >= EMOTE.wave) { emote.phase = 'cooldown'; emote.t = 0; }
+        case 'stretch':
+        case 'groove':
+        case 'munch':
+          if (emote.t >= EMOTE[emote.phase]) { emote.phase = 'cooldown'; emote.t = 0; }
           break;
         case 'raise':
           if (emote.t >= EMOTE.raise) { emote.phase = 'spark'; emote.t = 0; }
@@ -241,25 +313,72 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       if (!idleOk && (emote.phase === 'raise' || emote.phase === 'spark' || emote.phase === 'puff')) {
         emote.phase = 'lower'; emote.t = 0;
       }
-      if (!idleOk && emote.phase === 'wave') { emote.phase = 'cooldown'; emote.t = 0; }
+      if (!idleOk && (emote.phase === 'wave' || emote.phase === 'stretch' || emote.phase === 'groove' || emote.phase === 'munch')) {
+        emote.phase = 'cooldown'; emote.t = 0;
+      }
 
-      // Right arm holds the joint up while smoking AND does the waving; the left arm
-      // only comes up during the spark to light the joint, then drops away.
+      // Arm targets are picked by the emote KIND (which outlives the active phase into
+      // the cooldown) so the ease-back-to-rest never jumps between poses. Right arm
+      // holds the joint / waves / stretches; left arm lights, stretches, or snacks.
       const holding = emote.kind === 'smoke' && (emote.phase === 'raise' || emote.phase === 'spark' || emote.phase === 'puff');
       const waving = emote.phase === 'wave';
       const sparking = emote.phase === 'spark';
-      const rightTarget = waving ? ARM_WAVE.R : ARM_SMOKE.R;
-      armBlendR = lerp(armBlendR, (holding || waving) ? 1 : 0, 1 - Math.pow(0.004, dt));
-      armBlendL = lerp(armBlendL, sparking ? 1 : 0, 1 - Math.pow(0.002, dt));
+      const stretching = emote.phase === 'stretch';
+      const grooving = emote.phase === 'groove';
+      const munching = emote.phase === 'munch';
+      const rightTarget = emote.kind === 'wave' ? ARM_WAVE.R
+        : emote.kind === 'stretch' ? ARM_STRETCH.R : ARM_SMOKE.R;
+      const leftTarget = emote.kind === 'stretch' ? ARM_STRETCH.L : ARM_SMOKE.L;
+      armBlendR = lerp(armBlendR, (holding || waving || stretching) ? 1 : 0, 1 - Math.pow(0.004, dt));
+      armBlendL = lerp(armBlendL, (sparking || stretching || munching) ? 1 : 0, 1 - Math.pow(0.002, dt));
       applyArmPose(limbs.armR, ARM_REST.R, rightTarget, armBlendR);
-      applyArmPose(limbs.armL, ARM_REST.L, ARM_SMOKE.L, armBlendL);
+      applyArmPose(limbs.armL, ARM_REST.L, leftTarget, armBlendL);
+      let browBoost = 0;
       if (waving) {
-        limbs.armR.rotation.z += Math.sin(elapsed * 16) * 0.28 * armBlendR; // side-to-side wave
-        limbs.armR.rotation.x += Math.sin(elapsed * 16) * 0.05 * armBlendR;
+        // Theatrical hello: a big side-to-side arc, a lean into it, little hops, and
+        // raised brows — not just a stiff hand wobble.
+        limbs.armR.rotation.z += Math.sin(elapsed * 13) * 0.5 * armBlendR;
+        limbs.armR.rotation.x += Math.sin(elapsed * 13) * 0.1 * armBlendR;
+        body.rotation.z += 0.09 * armBlendR;
+        body.position.y += Math.abs(Math.sin(elapsed * 7)) * 0.12 * armBlendR;
+        browBoost = 0.25 * armBlendR;
       }
+      // Big stretch: arms up, body pulls tall, eyes scrunch into a yawn near the peak.
+      const stretchEnv = stretching ? Math.sin(Math.PI * Math.min(1, emote.t / EMOTE.stretch)) : 0;
+      if (stretching) {
+        body.scale.y *= 1 + stretchEnv * 0.07;
+        body.position.y += stretchEnv * 0.08;
+        body.rotation.x -= stretchEnv * 0.08; // leans back into it
+      }
+      if (grooving) {
+        // A little shoulder-swaying groove: sway, bob, arms pumping in alternation.
+        const beat = elapsed * 5.2;
+        body.rotation.z += Math.sin(beat) * 0.12;
+        body.position.y += Math.abs(Math.sin(beat)) * 0.1;
+        limbs.armL.rotation.z += Math.sin(beat) * 0.4;
+        limbs.armR.rotation.z += Math.sin(beat + Math.PI) * 0.4;
+        limbs.armL.rotation.x += Math.cos(beat) * 0.15;
+        limbs.armR.rotation.x += Math.cos(beat + Math.PI) * 0.15;
+      }
+      // Munchies: the cookie swaps in for the lighter while the left hand is up, and
+      // shrinks bite by bite with a chewing arm-bob.
+      const snacking = emote.kind === 'munch' && armBlendL > 0.04;
+      lush.snack.group.visible = snacking;
+      lush.lighter.group.visible = !snacking;
+      if (munching) {
+        limbs.armL.rotation.x += Math.sin(elapsed * 9) * 0.07 * armBlendL;
+        lush.snack.cookie.scale.setScalar(Math.max(0.25, 1 - (emote.t / EMOTE.munch) * 0.65));
+      } else if (emote.kind !== 'munch') {
+        lush.snack.cookie.scale.setScalar(1); // fresh cookie next time
+      }
+      // Drag physics: the pendulum swing rides on top of whatever pose the arms hold.
+      limbs.armL.rotation.z += swing.a;
+      limbs.armR.rotation.z += swing.a;
 
       // lighter flame: lit once the lighter has actually reached the joint
       const flameOn = sparking && armBlendL > 0.6;
+      if (flameOn && !prevFlameOn) flick(); // the spark-wheel scratch
+      prevFlameOn = flameOn;
       lighter.flame.visible = flameOn;
       if (flameOn) {
         lighter.flame.scale.set(0.9 + Math.sin(elapsed * 50) * 0.1, 0.7 + Math.abs(Math.sin(elapsed * 34)) * 0.5, 0.9);
@@ -296,8 +415,12 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       const canDoze = idleOk && (emote.phase === 'wait' || emote.phase === 'cooldown')
         && talkClock <= 0 && moodRef.current !== 'concerned';
       if (canDoze) doze.idle += dt; else { doze.idle = 0; doze.sleeping = false; }
-      if (doze.idle >= SLEEP_AFTER) doze.sleeping = true;
+      if (doze.idle >= SLEEP_AFTER * tod.sleepAfter) doze.sleeping = true; // nods off faster at night
       sleepLid = lerp(sleepLid, doze.sleeping ? 1 : 0, 1 - Math.pow(0.02, dt));
+      // One soft snore per breath cycle while he's fully under.
+      const breathUp = breath > 0;
+      if (doze.sleeping && sleepLid > 0.8 && breathUp && !prevBreathUp) snore();
+      prevBreathUp = breathUp;
       // Concerned: a worried resting look when his plant is unhealthy and nothing else is going on.
       const concerned = exprRef.current === 'idle' && moodRef.current === 'concerned'
         && !doze.sleeping && emote.phase === 'wait';
@@ -316,10 +439,17 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       const mb = MOUTH_BASE[exprRef.current] || MOUTH_BASE.idle;
       let mOpen = mb.open;
       let mWide = mb.wide;
+      if (excited) { mOpen = Math.max(mOpen, 0.12); mWide = Math.max(mWide, 0.9); } // can't hide it
       if (holding) { mOpen = 0.1; mWide = 0.32; }                  // pursed around the joint
       if (emote.phase === 'puff') {                                // exhaling — a few O pulses
         mOpen = 0.2 + Math.max(0, Math.sin(emote.t * 5)) * 0.5;
         mWide = 0.42;
+      }
+      if (waving || grooving) { mOpen = 0.2; mWide = 0.95; }       // grinning through it
+      if (stretching) { mOpen = stretchEnv * 1.1; mWide = 0.5; }   // biiig yawn at the peak
+      if (munching) {                                              // chomp chomp
+        mOpen = 0.12 + Math.max(0, Math.sin(elapsed * 9)) * 0.35 * armBlendL;
+        mWide = 0.55;
       }
       if (talkClock > 0) {                                         // chatting away
         mOpen = 0.12 + (0.5 + 0.5 * Math.sin(elapsed * 19)) * 0.6;
@@ -367,9 +497,12 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       // --- per-eye: gaze, lids, brows, bloodshot ---
       const smokeDroop = emote.phase === 'puff' ? 0.22 : 0; // chilled-out half-lids
       const concernDroop = concerned ? 0.3 : 0;
-      const wide = dragRef.current ? 1 : pose.lidOpen; // surprised while grabbed
-      // sleepLid forces the eyes shut while dozing.
-      const effLidOpen = Math.max(0, wide - smokeDroop - coughSquint - concernDroop) * (1 - blink) * (1 - sleepLid);
+      // Lids scale with the time of day (heavy at night) and pop a little when excited.
+      const wide = dragRef.current ? 1
+        : Math.min(1, pose.lidOpen * tod.lid + (excited ? 0.15 : 0));
+      // sleepLid forces the eyes shut while dozing; a big stretch scrunches them too.
+      const effLidOpen = Math.max(0, wide - smokeDroop - coughSquint - concernDroop - stretchEnv * 0.6)
+        * (1 - blink) * (1 - sleepLid);
       eyes.forEach((eye, i) => {
         const { pupil, lid, brow, R } = eye;
         // redness: brighten the capillaries and tint the sclera toward pink
@@ -391,7 +524,8 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         lid.position.y = lerp(lid.position.y, lidY, 0.4);
         // brow lifts with the pose / surprise, and lowers + knits inward when worried
         const browBaseY = 1.05 * R;
-        const targetBrowY = browBaseY + (pose.browLift + squash * 0.25 - (concerned ? 0.4 : 0)) * R;
+        const targetBrowY = browBaseY
+          + (pose.browLift + squash * 0.25 + browBoost + (excited ? 0.18 : 0) - (concerned ? 0.4 : 0)) * R;
         brow.position.y = lerp(brow.position.y, targetBrowY, 0.25);
         const targetBrowX = concerned ? (i === 0 ? 0.12 : -0.12) * R : 0;
         brow.position.x = lerp(brow.position.x, targetBrowX, 0.2);
@@ -402,6 +536,17 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       const sc = THREE.MathUtils.clamp(1 - lift * 0.5, 0.7, 1.15);
       shadow.scale.set(sc, sc, sc);
       shadow.material.opacity = THREE.MathUtils.clamp(0.5 - lift * 0.3, 0.12, 0.6);
+
+      // --- accessories: shades slide down when the grow's dialed in; a party hat
+      // pops on whenever he's celebrating ---
+      shadesBlend = lerp(shadesBlend, shadesRef.current ? 1 : 0, 1 - Math.pow(0.01, dt));
+      lush.shades.group.visible = shadesBlend > 0.02;
+      lush.shades.group.position.y = (1 - shadesBlend) * 1.6; // drop in from above
+      const hatOn = exprRef.current === 'celebrating';
+      hatBlend = lerp(hatBlend, hatOn ? 1 : 0, 1 - Math.pow(0.005, dt));
+      lush.hat.group.visible = hatBlend > 0.02;
+      const hatPop = hatBlend * (1 + Math.sin(Math.min(1, hatBlend) * Math.PI) * 0.25);
+      lush.hat.group.scale.setScalar(Math.max(0.001, hatPop));
 
       // --- "Zzz" drifting up while he dozes ---
       lush.zzz.sprites.forEach((z, i) => {
@@ -424,6 +569,12 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       window.__bud = {
         smoke: () => { emote.kind = 'smoke'; emote.phase = 'raise'; emote.t = 0; },
         wave: () => { emote.kind = 'wave'; emote.phase = 'wave'; emote.t = 0; },
+        stretch: () => { emote.kind = 'stretch'; emote.phase = 'stretch'; emote.t = 0; },
+        groove: () => { emote.kind = 'groove'; emote.phase = 'groove'; emote.t = 0; },
+        munch: () => { emote.kind = 'munch'; emote.phase = 'munch'; emote.t = 0; },
+        shades: (v = true) => { shadesRef.current = Boolean(v); },
+        setHour: (h) => { hour = h; hourCheck = -3600; },
+        setExpr: (e) => { exprRef.current = e; },
         rest: () => { emote.phase = 'cooldown'; emote.t = 0; doze.idle = 0; doze.sleeping = false; },
         sleep: () => { emote.phase = 'wait'; emote.t = 0; talkClock = 0; doze.idle = SLEEP_AFTER + 1; doze.sleeping = true; },
         setMood: (m) => { moodRef.current = m; },

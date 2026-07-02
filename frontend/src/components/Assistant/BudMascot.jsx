@@ -9,6 +9,8 @@ import { inferStage } from '../../data/recommendations';
 import { measurementAlerts } from '../../utils/ranges';
 import { dueCount } from '../../utils/feeding';
 import { selectTip, answerQuestion } from '../../data/assistantTips';
+import { isHarvestWindow } from '../../utils/trends';
+import { setSoundEnabled, pop } from '../../utils/sound';
 import { TOUR_STEPS, stepCompleted } from '../../data/onboarding';
 import BudLeaf from './BudLeaf';
 import BudRenderer from './BudRenderer';
@@ -24,7 +26,7 @@ const CHECK_INTERVAL_MS = 60 * 1000;
 export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const { getPlantLogs, schedules, logs: allLogs, plants, loading } = useAppData();
   const {
-    effectsEnabled, muted, position, minimized,
+    effectsEnabled, muted, soundEnabled, position, minimized,
     dismissedTipIds, lastShownAt, setPosition, setMinimized, markShown, dismissTip,
     tourStep, tourDone, startTour, setTourStep, endTour,
   } = useAssistant();
@@ -52,8 +54,16 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
     : [];
   const input = { activeTab, selectedPlant, alerts, logs, stage, schedules: plantSchedules };
 
-  // Worried resting face when the selected plant has a clearly out-of-range reading.
-  const mood = alerts.some((a) => a.status === 'out') ? 'concerned' : 'neutral';
+  // Worried resting face when the selected plant has a clearly out-of-range reading;
+  // visibly buzzing once it's in the harvest window with nothing wrong.
+  const mood = alerts.some((a) => a.status === 'out')
+    ? 'concerned'
+    : isHarvestWindow(stage) ? 'excited' : 'neutral';
+  // Sunglasses are EARNED: there's real data and every reading is in range.
+  const shades = Boolean(selectedPlant && latest && alerts.length === 0);
+
+  // Keep the sound module in sync with prefs (muting Bud also silences him).
+  useEffect(() => { setSoundEnabled(soundEnabled && !muted); }, [soundEnabled, muted]);
 
   // Keep the latest values in a ref so the interval/effect always sees fresh data
   // without re-subscribing on every render.
@@ -77,6 +87,9 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
     size: { w: SIZE, h: SIZE },
     onCommit: setPosition,
   });
+
+  // A soft pop whenever the speech bubble appears (no-op unless sound is enabled).
+  useEffect(() => { if (open) pop(); }, [open]);
 
   // Decide on first load whether a brand-new user gets the tour, or skip it for
   // anyone who already has plants.
@@ -222,7 +235,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
           className="block cursor-grab active:cursor-grabbing touch-none select-none drop-shadow-lg"
           style={{ touchAction: 'none' }}
         >
-          <BudRenderer expression={expression} animate={animate} size={SIZE} dragging={dragging} talking={open || tourActive} mood={mood} />
+          <BudRenderer expression={expression} animate={animate} size={SIZE} dragging={dragging} talking={open || tourActive} mood={mood} shades={shades} />
         </button>
         <button
           onClick={() => setMinimized(true)}

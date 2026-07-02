@@ -4,8 +4,8 @@
 // Each step: { id, text, expression, tab?, primary, optional?, autoCompleteOn? }
 //   primary        — 'next' | 'goto' | 'finish' (what the main button does)
 //   tab            — which app tab "Take me there" switches to (goto steps)
-//   autoCompleteOn — 'plantAdded' | 'scheduleAdded' — advance automatically when the
-//                    matching collection grows (so doing the thing moves the tour on)
+//   autoCompleteOn — 'plantAdded' | 'logAdded' | 'scheduleAdded' — advance automatically
+//                    when the matching collection grows (doing the thing moves the tour on)
 //   optional       — the secondary button reads "Skip this" instead of "Maybe later"
 
 export const TOUR_STEPS = [
@@ -22,6 +22,15 @@ export const TOUR_STEPS = [
     primary: 'goto',
     autoCompleteOn: 'plantAdded',
     text: "First up — let's add your first plant. Hit “Take me there” and give it a name. 🌱",
+  },
+  {
+    id: 'log',
+    expression: 'happy',
+    tab: 'add-log',
+    primary: 'goto',
+    optional: true,
+    autoCompleteOn: 'logAdded',
+    text: "Now let's log its first measurement — height, pH, whatever you've got. Every entry sharpens the chart. 📏",
   },
   {
     id: 'feeding',
@@ -48,10 +57,10 @@ export const TOUR_STEPS = [
 ];
 
 // Map an autoCompleteOn key to the collection whose growth completes the step.
-const COUNT_KEY = { plantAdded: 'plants', scheduleAdded: 'schedules' };
+const COUNT_KEY = { plantAdded: 'plants', scheduleAdded: 'schedules', logAdded: 'logs' };
 
 // True when `step` should auto-advance: it has an autoCompleteOn trigger and that
-// collection's count rose from prev -> counts. `prev`/`counts` are { plants, schedules }.
+// collection's count rose from prev -> counts. `prev`/`counts` are { plants, logs, schedules }.
 export function stepCompleted(step, prev, counts) {
   if (!step || !step.autoCompleteOn || !prev || !counts) return false;
   const key = COUNT_KEY[step.autoCompleteOn];

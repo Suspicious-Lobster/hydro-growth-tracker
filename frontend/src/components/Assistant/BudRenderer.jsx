@@ -11,7 +11,7 @@ import { detectWebGL } from '../../utils/webgl';
 
 const BudThree = lazy(() => import('./BudThree'));
 
-export default function BudRenderer({ expression = 'idle', animate = true, size = 108, dragging = false, talking = false, mood = 'neutral' }) {
+export default function BudRenderer({ expression = 'idle', animate = true, size = 108, dragging = false, talking = false, mood = 'neutral', shades = false }) {
   const use3D = useMemo(() => animate && detectWebGL(), [animate]);
 
   if (!use3D) {
@@ -20,7 +20,7 @@ export default function BudRenderer({ expression = 'idle', animate = true, size 
 
   return (
     <Suspense fallback={<BudLeaf expression={expression} animate={animate} size={size} />}>
-      <BudThree expression={expression} size={size} dragging={dragging} talking={talking} mood={mood} />
+      <BudThree expression={expression} size={size} dragging={dragging} talking={talking} mood={mood} shades={shades} />
     </Suspense>
   );
 }
