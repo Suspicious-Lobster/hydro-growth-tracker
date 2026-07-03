@@ -237,6 +237,72 @@ try {
   const raw = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
   check('data file persisted shape', Array.isArray(raw.logs) && Array.isArray(raw.schedules) && Array.isArray(raw.plants) && typeof raw.nextId === 'number' && raw.schemaVersion === 2);
 
+  /* ---------------------------- Backup ---------------------------- */
+
+  // Seed known data so this section doesn't depend on earlier tests' leftovers.
+  await fetch(`${base}/plants`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'BackupBasil' }),
+  });
+  await fetch(`${base}/logs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'BackupBasil', date: '2026-06-30', height: 8, nutrients: 'FloraGro' }),
+  });
+
+  // Snapshot the current store.
+  const backupRes = await fetch(`${base}/backup`);
+  check('GET /backup content-type json', backupRes.headers.get('content-type').includes('application/json'));
+  check('GET /backup is an attachment', (backupRes.headers.get('content-disposition') || '').includes('attachment'));
+  const backup = await j(backupRes);
+  check('GET /backup envelope shape',
+    backup._type === 'hydro-growth-tracker-backup' &&
+    Array.isArray(backup.data.plants) && Array.isArray(backup.data.logs));
+  const snapLogs = backup.data.logs.length;
+  const snapPlants = backup.data.plants.length;
+  check('backup captured existing data', snapLogs > 0 && snapPlants > 0);
+
+  // Reject junk.
+  r = await fetch(`${base}/backup/restore`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hello: 'world' }),
+  });
+  check('POST /backup/restore rejects non-backup', r.status === 400);
+
+  // Wipe via restore of an empty store, then confirm the data is gone.
+  r = await fetch(`${base}/backup/restore`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ _type: 'hydro-growth-tracker-backup', data: { schemaVersion: 2, plants: [], logs: [], schedules: [] } }),
+  });
+  check('POST /backup/restore accepts empty backup', r.status === 200);
+  check('restore emptied logs', (await j(await fetch(`${base}/logs`))).length === 0);
+
+  // Restore the earlier snapshot and confirm the records came back.
+  r = await fetch(`${base}/backup/restore`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(backup),
+  });
+  const restored = await j(r);
+  check('restore returns counts', r.status === 200 && restored.counts.logs === snapLogs && restored.counts.plants === snapPlants);
+  check('restore round-trips logs', (await j(await fetch(`${base}/logs`))).length === snapLogs);
+
+  // A restored store must not hand out a colliding id on the next insert.
+  const maxLogId = backup.data.logs.reduce((m, l) => Math.max(m, l.id || 0), 0);
+  r = await fetch(`${base}/logs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plant_name: 'Tomato', date: '2026-07-01', height: 20, nutrients: 'FloraGro' }),
+  });
+  const afterRestoreLog = await j(r);
+  check('restore rebuilds next id (no collision)', r.status === 201 && afterRestoreLog.id > maxLogId);
+
+  // A bare (envelope-less) v1-shaped dump is upgraded on restore.
+  r = await fetch(`${base}/backup/restore`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ logs: [{ id: 1, plant_name: 'LegacyBush', date: '2026-01-01', height: 5 }], nextId: 2 }),
+  });
+  check('restore accepts bare v1 dump', r.status === 200);
+  const legacyPlants = await j(await fetch(`${base}/plants`));
+  check('restore migrates v1 -> first-class plant', legacyPlants.some((p) => p.name === 'LegacyBush'));
+
   // Backward-compat: old-shape file without schedules
   fs.writeFileSync(dataFile, JSON.stringify({ logs: [], nextId: 1 }));
   feeding = await j(await fetch(`${base}/feeding`));

@@ -6,6 +6,7 @@ import { useAssistant } from '../contexts/AssistantContext';
 import { useToast } from '../contexts/ToastContext';
 import { apiErrorMessage } from '../api/api';
 import { SPECIES_OPTIONS } from '../data/recommendations';
+import BackupRestore from './BackupRestore';
 
 const SettingsPanel = () => {
   const { colors } = useTheme();
@@ -110,6 +111,8 @@ const SettingsPanel = () => {
         </button>
       </div>
     </div>
+
+    <BackupRestore />
     </div>
   );
 };

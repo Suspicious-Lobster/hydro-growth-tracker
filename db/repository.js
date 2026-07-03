@@ -75,6 +75,24 @@ export function save(dataFile, data) {
   fs.renameSync(tmp, dataFile);
 }
 
+// Turn an (already schema-current) data object from an imported backup into a
+// clean store ready to write: fill any missing top-level/settings fields, force
+// the collections to arrays, and rebuild the id counters from the max existing
+// id so a restored file can never hand out a colliding id. Callers should run a
+// possibly-older backup through migrateData() first to reach the current shape.
+export function prepareImport(raw) {
+  const data = normalize(raw);
+  data.plants = Array.isArray(data.plants) ? data.plants : [];
+  data.logs = Array.isArray(data.logs) ? data.logs : [];
+  data.schedules = Array.isArray(data.schedules) ? data.schedules : [];
+  const nextAfter = (rows) => rows.reduce((m, r) => Math.max(m, Number(r?.id) || 0), 0) + 1;
+  data.nextPlantId = Math.max(Number(data.nextPlantId) || 1, nextAfter(data.plants));
+  data.nextId = Math.max(Number(data.nextId) || 1, nextAfter(data.logs));
+  data.nextScheduleId = Math.max(Number(data.nextScheduleId) || 1, nextAfter(data.schedules));
+  data.schemaVersion = SCHEMA_VERSION;
+  return data;
+}
+
 /* -------------------------------- plants -------------------------------- */
 
 export function listPlants(data, { includeArchived = false } = {}) {

@@ -13,8 +13,12 @@ import { Parser } from 'json2csv';
 import fs from 'fs';
 
 import * as repo from './db/repository.js';
-import { runMigration } from './db/migrate.js';
+import { runMigration, migrateData } from './db/migrate.js';
 import { validateLog, validatePlant, validateSchedule } from './validation.js';
+
+// Marker embedded in exported backups so a restore can recognize its own files
+// (and reject an unrelated JSON) before replacing the store.
+const BACKUP_TYPE = 'hydro-growth-tracker-backup';
 
 // Re-exported for backward compatibility with existing importers/tests.
 export const emptyData = repo.emptyData;
@@ -303,6 +307,41 @@ export function createServer({ dataFile, uploadsDir }) {
     const settings = repo.updateSettings(data, req.body);
     writeData(data);
     res.json(settings);
+  }));
+
+  /* -------------------------- Backup ---------------------------- */
+
+  // GET /backup – download the entire data store (plants, logs, schedules,
+  // settings) as a single JSON file for safe-keeping or transfer. Photos live
+  // as separate files under uploads/ and are NOT included in this snapshot.
+  app.get('/backup', handle((_req, res) => {
+    const payload = {
+      _type: BACKUP_TYPE,
+      _version: 1,
+      exportedAt: new Date().toISOString(),
+      data: readData(),
+    };
+    res.header('Content-Type', 'application/json');
+    res.attachment(`hydro_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    res.send(JSON.stringify(payload, null, 2));
+  }));
+
+  // POST /backup/restore – REPLACE the entire store with an uploaded backup.
+  // Destructive by design. Accepts our own envelope or a bare data object, and
+  // upgrades an older-schema backup on the way in. Ids are rebuilt so a restore
+  // can never collide with future inserts.
+  app.post('/backup/restore', handle((req, res) => {
+    const body = req.body || {};
+    const raw = body._type === BACKUP_TYPE ? body.data : body;
+    if (!raw || typeof raw !== 'object' || (!Array.isArray(raw.plants) && !Array.isArray(raw.logs))) {
+      return res.status(400).json({ error: 'This does not look like a Hydro backup file.' });
+    }
+    const data = repo.prepareImport(migrateData(raw).data);
+    writeData(data);
+    res.json({
+      message: 'Backup restored',
+      counts: { plants: data.plants.length, logs: data.logs.length, schedules: data.schedules.length },
+    });
   }));
 
   // Multer / upload errors land here as JSON instead of an HTML stack trace.
