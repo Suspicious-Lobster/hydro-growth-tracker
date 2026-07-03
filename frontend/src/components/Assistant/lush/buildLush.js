@@ -250,10 +250,12 @@ export const ARM_SMOKE = {
 // Right arm raised up-and-out to the side to wave hello (clear of the leaf), with a
 // side-to-side wiggle added on top.
 export const ARM_WAVE = { R: { x: -0.4, y: 0.0, z: 2.4 } };
-// Both arms thrown up high for a big morning stretch (mirrors of each other).
+// Both arms flung up-and-out to the sides for a big stretch (mirrors of each other):
+// angled up to read as a reach, but splayed wide so the hands clear the face rather
+// than crowding it, and low enough to stay in front of the (enlarged) back leaf.
 export const ARM_STRETCH = {
-  L: { x: -0.3, y: 0.0, z: -2.55 },
-  R: { x: -0.3, y: 0.0, z: 2.55 },
+  L: { x: -0.3, y: -0.2, z: -2.68 },
+  R: { x: -0.3, y: 0.2, z: 2.68 },
 };
 
 // One articulated arm: a shoulder pivot Group with the capsule hanging from it and a
@@ -351,16 +353,16 @@ function makeSnack(track) {
   const group = new THREE.Group();
   const doughMat = new THREE.MeshStandardMaterial({ color: '#d9a05b', roughness: 0.9 });
   track.materials.push(doughMat);
-  const doughGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.09, 16);
+  const doughGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.12, 16);
   track.geometries.push(doughGeo);
   const cookie = new THREE.Mesh(doughGeo, doughMat);
   group.add(cookie);
 
   const chipMat = new THREE.MeshStandardMaterial({ color: '#4a2c17', roughness: 0.6 });
   track.materials.push(chipMat);
-  const chipGeo = new THREE.SphereGeometry(0.045, 8, 8);
+  const chipGeo = new THREE.SphereGeometry(0.06, 8, 8);
   track.geometries.push(chipGeo);
-  const spots = [[0.1, 0.05, 0.06], [-0.08, 0.05, -0.1], [0.02, 0.05, -0.02], [-0.12, 0.05, 0.09], [0.13, 0.05, -0.08]];
+  const spots = [[0.14, 0.07, 0.08], [-0.11, 0.07, -0.14], [0.03, 0.07, -0.03], [-0.16, 0.07, 0.12], [0.18, 0.07, -0.11]];
   for (const [x, y, z] of spots) {
     const chip = new THREE.Mesh(chipGeo, chipMat);
     chip.position.set(x, y, z);
