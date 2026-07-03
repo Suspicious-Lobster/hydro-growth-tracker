@@ -26,6 +26,7 @@ const PlantDetail = ({ plant, onBack }) => {
     // Convert canonical cm to the active display unit so the plotted line
     // matches the axis label and the stat cards.
     height: log.height == null ? null : Math.round(fromCm(parseFloat(log.height), lengthUnit) * 100) / 100,
+    ph: log.ph != null ? parseFloat(log.ph) : null,
     ec: log.ec != null ? parseFloat(log.ec) : null,
   }));
 
@@ -71,8 +72,8 @@ const PlantDetail = ({ plant, onBack }) => {
       {/* Chart */}
       {chartData.length > 1 && (
         <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-5 ${colors.border} border`}>
-          <h3 className={`text-lg font-semibold ${colors.text} mb-3`}>Growth & EC</h3>
-          <div className="h-72"><GrowthChart data={chartData} lengthUnit={lengthUnit} /></div>
+          <h3 className={`text-lg font-semibold ${colors.text} mb-3`}>Growth, pH &amp; EC</h3>
+          <div className="h-72"><GrowthChart data={chartData} lengthUnit={lengthUnit} phRange={guidance?.phRange} ecRange={guidance?.ec} /></div>
         </div>
       )}
 

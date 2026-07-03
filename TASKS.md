@@ -49,6 +49,7 @@ data → analytics that depend on it → UX → Bud/delight → platform._
 
 ## ✅ Done
 
+- **Growth chart: pH series + ideal bands** `[ux]` — chart now plots pH alongside height & EC on a shared right axis, with the ideal pH/EC target ranges (from stage guidance) shaded behind the lines so out-of-range readings pop. Dark-mode band opacity tuned.
 - **Per-reading EC tracking** `[data]` — already shipped with the rich-measurements overhaul: EC capture, store, validate (0–5), edit, display (cards/table/log), chart (right axis), CSV.
 - **Backend overhaul** `[data]` — first-class plants, rich measurements, v1→v2 migration. (`0c3fb4e`)
 - **Frontend overhaul** `[ux]` — redesigned UX, shared AppData state, knowledge-driven guidance. (`e6239d5`)
