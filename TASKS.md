@@ -14,35 +14,34 @@ _Backlog from the feature quiz, ordered foundational-first (top = tackle first):
 data → analytics that depend on it → UX → Bud/delight → platform._
 
 ### Data foundation
-1. **Per-reading EC tracking** `[data]` — EC as a first-class measurement alongside pH: capture, store, show, edit, chart, CSV.
-2. **Nutrient dosing log** `[data]` — record which nutrients and how much (ml/L) at each feeding to reproduce a recipe.
-3. **Reservoir change tracker** `[data]` — log full reservoir changes and top-offs with volume; know when water was last refreshed.
-4. **VPD calculation + chart** `[data]` — compute Vapor Pressure Deficit from air temp & humidity, chart it, flag out-of-range for stage.
-5. **Water & cost tracking** `[data]` — track water/nutrient consumption over a grow and estimate running cost.
+1. **Nutrient dosing log** `[data]` — record which nutrients and how much (ml/L) at each feeding to reproduce a recipe.
+2. **Reservoir change tracker** `[data]` — log full reservoir changes and top-offs with volume; know when water was last refreshed.
+3. **VPD calculation + chart** `[data]` — compute Vapor Pressure Deficit from air temp & humidity, chart it, flag out-of-range for stage.
+4. **Water & cost tracking** `[data]` — track water/nutrient consumption over a grow and estimate running cost.
 
 ### Analytics & insights
-6. **Anomaly / drift alerts** `[feature]` — flag pH/EC drifting out of the ideal band across recent readings; Bud warns early.
-7. **Grow-vs-ideal comparison** `[feature]` — overlay a plant's curve against the ideal target curve for its species/stage.
-8. **Deficiency diagnosis helper** `[bud]` — pick symptoms → likely nutrient issue + fix, driven by the knowledge base.
-9. **Harvest prediction refinement** `[bud]` — better harvest countdown (stage transitions, growth rate) with a confidence range.
+5. **Anomaly / drift alerts** `[feature]` — flag pH/EC drifting out of the ideal band across recent readings; Bud warns early.
+6. **Grow-vs-ideal comparison** `[feature]` — overlay a plant's curve against the ideal target curve for its species/stage.
+7. **Deficiency diagnosis helper** `[bud]` — pick symptoms → likely nutrient issue + fix, driven by the knowledge base.
+8. **Harvest prediction refinement** `[bud]` — better harvest countdown (stage transitions, growth rate) with a confidence range.
 
 ### UX & workflow
-10. **Quick-log fast entry** `[ux]` — one-tap quick log for just pH / EC / height without the full form.
-11. **Dashboard widgets** `[ux]` — at-a-glance cards: next feeding, latest readings, alerts, harvest countdown.
-12. **Log search & filter** `[ux]` — search/filter the log list by plant, date range, stage, or measurement.
-13. **Multi-plant compare overlay** `[ux]` — chart multiple plants on one graph to compare grows side by side.
-14. **Photo timeline** `[feature]` — attach photos to logs and scrub growth over time.
+9. **Quick-log fast entry** `[ux]` — one-tap quick log for just pH / EC / height without the full form.
+10. **Dashboard widgets** `[ux]` — at-a-glance cards: next feeding, latest readings, alerts, harvest countdown.
+11. **Log search & filter** `[ux]` — search/filter the log list by plant, date range, stage, or measurement.
+12. **Multi-plant compare overlay** `[ux]` — chart multiple plants on one graph to compare grows side by side.
+13. **Photo timeline** `[feature]` — attach photos to logs and scrub growth over time.
 
 ### Bud & delight
-15. **Bud health-reactive expansion** `[bud]` — deepen Bud's reactions to real plant state + expand his tip knowledge.
-16. **Achievements & badges** `[bud]` — reward streaks and milestones (first harvest, 30-day streak) with badges Bud celebrates.
+14. **Bud health-reactive expansion** `[bud]` — deepen Bud's reactions to real plant state + expand his tip knowledge.
+15. **Achievements & badges** `[bud]` — reward streaks and milestones (first harvest, 30-day streak) with badges Bud celebrates.
 
 ### Platform & reliability
-17. **Feeding reminders / notifications** `[feature]` — desktop notifications when a feeding schedule is due (builds on `feedingStatus`). _Strong quick-win — the schedule engine already exists; pull up if you want an early actionable feature._
-18. **Backup with photos (zip)** `[data]` — extend backup/restore to bundle the `uploads/` images, not just JSON.
-19. **Auto-backup on schedule** `[data]` — automatically write a dated backup file periodically.
-20. **CSV / other-app import** `[data]` — import existing grow data from CSV or another tracker.
-21. **Installer smoke-test** `[infra]` — run `npm run dist` to confirm the Electron app packages and launches.
+16. **Feeding reminders / notifications** `[feature]` — desktop notifications when a feeding schedule is due (builds on `feedingStatus`). _Strong quick-win — the schedule engine already exists; pull up if you want an early actionable feature._
+17. **Backup with photos (zip)** `[data]` — extend backup/restore to bundle the `uploads/` images, not just JSON.
+18. **Auto-backup on schedule** `[data]` — automatically write a dated backup file periodically.
+19. **CSV / other-app import** `[data]` — import existing grow data from CSV or another tracker.
+20. **Installer smoke-test** `[infra]` — run `npm run dist` to confirm the Electron app packages and launches.
 
 ## 🔨 Doing
 
@@ -50,6 +49,7 @@ data → analytics that depend on it → UX → Bud/delight → platform._
 
 ## ✅ Done
 
+- **Per-reading EC tracking** `[data]` — already shipped with the rich-measurements overhaul: EC capture, store, validate (0–5), edit, display (cards/table/log), chart (right axis), CSV.
 - **Backend overhaul** `[data]` — first-class plants, rich measurements, v1→v2 migration. (`0c3fb4e`)
 - **Frontend overhaul** `[ux]` — redesigned UX, shared AppData state, knowledge-driven guidance. (`e6239d5`)
 - **Review-fix pass** `[data]` — unit-conversion, data-integrity, and cleanup fixes from code review. (`fb6b136`)
