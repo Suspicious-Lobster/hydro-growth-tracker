@@ -56,8 +56,21 @@ function createWindow() {
 app.whenReady().then(async () => {
   try {
     const { dataFile, uploadsDir } = storagePaths();
-    backendServer = await startServer({ dataFile, uploadsDir, port: PORT });
+    const { httpServer, state } = await startServer({ dataFile, uploadsDir, port: PORT });
+    backendServer = httpServer;
     createWindow();
+    if (state.damaged) {
+      // The store could not be read. Nothing will be written until the user
+      // repairs or restores it; tell them where the salvaged bytes are.
+      const { dialog } = await import('electron');
+      dialog.showErrorBox(
+        'Your plant data could not be read',
+        `${state.damaged.error}\n\nData file: ${state.damaged.dataFile}\n` +
+        `A copy of the unreadable file was saved as: ${state.damaged.salvagePath}\n\n` +
+        `To recover, restore a backup from Settings, or replace the data file with a good copy and restart.` +
+        (state.damaged.detail ? `\n\nDetail: ${state.damaged.detail}` : ''),
+      );
+    }
   } catch (error) {
     console.error('Error during app startup:', error);
     const { dialog } = await import('electron');

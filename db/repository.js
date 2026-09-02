@@ -7,6 +7,7 @@
 // would make a future swap to SQLite a localized change.
 
 import fs from 'fs';
+import path from 'path';
 
 export const SCHEMA_VERSION = 2;
 
@@ -57,13 +58,52 @@ export function normalize(parsed) {
   return merged;
 }
 
+// Thrown when the data file EXISTS but cannot be parsed. Callers must not
+// write over the file in this state; the bytes have been copied to
+// `salvagePath` for the user to recover from.
+export class DamagedDataFileError extends Error {
+  constructor(dataFile, salvagePath, cause) {
+    super(`Data file is damaged and cannot be read: ${dataFile}`);
+    this.name = 'DamagedDataFileError';
+    this.dataFile = dataFile;
+    this.salvagePath = salvagePath;
+    this.cause = cause;
+  }
+}
+
+// Copy an unreadable data file's bytes to hydro-data.corrupt-<ts>.json beside
+// it, once: if an earlier salvage copy already holds identical bytes, return
+// its path instead of writing another (every request would otherwise add one).
+function salvageDamagedFile(dataFile, bytes) {
+  const dir = path.dirname(dataFile);
+  const stem = path.basename(dataFile, '.json');
+  const existing = fs.readdirSync(dir).filter((f) => f.startsWith(`${stem}.corrupt-`) && f.endsWith('.json'));
+  for (const f of existing) {
+    const p = path.join(dir, f);
+    try {
+      if (fs.readFileSync(p).equals(bytes)) return p;
+    } catch { /* unreadable salvage copy: write a fresh one */ }
+  }
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const salvagePath = path.join(dir, `${stem}.corrupt-${ts}.json`);
+  fs.writeFileSync(salvagePath, bytes);
+  return salvagePath;
+}
+
+// Read the data file. A MISSING file is a fresh install and yields an empty
+// store. A file that exists but does not parse is NOT an empty store: it is
+// the user's data in a state we cannot read, so it is salvaged and a
+// DamagedDataFileError is thrown. (Probe P3, 2026-09-02: returning emptyData()
+// here let the next save overwrite a truncated file with zero plants.)
 export function load(dataFile) {
+  if (!fs.existsSync(dataFile)) return emptyData();
+  const bytes = fs.readFileSync(dataFile);
   try {
-    const parsed = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-    return normalize(parsed);
+    return normalize(JSON.parse(bytes.toString('utf8')));
   } catch (error) {
-    console.error('Error reading data:', error);
-    return emptyData();
+    const salvagePath = salvageDamagedFile(dataFile, bytes);
+    console.error(`Data file unreadable; bytes salvaged to ${salvagePath}:`, error.message);
+    throw new DamagedDataFileError(dataFile, salvagePath, error);
   }
 }
 

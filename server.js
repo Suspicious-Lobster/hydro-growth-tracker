@@ -43,8 +43,36 @@ export function createServer({ dataFile, uploadsDir }) {
     }
   }
 
+  // Damaged-store state. When the data file exists but cannot be parsed, the
+  // server keeps running so the user can see WHAT happened and WHERE the
+  // salvaged bytes are, but every write is refused with 503: the one thing
+  // that must never happen is a save that replaces their data with an empty
+  // store (probe P3, 2026-09-02). Exposed as app.hydroState for the shell.
+  const state = { damaged: null };
+  const markDamaged = (err) => {
+    state.damaged = {
+      error: 'Data file is damaged and cannot be read. No changes will be saved until it is repaired or restored.',
+      dataFile: err.dataFile,
+      salvagePath: err.salvagePath,
+      detail: err.cause?.message || String(err.cause || ''),
+    };
+    return state.damaged;
+  };
+
   const readData = () => repo.load(dataFile);
-  const writeData = (data) => repo.save(dataFile, data);
+  const writeData = (data) => {
+    if (state.damaged) throw new repo.DamagedDataFileError(dataFile, state.damaged.salvagePath, new Error('refused: store damaged'));
+    repo.save(dataFile, data);
+  };
+
+  // Probe once at startup so the shell can warn immediately; a file that goes
+  // bad later is caught per request by handle().
+  try {
+    readData();
+  } catch (error) {
+    if (error instanceof repo.DamagedDataFileError) markDamaged(error);
+    else throw error;
+  }
 
   // A request may reference a plant by id; if so, that plant must exist.
   // Returns true when an id was supplied but resolves to nothing.
@@ -55,6 +83,7 @@ export function createServer({ dataFile, uploadsDir }) {
   };
 
   const app = express();
+  app.hydroState = state;
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cors({ origin: true, credentials: true }));
@@ -87,13 +116,21 @@ export function createServer({ dataFile, uploadsDir }) {
     try {
       fn(req, res);
     } catch (error) {
+      if (error instanceof repo.DamagedDataFileError) {
+        const d = state.damaged || markDamaged(error);
+        return res.status(503).json({ error: d.error, damaged: d });
+      }
       console.error(`Error handling ${req.method} ${req.path}:`, error);
       res.status(500).json({ error: 'Internal server error' });
     }
   };
 
   app.get('/', (_req, res) => {
-    res.json({ status: 'Backend running', timestamp: new Date().toISOString() });
+    res.json({
+      status: state.damaged ? 'damaged' : 'Backend running',
+      damaged: state.damaged,
+      timestamp: new Date().toISOString(),
+    });
   });
 
   /* ---------------------------- Plants ---------------------------- */
@@ -355,12 +392,14 @@ export function createServer({ dataFile, uploadsDir }) {
 }
 
 // Convenience helper used by the Electron main process.
+// Resolves to { httpServer, state }: `state.damaged` is set when the data file
+// could not be read, so the shell can tell the user before they touch anything.
 export function startServer({ dataFile, uploadsDir, port = 5000 }) {
   const app = createServer({ dataFile, uploadsDir });
   return new Promise((resolve, reject) => {
     const httpServer = app.listen(port, () => {
       console.log(`Embedded backend running on port ${port} (JSON storage)`);
-      resolve(httpServer);
+      resolve({ httpServer, state: app.hydroState });
     });
     httpServer.on('error', reject);
   });

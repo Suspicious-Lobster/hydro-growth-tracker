@@ -23,7 +23,16 @@ export const apiErrorMessage = (error, fallback = 'Something went wrong') => {
   return fallback;
 };
 
-export default axios.create({
+const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
 });
+
+// Backend health. `damaged` is non-null when the data file exists but cannot
+// be read: the server then refuses every write with 503 (see server.js).
+export async function fetchBackendStatus() {
+  const res = await api.get('/');
+  return { status: res.data?.status || 'unknown', damaged: res.data?.damaged || null };
+}
+
+export default api;

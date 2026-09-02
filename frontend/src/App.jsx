@@ -1,5 +1,6 @@
 // src/App.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { fetchBackendStatus } from './api/api';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { AppDataProvider, useAppData } from './contexts/AppDataContext';
@@ -35,6 +36,18 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard');
 
   const selectedPlant = plants.find((p) => p.id === selectedPlantId) || null;
+
+  // Damaged-store banner: the backend keeps serving but refuses writes when
+  // the data file cannot be read. Re-checked after every load/refresh so a
+  // successful restore clears it.
+  const [damaged, setDamaged] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchBackendStatus()
+      .then((s) => { if (!cancelled) setDamaged(s.damaged); })
+      .catch(() => { /* the data-load error banner already covers an unreachable backend */ });
+    return () => { cancelled = true; };
+  }, [loading, error]);
 
   // While the welcome tour is running, gently highlight the tab its current step
   // wants the user to visit.
@@ -114,6 +127,13 @@ function AppContent() {
           className="flex-1 overflow-y-auto p-6 bg-light-bg dark:bg-dark-bg transition-colors duration-300"
           aria-busy={refreshing}
         >
+          {damaged && (
+            <div role="alert" data-testid="damaged-banner" className="mb-4 bg-red-900/20 border border-red-500/40 rounded-lg p-4 text-sm space-y-1">
+              <div className="text-red-400 font-semibold">Your plant data could not be read. Nothing will be saved until it is repaired.</div>
+              <div className="text-red-300">A copy of the unreadable file was kept at <span className="font-mono break-all">{damaged.salvagePath}</span>.</div>
+              <div className="text-red-300">Restore a backup from the Settings tab, or replace the data file and restart the app.</div>
+            </div>
+          )}
           {error && (
             <div className="mb-4 bg-red-900/20 border border-red-500/30 rounded-lg p-4 flex items-center justify-between">
               <span className="text-red-400 text-sm">{error}</span>
