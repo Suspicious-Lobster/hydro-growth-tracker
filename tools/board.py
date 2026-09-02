@@ -741,6 +741,11 @@ def cmd_wave(root: Path, cfg: dict, args) -> int:
               "       give each a files= footprint, or set it back to todo.",
               file=sys.stderr)
         return 2
+    # The ceiling is the owner's ruling in board.config.json -> work.max_workers;
+    # --max only overrides it. A CLI default of 3 here once outvoted a config
+    # raised to 10 for three weeks (~/.claude/CLAUDE.md, 2026-09-01).
+    if args.max is None:
+        args.max = int((cfg.get("work") or {}).get("max_workers", 3))
     chosen, skipped = pick_wave(ready, files, args.max, excluded, in_flight)
     if args.json:
         print(json.dumps({
@@ -1167,7 +1172,8 @@ def main(argv: list[str]) -> int:
     sub.add_parser("lint", help="schema + pairing + drift checks")
     sub.add_parser("ready", help="what is dispatchable now, and why not")
     w = sub.add_parser("wave", help="a maximal disjoint set of ready rows")
-    w.add_argument("--max", type=int, default=3)
+    w.add_argument("--max", type=int, default=None,
+                   help="override board.config.json work.max_workers for this pick")
     w.add_argument("--exclude", default="",
                    help="row ids to hold back on THIS pick only, comma-"
                         "separated. For 'ready, but not this wave' -- the "

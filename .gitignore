@@ -46,3 +46,6 @@ build-resources/node.exe
 # IDE files
 .vscode/
 .idea/
+
+# Python tool caches
+__pycache__/
