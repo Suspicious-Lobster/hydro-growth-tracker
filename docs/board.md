@@ -38,7 +38,7 @@ Red proof: Remove the version comparison -> the restore test reads 200 and the p
 Accept: After restore a pre-restore file exists whose bytes equal the previous store; after two saves .bak equals the first save's bytes; a save whose first rename throws EPERM (fs mocked once) succeeds and the file holds the new data; the backups dir gains one dated file per calendar day and never exceeds 14.
 Red proof: Remove the snapshot call -> the byte-equality test fails; remove the retry -> the mocked-EPERM test throws; set the retention to 100 -> the 14-file cap test fails.
 
-<!--row id=MR-4 tier=O status=todo lane=A deps=MR-24 files=db/repository.js,server.js,validation.js,test/**-->
+<!--row id=MR-4 tier=O status=doing lane=A deps=MR-24 files=db/repository.js,server.js,validation.js,frontend/src/components/PlantManager.jsx,test/plant-names.test.mjs,test/helpers.mjs,test/server.test.mjs-->
 **MR-4 [O] Plant-name uniqueness across the archive boundary; restore endpoint with clash check.** Gap (probe P2, 2026-09-02): with an archived 'Tomato' present, POST /plants 'Tomato' -> 201 (two plants share the name), then POST /logs by plant_name 'Tomato' attached to the ARCHIVED plant (id 1, not the active id 2), and PUT restore of the archived one -> 200, leaving TWO ACTIVE plants named 'Tomato'. findPlantByName returns the first match regardless of archived state. Rule: a name is unique among ACTIVE plants. findPlantByName(data, name, {activeOnly}) prefers the active match; resolvePlant (logs and schedules by name) resolves to the active plant, never an archived one, and creates a new plant only when no active one exists. New POST /plants/:id/restore returns 409 if an active plant already has the name. PUT /plants/:id no longer requires name (partial update); validation checks name only when present. PlantManager's restore switches to the new endpoint.
 Accept: Probe P2 re-run: creating 'Tomato' beside an archived 'Tomato' -> 201; a log posted by name attaches to the ACTIVE id; restoring the archived one -> 409 and the active count stays 1; renaming the archived one first, then restoring -> 200.
 Red proof: Revert findPlantByName to first-match -> the log-by-name test reads the archived id; remove the restore clash check -> the 409 test reads 200 and active count 2.
@@ -98,7 +98,7 @@ Red proof: Duplicate the pH rule locally with a different bound -> the identity 
 Accept: test/assets.test.mjs: icon.png starts with 89 50 4E 47 and its IHDR reads 1024x1024; icon.ico and icon.icns exist and are over 10 KB; every build.*.icon path resolves. electron-builder --dir completes with no 'default Electron icon is used' warning in its log.
 Red proof: Replace icon.png with the current text file -> the magic-bytes test fails; point build.win.icon at a missing path -> the path test fails.
 
-<!--row id=MR-15 tier=S status=todo lane=C deps=MR-5 files=frontend/index.html,main.js,frontend/src/components/AboutDialog.jsx-->
+<!--row id=MR-15 tier=S status=doing lane=C deps=MR-5 files=frontend/index.html,frontend/vite.config.js,main.js,frontend/src/components/AboutDialog.jsx,frontend/src/components/SettingsPanel.jsx,frontend/src/__tests__/components/AboutDialog.test.jsx,e2e/**-->
 **MR-15 [S] Window title, Content-Security-Policy, production menu and About dialog.** Gap (read): frontend/index.html's title is 'Vite + React' and its favicon is vite.svg; there is no CSP meta so Electron prints its insecure-CSP warning and any injected script would run; the default menu exposes Toggle Developer Tools in production; nothing shows the version. Fix: title 'Hydro Growth Tracker'; CSP meta: default-src 'self'; connect-src 'self' <apiBase from MR-5 via preload>; img-src 'self' data: blob: <apiBase>; style-src 'self' 'unsafe-inline' (Tailwind) ; a minimal application menu (File: Backup..., Quit; Help: About) in production, full menu in dev; About reads app.getVersion() through preload.
 Accept: Playwright: window title equals 'Hydro Growth Tracker'; a CSP meta element exists and the console shows no 'Insecure Content-Security-Policy' warning; Help > About shows the package.json version string.
 Red proof: Delete the CSP meta -> the console-warning assertion fails; change the title -> the title assertion fails.
@@ -108,7 +108,7 @@ Red proof: Delete the CSP meta -> the console-warning assertion fails; change th
 Accept: npm run dist -- --dir produces dist/win-unpacked; the hygiene test passes; git ls-files shows none of the deleted paths.
 Red proof: Reference a missing file from build.files -> the hygiene test fails; re-add start.bat -> the no-root-launchers assertion fails.
 
-<!--row id=MR-18 tier=H status=done lane=E flags= files=package.json,README.md,frontend/index.html,test/repo-hygiene.test.mjs commit=-->
+<!--row id=MR-18 tier=H status=done lane=E flags= files=package.json,README.md,frontend/index.html,test/repo-hygiene.test.mjs commit=aec1655-->
 **MR-18 [H] One product name everywhere.** Gap (read): package.json productName is 'Hydro Growth Tracker' while nsis.shortcutName is 'Hydro Growth Tracker Pro'; installer-pro.nsh says 'HydroGrowth Tracker Pro'; the window says 'Vite + React'. OWNER decision: which name ships (recommend 'Hydro Growth Tracker', dropping 'Pro' until there is a non-Pro edition to contrast it with). Then a single grep-driven pass makes every surface agree.
 Accept: grep -rn -i "tracker pro\|HydroGrowth\|Vite + React" over tracked files (excluding this board) returns zero hits; the installed shortcut, window title and About dialog all read the chosen name.
 Red proof: Re-introduce 'Pro' in shortcutName -> the grep test (test/repo-hygiene.test.mjs names the forbidden strings) fails.
@@ -158,7 +158,7 @@ Red proof: Remove the disable comment -> lint exits non-zero.
 Accept: The e2e a11y spec reports 0 serious or critical axe violations on the six tabs; a component test opens a Modal, presses Tab from its last control and asserts focus wraps to the first.
 Red proof: Remove one aria-label -> axe reports a button-name violation and the spec fails; remove the trap -> the wrap test fails.
 
-<!--row id=MR-29 tier=S status=todo lane=E deps=MR-24 files=README.md,TASKS.md,docs/**,test/repo-hygiene.test.mjs-->
+<!--row id=MR-29 tier=S status=doing lane=E deps=MR-24 files=README.md,TASKS.md,docs/**,test/repo-hygiene.test.mjs-->
 **MR-29 [S] Docs match the build: README, TASKS pointer, architecture notes for the token and port.** Gap: README documents the fixed port 5000 architecture, a portable build that is not configured, and a test:e2e that is the string-grep script; TASKS.md does not point at the machine board. Fix: README reflects MR-5, MR-17, MR-19; TASKS.md gains a line pointing at docs/board.md and board.py; the hygiene test cross-checks README's npm scripts and the ports/paths it names against package.json and main.js.
 Accept: The hygiene test passes; README no longer contains 'localhost:5000'.
 Red proof: Put 'localhost:5000' back in README -> the hygiene test fails.
