@@ -163,7 +163,7 @@ Red proof: Remove one aria-label -> axe reports a button-name violation and the 
 Accept: The hygiene test passes; README no longer contains 'localhost:5000'.
 Red proof: Put 'localhost:5000' back in README -> the hygiene test fails.
 
-<!--row id=MR-30 tier=H status=todo lane=E deps=MR-20 files=package.json,frontend/package.json,CHANGELOG.md,test/repo-hygiene.test.mjs-->
+<!--row id=MR-30 tier=H status=done lane=E deps=MR-20 files=package.json,frontend/package.json,CHANGELOG.md,test/repo-hygiene.test.mjs commit=6152151-->
 **MR-30 [H] Version 1.2.0 and a CHANGELOG.** Gap: no CHANGELOG exists; root and frontend package.json both say 1.1.0 and nothing keeps them equal. Fix: bump both to 1.2.0, write CHANGELOG.md from the board's done rows (one line per row, grouped by lane), and assert version equality in the hygiene test.
 Accept: The hygiene test asserts root and frontend versions are equal and CHANGELOG.md's first heading names that version.
 Red proof: Bump only the root version -> the equality test fails.
@@ -182,3 +182,13 @@ Red proof: The gate is the e2e suite: before bumping, break the preload path in 
 **MR-34 [S] Seven species in the picker have no profile and silently get generic guidance.** Gap (found by MR-26, 2026-09-02): PLANT_TYPES lists 10 species and the species picker offers all 10, but PLANT_PROFILES defines only tomato, lettuce and generic. Basil, pepper, cucumber, strawberry, spinach, kale and cannabis fall back to the generic profile through getProfile(), so a basil plant shows tomato-agnostic generic pH/EC/temperature targets while the card says Basil. Fix: author real profiles for the seven (phRange, optimalTemp, optimalHumidity, stage heightRanges contiguous, ec per stage, feeding and care text) from standard hydroponic references, and until a profile exists the UI must say 'generic guidance' beside the stage label instead of implying species-specific targets. MR-26's checker already validates any profile added.
 Accept: plantKnowledge.test.js reports 10 species x invariants with zero violations; recommendations.test.js asserts getProfile('basil') is not the generic profile; a component test asserts a plant whose species lacks a profile renders the text 'generic guidance'.
 Red proof: Delete the basil profile -> the 10-species assertion and the getProfile test fail; remove the fallback label -> the component test fails.
+
+<!--row id=MR-35 tier=S status=todo lane=E files=package.json,frontend/package.json,.nvmrc,test/repo-hygiene.test.mjs,README.md-->
+**MR-35 [S] Node 22 baseline: engines field, .nvmrc, and a check that CI matches.** Gap (retrospective, mr-run1): three separate incidents in one run were the same pattern, the toolchain quietly assuming Node 22 while the machine runs 20.14: root vitest pulled vite 8 and the bare 'cd frontend && vite' script resolved it (build broken); Electron 44's installer is ESM-only and would not run; electron-builder 26 exits 1 at its blockmap step. Each cost a diagnosis. Fix: engines.node '>=22.12' in both package.json files, an .nvmrc, README already says 22; the hygiene test asserts ci.yml's node-version satisfies engines and that engines is present. Owner action: install Node 22 on this machine, after which electron-builder can move back to 26.
+Accept: hygiene test fails if engines.node is missing or ci.yml pins a lower major than engines requires; npm install prints an EBADENGINE warning on Node 20.
+Red proof: Set ci.yml node-version to 20 -> the hygiene assertion fails.
+
+<!--row id=MR-36 tier=S status=todo lane=D files=tools/board.py,tools/test_board.py,board.config.json-->
+**MR-36 [S] validate ladder that knows which test files belong to in-flight rows.** Gap (retrospective, mr-run1): four times the full validate ladder was red only because a worker's in-flight test file (MR-34's ten-species assertion, MR-23's kaboom boundary test, MR-25's require in a test, Modal.test) was mid-edit while the foreman validated a finished row; each time the foreman re-ran with a hand-typed --exclude list. Fix: board.py gains 'validate' which reads open doing rows' footprints and emits the vitest --exclude globs for files under them, so the exclusion is derived from the board, never typed.
+Accept: python tools/board.py validate --exclude-in-flight prints one --exclude per test file inside a status=doing footprint and nothing for done rows; test_board.py covers both.
+Red proof: Mark a row doing whose footprint holds a test file and assert the flag appears; set it done and assert it disappears.

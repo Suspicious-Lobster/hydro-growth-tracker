@@ -28,3 +28,4 @@
 {"kind": "row", "run": "mr-run1", "wave": 9, "row": "MR-25", "tier": "S", "outcome": "done", "redproof": "real"}
 {"kind": "row", "run": "mr-run1", "wave": 10, "row": "MR-28", "tier": "S", "outcome": "done", "redproof": "real"}
 {"kind": "row", "run": "mr-run1", "wave": 10, "row": "MR-16", "tier": "O", "outcome": "done", "redproof": "real"}
+{"kind": "row", "run": "mr-run1", "wave": 10, "row": "MR-30", "tier": "H", "outcome": "done", "redproof": "real"}
