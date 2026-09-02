@@ -56,7 +56,6 @@ Open **Settings** and use:
 To keep your photos too, separately copy the `uploads/` folder (see below)
 somewhere safe. A JSON backup alone will not bring photos back.
 
-<!-- MR-3 -->
 The app also keeps some safety copies automatically, without you doing
 anything:
 

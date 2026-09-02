@@ -143,6 +143,68 @@ describe('licence and privacy docs', () => {
   });
 });
 
+describe('README matches the build', () => {
+  const userGuidePath = path.join(root, 'docs', 'user-guide.md');
+  const userGuide = fs.readFileSync(userGuidePath, 'utf-8');
+
+  it('does not describe the old fixed port', () => {
+    expect(readme).not.toContain('localhost:5000');
+    expect(readme).not.toContain(':5000');
+  });
+
+  it('has no leftover row-marker comments', () => {
+    expect(readme).not.toMatch(/<!-- MR-/);
+  });
+
+  it('mentions the per-launch token auth header', () => {
+    expect(readme).toContain('X-Hydro-Token');
+  });
+
+  it('docs/user-guide.md has no leftover row-marker comments', () => {
+    expect(userGuide).not.toMatch(/<!-- MR-/);
+  });
+
+  // Backticked tokens that look like a repo file: end in a known extension
+  // and either contain a slash (a path) or are one of a handful of known
+  // root filenames referenced by their bare name.
+  const knownRootFiles = new Set([
+    'server.js',
+    'main.js',
+    'preload.js',
+    'validation.js',
+    'package.json',
+    'README.md',
+    'TASKS.md',
+  ]);
+
+  function backtickedRepoPaths(text) {
+    const pattern = /`([^`\s]+\.(?:js|mjs|jsx|json|md|yml))`/g;
+    const paths = [];
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const candidate = match[1];
+      if (candidate.includes('/') || knownRootFiles.has(candidate)) {
+        paths.push(candidate);
+      }
+    }
+    return paths;
+  }
+
+  const readmePaths = [...new Set(backtickedRepoPaths(readme))];
+
+  it('checks every README-named repo path', () => {
+    console.log(`repo-hygiene: checked ${readmePaths.length} README backticked paths`);
+    expect(readmePaths.length).toBeGreaterThan(0);
+  });
+
+  for (const readmePath of readmePaths) {
+    it(`README-named path exists: ${readmePath}`, () => {
+      const exists = fs.existsSync(path.join(root, readmePath));
+      expect(exists, `expected README-named path to exist: ${readmePath}`).toBe(true);
+    });
+  }
+});
+
 describe('one product name', () => {
   const indexHtmlPath = path.join(root, 'frontend', 'index.html');
   const indexHtml = fs.readFileSync(indexHtmlPath, 'utf-8');

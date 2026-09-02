@@ -53,7 +53,7 @@ an `uploads/` folder (photos).
 
 If the data file can't be read, the app never overwrites it. It keeps a
 `hydro-data.corrupt-<timestamp>.json` copy beside it, shows an error, and
-refuses to save until the file is fixed or replaced. <!-- MR-3 --> The app
+refuses to save until the file is fixed or replaced. The app
 also keeps a rolling `hydro-data.json.bak` last-good copy, a
 `hydro-data.pre-restore-<timestamp>.json` snapshot before every restore, and
 daily automatic backups (14 kept) in a `backups/` folder.
@@ -71,7 +71,12 @@ restore, and recovery instructions.
 The app runs as a single Electron process:
 
 - **Electron main process** (`main.js`) creates the window and starts a small
-  embedded **Express** backend (`server.js`) on `http://localhost:5000`.
+  embedded **Express** backend (`server.js`) on a random, OS-assigned loopback
+  port (`127.0.0.1`), generating a fresh per-launch token. `preload.js`
+  exposes `{ apiBase, token, version }` to the renderer as `window.hydro`; the
+  frontend sends the token on every data request via the `X-Hydro-Token`
+  header. Only `GET /` and `/uploads/*` are open without it, and CORS allows
+  only the renderer's own origin.
 - **Backend** is layered: `server.js` (HTTP routes) → `validation.js` (request
   validation) → `db/repository.js` (data access + entity helpers) →
   `db/migrate.js` (versioned, non-destructive data-file migration). The
@@ -136,12 +141,24 @@ Build the platform-native package on the matching OS (or use a CI matrix).
 npm run dev          # Run the app in development
 npm run dist         # Build distributable installers
 npm run health       # Print a quick environment/health check
+npm run make-icons   # Regenerate app icons from assets/icon.svg
 npm test             # Backend integration tests (with coverage)
-npm run test:e2e     # Build/lint/structure smoke gate
+npm run test:e2e     # End-to-end (Playwright, in progress: MR-19)
 
 # Frontend unit tests (pure logic)
 cd frontend && npm run test:unit
 ```
+
+## 🧪 Testing
+
+- `npm test` — backend integration + unit tests (Vitest), with a 90% coverage
+  gate on `server.js`, `db/**`, and `validation.js`.
+- `cd frontend && npm run test:unit` — frontend unit + component tests
+  (Vitest, jsdom).
+- `cd frontend && npm run lint` — frontend lint, zero warnings.
+
+CI (`.github/workflows/ci.yml`) runs the backend and frontend suites under
+both `TZ=America/Los_Angeles` and `TZ=Pacific/Auckland`.
 
 ## 🧪 Tech stack
 
