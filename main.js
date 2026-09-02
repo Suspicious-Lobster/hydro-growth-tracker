@@ -28,10 +28,14 @@ function storagePaths() {
 }
 
 function createWindow() {
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'assets', 'icons', 'icon.png')
+    : path.join(__dirname, 'assets', 'icons', 'icon.png');
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     show: false,
+    icon: iconPath,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

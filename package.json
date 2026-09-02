@@ -16,6 +16,7 @@
     "start:dev": "npm run dev",
     "dist": "npm run build:frontend && electron-builder",
     "health": "node scripts/health-check.js",
+    "make-icons": "node scripts/make-icons.mjs",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "node test-e2e.cjs"
@@ -44,6 +45,7 @@
       }
     ],
     "win": {
+      "icon": "assets/icons/icon.ico",
       "target": [
         "nsis",
         "portable"
@@ -63,7 +65,7 @@
       "artifactName": "${productName}-${version}-portable.${ext}"
     },
     "mac": {
-      "icon": "assets/icon.svg",
+      "icon": "assets/icons/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -76,7 +78,7 @@
       ]
     },
     "linux": {
-      "icon": "assets/icon.svg",
+      "icon": "assets/icons/icon.png",
       "category": "Office",
       "target": [
         {
@@ -94,7 +96,7 @@
       ]
     },
     "dmg": {
-      "icon": "assets/icon.svg",
+      "icon": "assets/icons/icon.icns",
       "iconSize": 100,
       "contents": [
         {
@@ -130,6 +132,8 @@
     "cross-env": "^7.0.3",
     "electron": "^29.0.0",
     "electron-builder": "^25.0.0",
+    "png2icons": "^2.0.1",
+    "sharp": "^0.35.4",
     "vitest": "^4.1.11",
     "wait-on": "^7.2.0"
   }
