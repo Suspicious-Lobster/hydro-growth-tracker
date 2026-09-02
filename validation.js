@@ -94,13 +94,16 @@ export function validateLogByField(body, opts = { requireDate: true }) {
   return byField;
 }
 
-// Validate a plant payload (create/update).
-export function validatePlant(body) {
+// Validate a plant payload. `partial` is true for updates, where only the
+// fields being changed are sent, so `name` is checked only when present.
+export function validatePlant(body, { partial } = { partial: false }) {
   const errors = [];
-  if (!isNonEmptyString(body.name)) {
-    errors.push('Plant name is required and must be a non-empty string');
-  } else if (body.name.length > 100) {
-    errors.push('Plant name must be less than 100 characters');
+  if (!partial || 'name' in body) {
+    if (!isNonEmptyString(body.name)) {
+      errors.push('Plant name is required and must be a non-empty string');
+    } else if (body.name.length > 100) {
+      errors.push('Plant name must be less than 100 characters');
+    }
   }
   for (const [k, label] of [
     ['variety', 'Variety'],

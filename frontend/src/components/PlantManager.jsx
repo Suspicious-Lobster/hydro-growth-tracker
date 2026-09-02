@@ -15,7 +15,7 @@ const emptyPlant = () => ({ name: '', species: '', variety: '', system_type: '',
 
 const PlantManager = ({ onSelectPlant }) => {
   const { colors } = useTheme();
-  const { plants, settings, getPlantLogs, createPlant, updatePlant, archivePlant, deletePlant } = useAppData();
+  const { plants, settings, getPlantLogs, createPlant, updatePlant, archivePlant, deletePlant, refresh } = useAppData();
   const toast = useToast();
 
   const [editing, setEditing] = useState(null); // null | 'new' | plant object
@@ -79,9 +79,15 @@ const PlantManager = ({ onSelectPlant }) => {
     catch (err) { toast.error(apiErrorMessage(err)); }
   };
 
+  // Restore goes through its own endpoint, which refuses (409) when an active
+  // plant already has the name, so two live plants can never share one.
   const doRestore = async (plant) => {
-    try { await updatePlant(plant.id, { name: plant.name, archived: false }); toast.success(`Restored "${plant.name}"`); await loadArchived(); }
-    catch (err) { toast.error(apiErrorMessage(err)); }
+    try {
+      await api.post(`/plants/${plant.id}/restore`);
+      await refresh();
+      toast.success(`Restored "${plant.name}"`);
+      await loadArchived();
+    } catch (err) { toast.error(apiErrorMessage(err, 'Failed to restore plant')); }
   };
 
   const doDelete = async () => {

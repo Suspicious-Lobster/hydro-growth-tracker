@@ -221,8 +221,7 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
-    const existing = repo.findPlantByName(data, req.body.name);
-    if (existing && !existing.archived) {
+    if (repo.findPlantByName(data, req.body.name, { activeOnly: true })) {
       return res.status(409).json({ error: 'A plant with this name already exists' });
     }
     const plant = repo.createPlant(data, req.body);
@@ -230,23 +229,41 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     res.status(201).json(plant);
   }));
 
-  // PUT /plants/:id – update a plant; renaming cascades to logs & schedules.
+  // PUT /plants/:id – partial update; renaming cascades to logs & schedules.
+  // Un-archiving through this route is checked for a name clash exactly like
+  // POST /plants/:id/restore.
   app.put('/plants/:id', handle((req, res) => {
-    const errors = validatePlant(req.body);
+    const errors = validatePlant(req.body, { partial: true });
     if (errors.length > 0) {
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
-    if (req.body.name) {
-      const existing = repo.findPlantByName(data, req.body.name);
-      if (existing && !existing.archived && existing.id !== parseInt(req.params.id, 10)) {
+    const id = parseInt(req.params.id, 10);
+    const target = repo.getPlant(data, id);
+    if (!target) return res.status(404).json({ error: 'Plant not found' });
+    const nextName = req.body.name !== undefined ? String(req.body.name).trim() : target.name;
+    const willBeActive = req.body.archived !== undefined ? !req.body.archived : !target.archived;
+    if (willBeActive) {
+      const existing = repo.findPlantByName(data, nextName, { activeOnly: true });
+      if (existing && existing.id !== id) {
         return res.status(409).json({ error: 'A plant with this name already exists' });
       }
     }
-    const plant = repo.updatePlant(data, parseInt(req.params.id, 10), req.body);
-    if (!plant) return res.status(404).json({ error: 'Plant not found' });
+    const plant = repo.updatePlant(data, id, req.body);
     writeData(data);
     res.json(plant);
+  }));
+
+  // POST /plants/:id/restore – un-archive; 409 if an active plant has the name.
+  app.post('/plants/:id/restore', handle((req, res) => {
+    const data = readData();
+    const result = repo.restorePlant(data, parseInt(req.params.id, 10));
+    if (!result) return res.status(404).json({ error: 'Plant not found' });
+    if (result.clash) {
+      return res.status(409).json({ error: `An active plant is already named "${result.clash.name}". Rename one of them first.` });
+    }
+    writeData(data);
+    res.json(result.plant);
   }));
 
   // POST /plants/:id/archive – soft delete (keeps logs).

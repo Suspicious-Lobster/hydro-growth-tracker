@@ -218,10 +218,31 @@ export function getPlant(data, id) {
   return data.plants.find((p) => p.id === id) || null;
 }
 
-export function findPlantByName(data, name) {
+// Look a plant up by exact (trimmed) name. Names are unique among ACTIVE
+// plants only, so an archived plant may share a name with a live one; the
+// live one always wins, and `activeOnly` refuses the archived fallback
+// altogether. (Probe P2, 2026-09-02: first-match returned the archived one, so
+// a log posted by name attached to a plant the user had put away.)
+export function findPlantByName(data, name, { activeOnly = false } = {}) {
   if (!name) return null;
   const trimmed = String(name).trim();
-  return data.plants.find((p) => p.name === trimmed) || null;
+  const matches = data.plants.filter((p) => p.name === trimmed);
+  const active = matches.find((p) => !p.archived);
+  if (active) return active;
+  return activeOnly ? null : (matches[0] || null);
+}
+
+// Un-archive a plant. Refuses when an active plant already carries the name
+// (the user must rename one first). Returns { plant } or { clash: plant }.
+export function restorePlant(data, id) {
+  const plant = getPlant(data, id);
+  if (!plant) return null;
+  if (!plant.archived) return { plant };
+  const clash = findPlantByName(data, plant.name, { activeOnly: true });
+  if (clash) return { clash };
+  plant.archived = false;
+  plant.updated_at = now();
+  return { plant };
 }
 
 export function createPlant(data, body) {
@@ -294,7 +315,9 @@ export function resolvePlant(data, body) {
     return getPlant(data, parseInt(plant_id, 10));
   }
   if (plant_name && String(plant_name).trim()) {
-    return findPlantByName(data, plant_name) || createPlant(data, { name: plant_name });
+    // Never attach new data to an archived plant: a live namesake wins, and
+    // with none a fresh plant is created.
+    return findPlantByName(data, plant_name, { activeOnly: true }) || createPlant(data, { name: plant_name });
   }
   return null;
 }
