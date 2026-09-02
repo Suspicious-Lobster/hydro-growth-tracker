@@ -183,7 +183,7 @@ Red proof: The gate is the e2e suite: before bumping, break the preload path in 
 Accept: plantKnowledge.test.js reports 10 species x invariants with zero violations; recommendations.test.js asserts getProfile('basil') is not the generic profile; a component test asserts a plant whose species lacks a profile renders the text 'generic guidance'.
 Red proof: Delete the basil profile -> the 10-species assertion and the getProfile test fail; remove the fallback label -> the component test fails.
 
-<!--row id=MR-35 tier=S status=todo lane=E files=package.json,frontend/package.json,.nvmrc,test/repo-hygiene.test.mjs,README.md-->
+<!--row id=MR-35 tier=S status=done lane=E files=package.json,frontend/package.json,.nvmrc,test/repo-hygiene.test.mjs,README.md commit=4319216-->
 **MR-35 [S] Node 22 baseline: engines field, .nvmrc, and a check that CI matches.** Gap (retrospective, mr-run1): three separate incidents in one run were the same pattern, the toolchain quietly assuming Node 22 while the machine runs 20.14: root vitest pulled vite 8 and the bare 'cd frontend && vite' script resolved it (build broken); Electron 44's installer is ESM-only and would not run; electron-builder 26 exits 1 at its blockmap step. Each cost a diagnosis. Fix: engines.node '>=22.12' in both package.json files, an .nvmrc, README already says 22; the hygiene test asserts ci.yml's node-version satisfies engines and that engines is present. Owner action: install Node 22 on this machine, after which electron-builder can move back to 26.
 Accept: hygiene test fails if engines.node is missing or ci.yml pins a lower major than engines requires; npm install prints an EBADENGINE warning on Node 20.
 Red proof: Set ci.yml node-version to 20 -> the hygiene assertion fails.
