@@ -94,7 +94,7 @@ There is no separate database server or service to run.
 
 ## 🛠️ Installation (development)
 
-Prerequisites: **Node.js 18+** and npm.
+Prerequisites: **Node.js 22.12+** and npm (Electron 44's installer needs Node 22; Node 20 can build and test but cannot download the Electron binary).
 
 ```bash
 # Install dependencies (Electron shell + frontend)

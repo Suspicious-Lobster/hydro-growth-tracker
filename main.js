@@ -149,7 +149,12 @@ app.whenReady().then(async () => {
         ? 'Update Hydro Growth Tracker to open this file, or restore an older backup from Settings after updating.'
         : 'To recover, restore a backup from Settings, or replace the data file with a good copy and restart.');
       if (d.detail) lines.push('', `Detail: ${d.detail}`);
-      dialog.showErrorBox(d.tooNew ? 'Your plant data needs a newer version' : 'Your plant data could not be read', lines.join('\n'));
+      // showErrorBox is synchronous and blocks the main process, which on
+      // Electron 44 kept the window from ever surfacing (the e2e damaged-file
+      // spec timed out 2 of 3 runs). Show the async box once the window is up.
+      const title = d.tooNew ? 'Your plant data needs a newer version' : 'Your plant data could not be read';
+      const show = () => dialog.showMessageBox(mainWindow, { type: 'error', title, message: title, detail: lines.join('\n') });
+      if (mainWindow && mainWindow.isVisible()) show(); else mainWindow?.once('show', show);
     }
   } catch (error) {
     if (logger) logger.error('Error during app startup', { message: error.message, stack: error.stack });

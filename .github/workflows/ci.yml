@@ -28,7 +28,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Electron 44's installer needs Node 22.12+ (its downloader is ESM-only).
+          node-version: 22
 
       # --ignore-scripts skips the Electron binary download, which lint, build
       # and the backend tests do not need.
@@ -69,7 +70,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Electron 44's installer needs Node 22.12+ (its downloader is ESM-only).
+          node-version: 22
 
       - name: Install root dependencies (with the Electron binary)
         run: npm install --no-audit --no-fund
