@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { startServer, DEFAULT_ALLOWED_ORIGINS } from './server.js';
+import { wireLifecycle } from './lifecycle.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,7 +21,9 @@ let backend = { apiBase: null, token: null };
 // source for convenience; in production they go in the per-user app data dir so
 // they survive app updates and live in a writable location.
 function storagePaths() {
-  const baseDir = isDev ? __dirname : app.getPath('userData');
+  // HYDRO_USER_DATA lets the Playwright suite point a real launch at a temp
+  // folder so it never touches the owner's data.
+  const baseDir = process.env.HYDRO_USER_DATA || (isDev ? __dirname : app.getPath('userData'));
   return {
     dataFile: path.join(baseDir, 'hydro-data.json'),
     uploadsDir: path.join(baseDir, 'uploads'),
@@ -149,15 +152,11 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('window-all-closed', () => {
-  if (backendServer) {
-    backendServer.close();
-  }
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('activate', () => {
-  if (mainWindow === null) createWindow();
+// Single instance, macOS reopen, and closing the backend on quit (not on the
+// last window closing) all live in lifecycle.js so they can be unit-tested.
+wireLifecycle(app, {
+  platform: process.platform,
+  createWindow,
+  getWindow: () => mainWindow,
+  closeServer: () => { if (backendServer) backendServer.close(); },
 });

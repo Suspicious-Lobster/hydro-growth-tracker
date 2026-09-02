@@ -7,8 +7,8 @@
   "type": "module",
   "main": "main.js",
   "scripts": {
-    "frontend:dev": "cd frontend && vite",
-    "build:frontend": "cd frontend && vite build",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
     "electron:start": "cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=1 NODE_ENV=development electron .",
     "dev": "concurrently --names \"frontend,electron\" --prefix-colors \"cyan,green\" -k \"npm run frontend:dev\" \"wait-on http://localhost:5173 && npm run electron:start\"",
     "start": "npm run dev",
@@ -19,7 +19,8 @@
     "make-icons": "node scripts/make-icons.mjs",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "test:e2e": "node test-e2e.cjs"
+    "test:e2e": "npm run build:frontend && playwright test",
+    "test:e2e:only": "playwright test"
   },
   "build": {
     "appId": "com.hydrotracker.hydro-growth-tracker",
@@ -34,6 +35,7 @@
       "validation.js",
       "db/**/*",
       "preload.js",
+      "lifecycle.js",
       "frontend/dist/**/*",
       "node_modules/**/*",
       "package.json"
@@ -126,6 +128,7 @@
     "multer": "^2.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@rolldown/binding-win32-x64-msvc": "^1.2.7",
     "@vitest/coverage-v8": "^4.1.11",
     "concurrently": "^8.2.2",

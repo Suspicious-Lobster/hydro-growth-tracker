@@ -229,3 +229,16 @@ describe('one product name', () => {
     expect(pkgString).not.toMatch(badPattern);
   });
 });
+
+describe('frontend scripts run the frontend toolchain', () => {
+  // `cd frontend && vite` resolved the ROOT node_modules/.bin/vite once the root
+  // gained its own vite (via vitest), which is a different major and broke the
+  // build. Always go through the frontend's own package scripts.
+  it('frontend:dev and build:frontend delegate to npm --prefix frontend', () => {
+    expect(pkg.scripts['frontend:dev']).toMatch(/^npm --prefix frontend run /);
+    expect(pkg.scripts['build:frontend']).toMatch(/^npm --prefix frontend run /);
+    for (const [name, cmd] of Object.entries(pkg.scripts)) {
+      expect(cmd, `${name} must not cd into frontend and call a bare binary`).not.toMatch(/cd frontend && /);
+    }
+  });
+});

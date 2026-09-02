@@ -143,7 +143,7 @@ npm run dist         # Build distributable installers
 npm run health       # Print a quick environment/health check
 npm run make-icons   # Regenerate app icons from assets/icon.svg
 npm test             # Backend integration tests (with coverage)
-npm run test:e2e     # End-to-end (Playwright, in progress: MR-19)
+npm run test:e2e     # End-to-end: builds the frontend, launches the real app with Playwright
 
 # Frontend unit tests (pure logic)
 cd frontend && npm run test:unit
