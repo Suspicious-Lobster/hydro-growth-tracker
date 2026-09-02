@@ -4,7 +4,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import { useToast } from '../contexts/ToastContext';
 import { resolveImageUrl, apiErrorMessage } from '../api/api';
-import { formatDate, formatLength, formatTemp, toCm, fromCm } from '../utils/format';
+import { formatDate, formatDateTime, formatLength, formatTemp, toCm, fromCm } from '../utils/format';
+import { dayKey } from '../utils/dates';
 import { stageLabel } from '../data/recommendations';
 
 const LogViewer = () => {
@@ -112,10 +113,16 @@ const LogViewer = () => {
                       <div>
                         <h3 className={`text-lg font-semibold ${colors.text}`}>{log.plant_name}</h3>
                         <div className={`flex items-center gap-4 text-sm ${colors.textMuted} mt-1`}>
-                          <span className="flex items-center gap-1"><Calendar size={14} /> {formatDate(log.created_at)}</span>
+                          <span className="flex items-center gap-1"><Calendar size={14} /> {formatDate(log.date ?? log.created_at)}</span>
                           {log.growth_stage && <span>{stageLabel(log.growth_stage)}</span>}
                           {log.image_url && <span className="flex items-center gap-1"><Camera size={14} /> Photo</span>}
                         </div>
+                        {/* A backdated entry (date far from when it was actually typed in) gets
+                            a small caption with the real insert time, so the two never look like
+                            the same fact silently overwritten. */}
+                        {log.date && log.created_at && dayKey(log.date) !== dayKey(log.created_at) && (
+                          <div className={`text-xs ${colors.textMuted} italic mt-0.5`}>logged {formatDateTime(log.created_at)}</div>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         <button onClick={() => startEditing(log)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit"><Edit3 size={18} /></button>

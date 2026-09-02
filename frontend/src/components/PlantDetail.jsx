@@ -128,7 +128,7 @@ const PlantDetail = ({ plant, onBack }) => {
               <tbody>
                 {[...sorted].reverse().map((log) => (
                   <tr key={log.id} className={`border-b ${colors.border} ${colors.text}`}>
-                    <td className="py-2 pr-4 whitespace-nowrap">{formatDate(log.created_at)}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{formatDate(log.date ?? log.created_at)}</td>
                     <td className="py-2 pr-4">{formatLength(log.height, lengthUnit)}</td>
                     <td className="py-2 pr-4">{log.ph ?? '—'}</td>
                     <td className="py-2 pr-4">{log.ec ?? '—'}</td>

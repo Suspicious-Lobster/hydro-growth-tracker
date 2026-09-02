@@ -12,6 +12,7 @@ import multer from 'multer';
 import { Parser } from 'json2csv';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 import * as repo from './db/repository.js';
 import { runMigration, migrateData, SchemaTooNewError } from './db/migrate.js';
@@ -20,6 +21,52 @@ import { validateLog, validatePlant, validateSchedule } from './validation.js';
 // Marker embedded in exported backups so a restore can recognize its own files
 // (and reject an unrelated JSON) before replacing the store.
 const BACKUP_TYPE = 'hydro-growth-tracker-backup';
+
+// Magic-byte sniffers for the image formats the app accepts. Multer's
+// fileFilter only trusts the client-supplied mimetype, which a request can
+// lie about (probe P6, 2026-09-02: a file named evil.html sent as
+// mimetype: image/png was stored and served as-is). This is the real check:
+// it looks at the bytes actually written to disk and returns the extension
+// they justify, or null when none match.
+export function sniffImageExt(buf) {
+  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length >= 4 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'gif';
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  return null;
+}
+
+// Prefix a leading =, +, -, @, tab or carriage-return with a single quote so
+// spreadsheet apps display the cell as text instead of evaluating it as a
+// formula (probe P7, 2026-09-02: an exported nutrients value of
+// =HYPERLINK("http://evil","click") ran on open in Excel). Non-string values
+// (numbers, null) pass through untouched.
+// Windows can still hold a just-written upload open (multer's stream, an
+// antivirus scan) for a moment; unlinkSync then fails with EPERM/EBUSY. Retry
+// briefly, then log: the row is already gone, so this is never fatal. Seen
+// once in a full parallel test run (1 of ~6) and never alone, 2026-09-02.
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function unlinkWithRetry(filePath, what) {
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      fs.unlinkSync(filePath);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return true;
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt === 5) {
+        console.error(`Failed to remove ${what}:`, error.message);
+        return false;
+      }
+      sleepMs(20 * attempt);
+    }
+  }
+  return false;
+}
+
+export function csvSafe(value) {
+  if (typeof value !== 'string') return value;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
 
 // Re-exported for backward compatibility with existing importers/tests.
 export const emptyData = repo.emptyData;
@@ -175,6 +222,42 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     },
   });
 
+  // multer trusts the client-supplied mimetype (fileFilter above), which is
+  // exactly what a request can lie about. This is the real check: read the
+  // bytes multer just wrote, confirm they match a real image's magic number,
+  // and rename to a fresh random name so the multer temp name (which can
+  // still carry an attacker-chosen extension like .html) never reaches the
+  // stored URL. Returns the final filename, or null (having removed the
+  // file) when the bytes do not match any accepted format.
+  const finalizeUpload = (file) => {
+    const head = Buffer.alloc(12);
+    const fd = fs.openSync(file.path, 'r');
+    let bytesRead = 0;
+    try {
+      bytesRead = fs.readSync(fd, head, 0, 12, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const ext = sniffImageExt(head.subarray(0, bytesRead));
+    if (!ext) {
+      unlinkWithRetry(file.path, 'invalid upload');
+      return null;
+    }
+    const finalName = `${crypto.randomBytes(16).toString('hex')}.${ext}`;
+    fs.renameSync(file.path, path.join(uploadsDir, finalName));
+    return finalName;
+  };
+
+  // Best-effort removal of an uploaded image by its stored /uploads/... URL.
+  // path.basename strips any directory component so a crafted image_url can
+  // never escape uploadsDir; failures are logged, never fatal (the log/plant
+  // row is already gone by the time this runs).
+  const removeUploadedImage = (imageUrl) => {
+    if (!imageUrl) return;
+    const filePath = path.join(uploadsDir, path.basename(imageUrl));
+    unlinkWithRetry(filePath, 'uploaded image');
+  };
+
   // Small wrapper so each handler gets fresh data and a uniform 500 on throw.
   const handle = (fn) => (req, res) => {
     try {
@@ -275,12 +358,14 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     res.json(plant);
   }));
 
-  // DELETE /plants/:id – hard delete plant + cascade logs & schedules.
+  // DELETE /plants/:id – hard delete plant + cascade logs & schedules, and
+  // every image file those logs held.
   app.delete('/plants/:id', handle((req, res) => {
     const data = readData();
     const result = repo.deletePlantCascade(data, parseInt(req.params.id, 10));
     if (!result) return res.status(404).json({ error: 'Plant not found' });
     writeData(data);
+    for (const imageUrl of result.imageUrls) removeUploadedImage(imageUrl);
     res.json({
       message: `Deleted plant "${result.plant.name}" and ${result.deletedLogs} logs`,
       deletedLogs: result.deletedLogs,
@@ -303,22 +388,39 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
       'ph', 'ec', 'ppm', 'water_temp', 'air_temp', 'temp_unit', 'humidity',
       'light_hours', 'reservoir_volume', 'nutrients', 'notes', 'created_at',
     ];
+    // Neutralise formula-injection cells (probe P7) before handing rows to
+    // json2csv, and prefix a UTF-8 BOM so Excel reads non-ASCII notes/plant
+    // names correctly instead of guessing an encoding.
+    const rows = data.logs.map((log) => {
+      const row = {};
+      for (const f of fields) row[f] = csvSafe(log[f]);
+      return row;
+    });
     const parser = new Parser({ fields });
-    const csv = parser.parse(data.logs);
-    res.header('Content-Type', 'text/csv');
+    const csv = parser.parse(rows);
+    res.header('Content-Type', 'text/csv; charset=utf-8');
     res.attachment(`hydro_logs_${Date.now()}.csv`);
-    res.send(csv);
+    res.send('\uFEFF' + csv);
   }));
 
   // POST /logs – create a log, with optional image upload.
   app.post('/logs', upload.single('image'), handle((req, res) => {
+    let imageFilename = null;
+    if (req.file) {
+      imageFilename = finalizeUpload(req.file);
+      if (!imageFilename) return res.status(400).json({ error: 'Invalid image file' });
+    }
     const errors = validateLog(req.body, { requireDate: true });
     if (errors.length > 0) {
+      if (imageFilename) removeUploadedImage(`/uploads/${imageFilename}`);
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
-    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
-    const body = { ...req.body, image_url: req.file ? `/uploads/${req.file.filename}` : null };
+    if (unknownPlantId(data, req.body)) {
+      if (imageFilename) removeUploadedImage(`/uploads/${imageFilename}`);
+      return res.status(404).json({ error: 'Plant not found' });
+    }
+    const body = { ...req.body, image_url: imageFilename ? `/uploads/${imageFilename}` : null };
     const log = repo.createLog(data, body);
     writeData(data);
     res.status(201).json(log);
@@ -338,23 +440,13 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     res.json(log);
   }));
 
-  // DELETE /logs/plant/:plantName – delete all logs for a plant name.
-  // Deprecated: prefer DELETE /plants/:id. Kept as a thin alias during the
-  // transition so older clients keep working.
-  app.delete('/logs/plant/:plantName', handle((req, res) => {
-    const plantName = decodeURIComponent(req.params.plantName);
-    const data = readData();
-    const deletedCount = repo.deleteLogsByPlantName(data, plantName);
-    writeData(data);
-    res.json({ message: `Deleted ${deletedCount} logs for plant "${plantName}"`, deletedCount });
-  }));
-
-  // DELETE /logs/:id – delete a single log.
+  // DELETE /logs/:id – delete a single log, and its image file if it had one.
   app.delete('/logs/:id', handle((req, res) => {
     const data = readData();
     const deleted = repo.deleteLog(data, parseInt(req.params.id, 10));
     if (!deleted) return res.status(404).json({ error: 'Log not found' });
     writeData(data);
+    removeUploadedImage(deleted.image_url);
     res.json({ message: `Successfully deleted log with ID: ${deleted.id}`, deletedLog: deleted });
   }));
 

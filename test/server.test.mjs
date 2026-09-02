@@ -58,13 +58,15 @@ describe('logs: create', () => {
     expect(r.status).toBe(201);
     expect(r.data).toMatchObject({ plant_id: p.id, plant_name: 'Cherry', ph: 6.1, ec: 1.8, ppm: 900, water_temp: 19, humidity: 65, growth_stage: 'vegetative' });
   });
-  it('POST /logs multipart with an image stores the file and sets image_url', async () => {
+  it('POST /logs multipart with an image stores the file (renamed, magic-byte extension) and sets image_url', async () => {
     const fd = new FormData();
     fd.append('plant_name', 'Tomato'); fd.append('date', '2026-06-26'); fd.append('height', '5'); fd.append('nutrients', 'GH');
     fd.append('image', new Blob([PNG_1x1], { type: 'image/png' }), 'leaf.png');
     const r = await s.post('/logs', fd);
     expect(r.status).toBe(201);
-    expect(r.data.image_url).toMatch(/^\/uploads\/.+leaf\.png$/);
+    // Renamed to a random name with the extension the actual bytes justify;
+    // the original filename never reaches the stored URL (MR-7).
+    expect(r.data.image_url).toMatch(/^\/uploads\/[0-9a-f]{32}\.png$/);
     expect(fs.existsSync(path.join(s.uploadsDir, path.basename(r.data.image_url)))).toBe(true);
     const img = await s.raw('GET', r.data.image_url);
     expect(img.status).toBe(200);
@@ -112,12 +114,10 @@ describe('logs: list, update, delete', () => {
     expect((await s.get('/logs')).data.map((l) => l.id)).toEqual([1]);
     expect((await s.del('/logs/2')).status).toBe(404);
   });
-  it('DELETE /logs/plant/:name removes every log with that name (deprecated alias)', async () => {
-    await s.post('/logs', validLog({ plant_name: 'Tomato XL' }));
-    await s.post('/logs', validLog({ plant_name: 'Tomato XL', height: 3 }));
-    await s.post('/logs', validLog({ plant_name: 'Other' }));
-    const r = await s.del(`/logs/plant/${encodeURIComponent('Tomato XL')}`);
-    expect(r.data.deletedCount).toBe(2);
+  it('DELETE /logs/plant/:name is removed (MR-9): 404s and changes nothing', async () => {
+    await s.post('/logs', validLog({ plant_name: 'Tomato' }));
+    const r = await s.del(`/logs/plant/${encodeURIComponent('Tomato')}`);
+    expect(r.status).toBe(404);
     expect((await s.get('/logs')).data).toHaveLength(1);
   });
 });

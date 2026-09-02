@@ -296,15 +296,19 @@ export function archivePlant(data, id) {
   return plant;
 }
 
-// Hard delete a plant and cascade-remove its logs and schedules.
+// Hard delete a plant and cascade-remove its logs and schedules. Returns the
+// image_url of every removed log (nulls filtered out) so the HTTP layer can
+// clean their files off disk; the file removal itself is not this module's
+// concern (db/repository.js does not know about uploadsDir).
 export function deletePlantCascade(data, id) {
   const plant = getPlant(data, id);
   if (!plant) return null;
-  const logsBefore = data.logs.length;
+  const removedLogs = data.logs.filter((l) => l.plant_id === id);
   data.plants = data.plants.filter((p) => p.id !== id);
   data.logs = data.logs.filter((l) => l.plant_id !== id);
   data.schedules = data.schedules.filter((s) => s.plant_id !== id);
-  return { plant, deletedLogs: logsBefore - data.logs.length };
+  const imageUrls = removedLogs.map((l) => l.image_url).filter(Boolean);
+  return { plant, deletedLogs: removedLogs.length, imageUrls };
 }
 
 // Resolve the plant a log/schedule refers to. Prefers plant_id; falls back to
@@ -324,13 +328,38 @@ export function resolvePlant(data, body) {
 
 /* --------------------------------- logs --------------------------------- */
 
+// Sort key for the user-entered measurement date: it is always a date-only
+// 'YYYY-MM-DD' string in this app (see frontend/src/utils/dates.js), which
+// compares correctly as a plain string. A missing/unparseable date sorts as
+// the epoch so it never throws and never floats to the top.
+const EPOCH_DATE = '0000-00-00';
+const dateSortKey = (log) => (typeof log?.date === 'string' && log.date ? log.date : EPOCH_DATE);
+
+// Sort key for the server insert timestamp: a real instant, so Date.parse is
+// the right tool (matches the frontend's own created_at handling). Missing or
+// unparseable falls back to epoch ms (0), never NaN.
+const createdAtSortKey = (log) => {
+  const t = Date.parse(log?.created_at);
+  return Number.isNaN(t) ? 0 : t;
+};
+
+// Newest first: by the user-entered `date`, then by insert time, then by id
+// as a final deterministic tiebreaker so two calls always agree (probe P8,
+// 2026-09-02: sorting by created_at alone showed a backdated log as if it had
+// just been entered).
 export function listLogs(data, { plant_id } = {}) {
   let logs = data.logs;
   if (plant_id !== undefined && plant_id !== null && plant_id !== '') {
     const pid = parseInt(plant_id, 10);
     logs = logs.filter((l) => l.plant_id === pid);
   }
-  return [...logs].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return [...logs].sort((a, b) => {
+    const byDate = dateSortKey(b).localeCompare(dateSortKey(a));
+    if (byDate !== 0) return byDate;
+    const byCreated = createdAtSortKey(b) - createdAtSortKey(a);
+    if (byCreated !== 0) return byCreated;
+    return (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
 }
 
 export function getLog(data, id) {
@@ -412,12 +441,6 @@ export function deleteLog(data, id) {
   if (idx === -1) return null;
   const [deleted] = data.logs.splice(idx, 1);
   return deleted;
-}
-
-export function deleteLogsByPlantName(data, plantName) {
-  const before = data.logs.length;
-  data.logs = data.logs.filter((l) => l.plant_name !== plantName);
-  return before - data.logs.length;
 }
 
 /* ------------------------------- schedules ------------------------------ */
