@@ -1,9 +1,14 @@
 import axios from 'axios';
 
-// Base URL for the embedded backend. Overridable at build time via
-// VITE_API_BASE_URL; defaults to the local backend the Electron app starts.
+// The Electron shell starts the backend on a random loopback port with a
+// per-launch token and exposes both as window.hydro via preload.js. Outside
+// Electron (plain browser dev, tests) fall back to VITE_API_BASE_URL; such a
+// client has no token and the server answers 401 to data routes by design.
+const bridge = (typeof window !== 'undefined' && window.hydro) || {};
+
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+  bridge.apiBase || import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
+export const API_TOKEN = bridge.token || import.meta.env.VITE_API_TOKEN || null;
 
 // Resolve a possibly-relative image path (e.g. "/uploads/x.jpg") returned by
 // the backend into a fully-qualified URL the renderer can load.
@@ -26,6 +31,7 @@ export const apiErrorMessage = (error, fallback = 'Something went wrong') => {
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
+  headers: API_TOKEN ? { 'X-Hydro-Token': API_TOKEN } : {},
 });
 
 // Backend health. `damaged` is non-null when the data file exists but cannot

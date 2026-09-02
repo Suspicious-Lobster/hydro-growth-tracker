@@ -12,14 +12,18 @@ export const JSON_HEADERS = { 'Content-Type': 'application/json' };
 // Start a server on a fresh temp dir. Returns helpers bound to its base URL.
 // `seed` (optional) is written as the initial data file before startup, so a
 // test can stage an old-schema or damaged file.
-export async function freshServer({ seed, extraHeaders = {} } = {}) {
+// `token` / `allowedOrigins` are passed straight to createServer; when a token
+// is set, every request from these helpers carries it unless `extraHeaders`
+// overrides X-Hydro-Token (set it to '' to test the unauthenticated path).
+export async function freshServer({ seed, extraHeaders = {}, token = null, allowedOrigins } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hydro-test-'));
   const dataFile = path.join(tmp, 'hydro-data.json');
   const uploadsDir = path.join(tmp, 'uploads');
   if (seed !== undefined) {
     fs.writeFileSync(dataFile, typeof seed === 'string' ? seed : JSON.stringify(seed));
   }
-  const app = createServer({ dataFile, uploadsDir });
+  if (token) extraHeaders = { 'X-Hydro-Token': token, ...extraHeaders };
+  const app = createServer({ dataFile, uploadsDir, token, allowedOrigins });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });

@@ -24,10 +24,24 @@ const BACKUP_TYPE = 'hydro-growth-tracker-backup';
 export const emptyData = repo.emptyData;
 export { validateLog };
 
+// Origins the renderer can legitimately have. A packaged app loads the UI from
+// file://, which browsers report as the opaque origin "null"; the Vite dev
+// server is added by main.js in development only.
+export const DEFAULT_ALLOWED_ORIGINS = ['null', 'file://'];
+
 // Build the Express app. `dataFile` is the JSON store path; `uploadsDir` is
 // where images are written and served from. Both are created if missing, and
 // any older-schema data file is migrated up before the app serves a request.
-export function createServer({ dataFile, uploadsDir }) {
+//
+// `token`: when set, every data route requires the header X-Hydro-Token to
+// equal it (401 otherwise). main.js mints one per launch and hands it to the
+// renderer through preload.js, so a web page open in the user's browser cannot
+// read or wipe the store even though it can reach 127.0.0.1 (probe P1,
+// 2026-09-02: CORS used to reflect ANY origin with credentials, with no auth).
+// GET / (health) and /uploads/* (images loaded by <img>, which cannot send
+// headers) stay open; upload filenames are random.
+// `allowedOrigins`: the only Origins that receive CORS headers.
+export function createServer({ dataFile, uploadsDir, token = null, allowedOrigins = DEFAULT_ALLOWED_ORIGINS }) {
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
@@ -86,8 +100,24 @@ export function createServer({ dataFile, uploadsDir }) {
   app.hydroState = state;
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-  app.use(cors({ origin: true, credentials: true }));
+  // No wildcard, no credentials: only the renderer's own origin(s) get CORS
+  // headers. Requests with no Origin (same-origin, curl, tests) pass through
+  // untouched; the token check below is the actual guard.
+  app.use(cors({
+    origin: (origin, cb) => cb(null, !origin ? false : allowedOrigins.includes(origin)),
+    credentials: false,
+    allowedHeaders: ['Content-Type', 'X-Hydro-Token'],
+  }));
   app.use('/uploads', express.static(uploadsDir));
+
+  // Per-launch token: required on every route except health and static uploads.
+  if (token) {
+    app.use((req, res, next) => {
+      if (req.method === 'OPTIONS' || req.path === '/' || req.path.startsWith('/uploads/')) return next();
+      if (req.get('X-Hydro-Token') === token) return next();
+      res.status(401).json({ error: 'Unauthorized: this API only answers the Hydro Growth Tracker app' });
+    });
+  }
 
   // Image uploads: sanitized filenames, image-only, 5MB cap.
   const storage = multer.diskStorage({
@@ -392,14 +422,18 @@ export function createServer({ dataFile, uploadsDir }) {
 }
 
 // Convenience helper used by the Electron main process.
-// Resolves to { httpServer, state }: `state.damaged` is set when the data file
-// could not be read, so the shell can tell the user before they touch anything.
-export function startServer({ dataFile, uploadsDir, port = 5000 }) {
-  const app = createServer({ dataFile, uploadsDir });
+// Start the backend on the loopback interface only. `port` defaults to 0 (the
+// OS picks a free one: a fixed 5000 collided with macOS AirPlay). Resolves to
+// { httpServer, state, port, apiBase }; `state.damaged` is set when the data
+// file could not be read, so the shell can tell the user before they touch
+// anything.
+export function startServer({ dataFile, uploadsDir, port = 0, host = '127.0.0.1', token = null, allowedOrigins }) {
+  const app = createServer({ dataFile, uploadsDir, token, allowedOrigins });
   return new Promise((resolve, reject) => {
-    const httpServer = app.listen(port, () => {
-      console.log(`Embedded backend running on port ${port} (JSON storage)`);
-      resolve({ httpServer, state: app.hydroState });
+    const httpServer = app.listen(port, host, () => {
+      const actual = httpServer.address().port;
+      console.log(`Embedded backend running on http://${host}:${actual} (JSON storage)`);
+      resolve({ httpServer, state: app.hydroState, port: actual, apiBase: `http://${host}:${actual}` });
     });
     httpServer.on('error', reject);
   });

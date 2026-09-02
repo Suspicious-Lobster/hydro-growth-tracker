@@ -1,16 +1,20 @@
 import { app, BrowserWindow } from 'electron';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { startServer } from './server.js';
+import { startServer, DEFAULT_ALLOWED_ORIGINS } from './server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const isDev = process.env.NODE_ENV === 'development';
-const PORT = 5000;
+const DEV_RENDERER_ORIGIN = 'http://localhost:5173';
 
 let mainWindow;
 let backendServer;
+// Where the backend ended up and the secret the renderer must present. Both
+// are minted per launch and reach the renderer only through preload.js.
+let backend = { apiBase: null, token: null };
 
 // Resolve where data and uploads live. In development we keep them next to the
 // source for convenience; in production they go in the per-user app data dir so
@@ -31,7 +35,14 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
+      // Read by preload.js and exposed to the page as window.hydro.
+      additionalArguments: [
+        `--hydro-api-base=${backend.apiBase}`,
+        `--hydro-token=${backend.token}`,
+        `--hydro-version=${app.getVersion()}`,
+      ],
     },
   });
 
@@ -56,8 +67,13 @@ function createWindow() {
 app.whenReady().then(async () => {
   try {
     const { dataFile, uploadsDir } = storagePaths();
-    const { httpServer, state } = await startServer({ dataFile, uploadsDir, port: PORT });
+    const token = crypto.randomBytes(32).toString('hex');
+    const allowedOrigins = isDev ? [...DEFAULT_ALLOWED_ORIGINS, DEV_RENDERER_ORIGIN] : DEFAULT_ALLOWED_ORIGINS;
+    // port 0: the OS picks a free loopback port (a fixed 5000 collides with
+    // macOS AirPlay Receiver); the renderer learns the real one via preload.
+    const { httpServer, state, apiBase } = await startServer({ dataFile, uploadsDir, port: 0, token, allowedOrigins });
     backendServer = httpServer;
+    backend = { apiBase, token };
     createWindow();
     if (state.damaged) {
       // The store could not be read. Nothing will be written until the user
