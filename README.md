@@ -103,9 +103,7 @@ Build the platform-native package on the matching OS (or use a CI matrix).
 npm run dev          # Run the app in development
 npm run dist         # Build distributable installers
 npm run health       # Print a quick environment/health check
-npm test             # Migration + backend integration tests
-npm run test:migrate # Data-file migration tests
-npm run test:server  # Backend HTTP integration tests
+npm test             # Backend integration tests (with coverage)
 npm run test:e2e     # Build/lint/structure smoke gate
 
 # Frontend unit tests (pure logic)

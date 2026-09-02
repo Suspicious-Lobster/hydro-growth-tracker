@@ -14,13 +14,11 @@
     "start": "npm run dev",
     "start:frontend": "npm run frontend:dev",
     "start:dev": "npm run dev",
-    "pre-build": "node scripts/pre-build.js",
-    "dist": "npm run pre-build && npm run build:frontend && electron-builder",
+    "dist": "npm run build:frontend && electron-builder",
     "health": "node scripts/health-check.js",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "test:e2e": "node test-e2e.cjs",
-    "package": "npm run test:e2e && package.bat"
+    "test:e2e": "node test-e2e.cjs"
   },
   "build": {
     "appId": "com.hydrotracker.hydro-growth-tracker",
@@ -46,7 +44,10 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "publisherName": "Hydro Growth Tracker"
     },
     "nsis": {
