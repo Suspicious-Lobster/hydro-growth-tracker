@@ -142,3 +142,28 @@ describe('licence and privacy docs', () => {
     expect(guide).toContain('uploads');
   });
 });
+
+describe('one product name', () => {
+  const indexHtmlPath = path.join(root, 'frontend', 'index.html');
+  const indexHtml = fs.readFileSync(indexHtmlPath, 'utf-8');
+
+  it('pkg.build.productName is "Hydro Growth Tracker"', () => {
+    expect(pkg.build.productName).toBe('Hydro Growth Tracker');
+  });
+
+  it('pkg.build.nsis.shortcutName is "Hydro Growth Tracker"', () => {
+    expect(pkg.build.nsis.shortcutName).toBe('Hydro Growth Tracker');
+  });
+
+  it('index.html contains correct title', () => {
+    expect(indexHtml).toContain('<title>Hydro Growth Tracker</title>');
+  });
+
+  it('no naming variants appear in README, index.html, or package.json', () => {
+    const badPattern = /tracker pro|HydroGrowth|Vite \+ React/i;
+    const pkgString = JSON.stringify(pkg);
+    expect(readme).not.toMatch(badPattern);
+    expect(indexHtml).not.toMatch(badPattern);
+    expect(pkgString).not.toMatch(badPattern);
+  });
+});
