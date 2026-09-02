@@ -17,10 +17,9 @@
     "pre-build": "node scripts/pre-build.js",
     "dist": "npm run pre-build && npm run build:frontend && electron-builder",
     "health": "node scripts/health-check.js",
-    "test:server": "node test-server.mjs",
-    "test:migrate": "node test-migrate.mjs",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
     "test:e2e": "node test-e2e.cjs",
-    "test": "npm run test:migrate && npm run test:server",
     "package": "npm run test:e2e && package.bat"
   },
   "build": {
@@ -124,10 +123,13 @@
     "multer": "^2.0.0"
   },
   "devDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "^1.2.7",
+    "@vitest/coverage-v8": "^4.1.11",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "electron": "^29.0.0",
     "electron-builder": "^25.0.0",
+    "vitest": "^4.1.11",
     "wait-on": "^7.2.0"
   }
 }
