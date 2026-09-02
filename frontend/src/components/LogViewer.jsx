@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import { Edit3, Save, X, Calendar, Camera, FileText, Trash2 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
@@ -188,8 +188,8 @@ const LogViewer = () => {
                         )}
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => startEditing(log)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit"><Edit3 size={18} /></button>
-                        <button onClick={() => removeLog(log)} className={`${colors.textMuted} hover:text-red-500 p-2`} title="Delete"><Trash2 size={18} /></button>
+                        <button onClick={() => startEditing(log)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit" aria-label="Edit"><Edit3 size={18} /></button>
+                        <button onClick={() => removeLog(log)} className={`${colors.textMuted} hover:text-red-500 p-2`} title="Delete" aria-label="Delete"><Trash2 size={18} /></button>
                       </div>
                     </div>
 
@@ -238,11 +238,14 @@ const Cell = ({ colors, label, value }) => (
   </div>
 );
 
-const LabeledInput = ({ label, colors, cls, value, onChange, type = 'text' }) => (
-  <div>
-    <label className={`block text-sm ${colors.text} mb-1`}>{label}</label>
-    <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className={cls} />
-  </div>
-);
+const LabeledInput = ({ label, colors, cls, value, onChange, type = 'text' }) => {
+  const id = useId();
+  return (
+    <div>
+      <label htmlFor={id} className={`block text-sm ${colors.text} mb-1`}>{label}</label>
+      <input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} className={cls} />
+    </div>
+  );
+};
 
 export default LogViewer;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { Plus, Minus, Save, AlertCircle } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
@@ -180,12 +180,12 @@ const AddLogForm = ({ defaultPlantId = null }) => {
             </button>
           </div>
           {plantMode === 'existing' ? (
-            <select value={selectedPlantId} onChange={(e) => { setSelectedPlantId(e.target.value); setIsDirty(true); }} className={inputCls(errors.plant)}>
+            <select aria-label="Plant" value={selectedPlantId} onChange={(e) => { setSelectedPlantId(e.target.value); setIsDirty(true); }} className={inputCls(errors.plant)}>
               <option value="">Select a plant…</option>
               {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           ) : (
-            <input name="plant_name" value={form.plant_name} onChange={handleChange}
+            <input name="plant_name" aria-label="New plant name" value={form.plant_name} onChange={handleChange}
               placeholder="e.g., Tomato Plant #1" className={inputCls(errors.plant)} />
           )}
           {errors.plant && <p className="text-red-500 text-sm mt-1">{errors.plant}</p>}
@@ -206,12 +206,12 @@ const AddLogForm = ({ defaultPlantId = null }) => {
         {/* Height with steppers */}
         <Field label={`Height (${lengthUnitLabel(lengthUnit)})`} colors={colors} error={errors.height}>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => adjustHeight(-0.5)} className={`${colors.bgAccent} border ${colors.border} rounded-lg p-2`}>
+            <button type="button" aria-label="Decrease height" onClick={() => adjustHeight(-0.5)} className={`${colors.bgAccent} border ${colors.border} rounded-lg p-2`}>
               <Minus size={16} className={colors.text} />
             </button>
-            <input name="height" type="number" step="0.1" min="0" value={form.height} onChange={handleChange}
+            <input name="height" aria-label="Height" type="number" step="0.1" min="0" value={form.height} onChange={handleChange}
               placeholder="0.0" className={`flex-1 text-center font-mono ${inputCls(errors.height)}`} />
-            <button type="button" onClick={() => adjustHeight(0.5)} className={`${colors.bgAccent} border ${colors.border} rounded-lg p-2`}>
+            <button type="button" aria-label="Increase height" onClick={() => adjustHeight(0.5)} className={`${colors.bgAccent} border ${colors.border} rounded-lg p-2`}>
               <Plus size={16} className={colors.text} />
             </button>
           </div>
@@ -261,12 +261,22 @@ const AddLogForm = ({ defaultPlantId = null }) => {
   );
 };
 
-const Field = ({ label, error, colors, children }) => (
-  <div>
-    <label className={`block text-sm font-medium ${colors.text} mb-1`}>{label}</label>
-    {children}
-    {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
-  </div>
-);
+// The label is bound to its control by id so screen readers (and axe) see a
+// named input; a wrapper child (e.g. the height stepper row) is left alone and
+// its input carries its own aria-label.
+const Field = ({ label, error, colors, children }) => {
+  const id = useId();
+  const child = React.isValidElement(children) && children.type !== 'div'
+    ? React.cloneElement(children, { id: children.props.id || id })
+    : children;
+  const bound = child !== children;
+  return (
+    <div>
+      <label htmlFor={bound ? id : undefined} className={`block text-sm font-medium ${colors.text} mb-1`}>{label}</label>
+      {child}
+      {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+    </div>
+  );
+};
 
 export default AddLogForm;

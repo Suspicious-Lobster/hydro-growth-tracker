@@ -190,9 +190,9 @@ const FeedingSchedule = () => {
                   <div className={`text-xs ${colors.textMuted} mt-0.5`}>Last fed: {s.last_fed ? formatDate(s.last_fed) : 'Never'}</div>
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => doMarkFed(s)} className={`${colors.textMuted} hover:text-blue-500 p-2`} title="Mark fed"><Droplets size={18} /></button>
-                  <button onClick={() => openEdit(s)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit"><Pencil size={18} /></button>
-                  <button onClick={() => doDelete(s)} className="text-red-500 hover:text-red-700 p-2" title="Delete"><Trash2 size={18} /></button>
+                  <button onClick={() => doMarkFed(s)} className={`${colors.textMuted} hover:text-blue-500 p-2`} title="Mark fed" aria-label="Mark fed"><Droplets size={18} /></button>
+                  <button onClick={() => openEdit(s)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit" aria-label="Edit"><Pencil size={18} /></button>
+                  <button onClick={() => doDelete(s)} className="text-red-500 hover:text-red-700 p-2" title="Delete" aria-label="Delete"><Trash2 size={18} /></button>
                 </div>
               </div>
             ))}

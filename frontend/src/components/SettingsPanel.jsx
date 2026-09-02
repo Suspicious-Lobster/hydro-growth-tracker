@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import { Save } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
@@ -145,11 +145,16 @@ const Toggle = ({ colors, label, description, checked, onChange }) => (
   </div>
 );
 
-const Field = ({ label, colors, children }) => (
-  <div>
-    <label className={`block text-sm font-medium ${colors.text} mb-1`}>{label}</label>
-    {children}
-  </div>
-);
+// Label bound to its control by id, so the select has an accessible name (MR-28).
+const Field = ({ label, colors, children }) => {
+  const id = useId();
+  const child = React.isValidElement(children) ? React.cloneElement(children, { id: children.props.id || id }) : children;
+  return (
+    <div>
+      <label htmlFor={id} className={`block text-sm font-medium ${colors.text} mb-1`}>{label}</label>
+      {child}
+    </div>
+  );
+};
 
 export default SettingsPanel;

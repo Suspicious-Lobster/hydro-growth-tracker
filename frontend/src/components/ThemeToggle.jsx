@@ -18,6 +18,7 @@ const ThemeToggle = () => {
         border ${isDark ? 'border-dark-border' : 'border-light-border'}
       `}
       title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+      aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
     >
       <div className="relative w-5 h-5">
         {/* Sun Icon */}

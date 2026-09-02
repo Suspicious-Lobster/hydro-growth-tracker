@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import { Plus, Trash2, Pencil, Archive, ArchiveRestore, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
@@ -163,9 +163,9 @@ const PlantManager = ({ onSelectPlant }) => {
                     </div>
                   </button>
                   <div className="flex gap-1">
-                    <button onClick={() => openEdit(plant)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit"><Pencil size={18} /></button>
-                    <button onClick={() => doArchive(plant)} className={`${colors.textMuted} hover:text-yellow-500 p-2`} title="Archive"><Archive size={18} /></button>
-                    <button onClick={() => setConfirmDelete(plant)} className="text-red-500 hover:text-red-700 p-2" title="Delete"><Trash2 size={18} /></button>
+                    <button onClick={() => openEdit(plant)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit" aria-label="Edit"><Pencil size={18} /></button>
+                    <button onClick={() => doArchive(plant)} className={`${colors.textMuted} hover:text-yellow-500 p-2`} title="Archive" aria-label="Archive"><Archive size={18} /></button>
+                    <button onClick={() => setConfirmDelete(plant)} className="text-red-500 hover:text-red-700 p-2" title="Delete" aria-label="Delete"><Trash2 size={18} /></button>
                   </div>
                 </div>
               );
@@ -187,8 +187,8 @@ const PlantManager = ({ onSelectPlant }) => {
               <div key={plant.id} className={`${colors.bgAccent} rounded-lg p-3 flex items-center justify-between`}>
                 <span className={colors.text}>{plant.name}</span>
                 <div className="flex gap-1">
-                  <button onClick={() => doRestore(plant)} className={`${colors.textMuted} hover:text-green-500 p-2`} title="Restore"><ArchiveRestore size={18} /></button>
-                  <button onClick={() => setConfirmDelete(plant)} className="text-red-500 hover:text-red-700 p-2" title="Delete"><Trash2 size={18} /></button>
+                  <button onClick={() => doRestore(plant)} className={`${colors.textMuted} hover:text-green-500 p-2`} title="Restore" aria-label="Restore"><ArchiveRestore size={18} /></button>
+                  <button onClick={() => setConfirmDelete(plant)} className="text-red-500 hover:text-red-700 p-2" title="Delete" aria-label="Delete"><Trash2 size={18} /></button>
                 </div>
               </div>
             ))}
@@ -261,11 +261,16 @@ const PlantManager = ({ onSelectPlant }) => {
   );
 };
 
-const Field = ({ label, colors, children }) => (
-  <div>
-    <label className={`block text-sm font-medium ${colors.text} mb-1`}>{label}</label>
-    {children}
-  </div>
-);
+// Label bound to its control by id, so the input has an accessible name (MR-28).
+const Field = ({ label, colors, children }) => {
+  const id = useId();
+  const child = React.isValidElement(children) ? React.cloneElement(children, { id: children.props.id || id }) : children;
+  return (
+    <div>
+      <label htmlFor={id} className={`block text-sm font-medium ${colors.text} mb-1`}>{label}</label>
+      {child}
+    </div>
+  );
+};
 
 export default PlantManager;

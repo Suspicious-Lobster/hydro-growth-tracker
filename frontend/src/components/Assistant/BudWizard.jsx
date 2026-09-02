@@ -27,7 +27,7 @@ export default function BudWizard({ step, index, total, animate = true, onPrimar
       <div className="mt-3 flex items-center gap-2">
         <button
           onClick={onPrimary}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium bg-light-primary dark:bg-dark-primary text-white shadow hover:opacity-90 transition-opacity"
+          className="px-3 py-1.5 rounded-lg text-sm font-medium bg-light-primary-bg dark:bg-dark-primary-bg text-white shadow hover:opacity-90 transition-opacity"
         >
           {PRIMARY_LABEL[step.primary] || 'Next'}
         </button>

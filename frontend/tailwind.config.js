@@ -51,8 +51,13 @@ export default {
           text: '#f8fafc',
           'text-secondary': '#cbd5e1',
           'text-muted': '#94a3b8',
-          primary: '#3b82f6',
-          'primary-hover': '#2563eb',
+          // One blue cannot serve as both text on near-black and a fill under
+          // white text at WCAG AA (MR-28, axe): as TEXT it must be light
+          // (blue-400 #60a5fa on #1a1a1a is 6.5:1), as a FILL it must be dark
+          // (white on blue-600 #2563eb is 5.2:1; on blue-500 it was 3.7:1).
+          primary: '#60a5fa',
+          'primary-bg': '#2563eb',
+          'primary-hover': '#1d4ed8',
           secondary: '#06b6d4',
           accent: '#8b5cf6',
           success: '#10b981',
@@ -69,6 +74,7 @@ export default {
           'text-secondary': '#475569',
           'text-muted': '#64748b',
           primary: '#2563eb',
+          'primary-bg': '#2563eb',
           'primary-hover': '#1d4ed8',
           secondary: '#0891b2',
           accent: '#7c3aed',

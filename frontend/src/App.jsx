@@ -103,7 +103,7 @@ function AppContent() {
                 onClick={() => setActiveTab(tab.key)}
                 className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                   activeTab === tab.key
-                    ? 'bg-light-primary dark:bg-dark-primary text-white shadow-md'
+                    ? 'bg-light-primary-bg dark:bg-dark-primary-bgtext-white shadow-md'
                     : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-bg-accent dark:hover:bg-dark-bg-accent'
                 } ${tourTab === tab.key ? 'ring-2 ring-light-primary dark:ring-dark-primary animate-pulse' : ''}`}
               >
@@ -118,7 +118,7 @@ function AppContent() {
         {refreshing && (
           <div
             data-testid="refresh-bar"
-            className="h-0.5 w-full bg-light-primary dark:bg-dark-primary animate-pulse"
+            className="h-0.5 w-full bg-light-primary-bg dark:bg-dark-primary-bganimate-pulse"
           />
         )}
 
