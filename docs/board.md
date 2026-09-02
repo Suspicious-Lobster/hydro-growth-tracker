@@ -33,7 +33,7 @@ Red proof: Revert load() to returning emptyData() on parse error -> the test ass
 Accept: migrateData on schemaVersion 3 returns an error and does not mutate its input; runMigration leaves the on-disk bytes identical; POST /backup/restore of a v3 envelope returns 400 and the store is unchanged (GET /plants before == after).
 Red proof: Remove the version comparison -> the restore test reads 200 and the plants list changes; the migrate test sees changed=true.
 
-<!--row id=MR-3 tier=O status=todo lane=A deps=MR-24 files=db/repository.js,server.js,main.js,test/**-->
+<!--row id=MR-3 tier=O status=done lane=A deps=MR-24 files=db/repository.js,server.js,main.js,test/write-safety.test.mjs,test/helpers.mjs,test/server.test.mjs commit=fcce417-->
 **MR-3 [O] Write safety: pre-restore snapshot, last-good backup on every save, Windows-safe rename.** Gap (probe P5, 2026-09-02): POST /backup/restore replaced the store with 0 pre-restore copies written; a mistaken restore is unrecoverable. save() does a bare writeFileSync + renameSync: no fsync, and on Windows renameSync fails with EPERM/EBUSY while an antivirus or indexer holds the target, which would surface as a 500 on an ordinary save. Fix: before restore write hydro-data.pre-restore-<ts>.json (keep the newest 5); on every successful save keep the previous file as hydro-data.json.bak (rolling, one copy); fsync the temp file before rename; retry rename up to 5 times with backoff on EPERM/EBUSY/EACCES; a daily auto-backup into <userData>/backups/hydro-data-<date>.json keeping 14 (TASKS.md item 18, pulled forward because it is the recovery path for MR-1).
 Accept: After restore a pre-restore file exists whose bytes equal the previous store; after two saves .bak equals the first save's bytes; a save whose first rename throws EPERM (fs mocked once) succeeds and the file holds the new data; the backups dir gains one dated file per calendar day and never exceeds 14.
 Red proof: Remove the snapshot call -> the byte-equality test fails; remove the retry -> the mocked-EPERM test throws; set the retention to 100 -> the 14-file cap test fails.
@@ -108,7 +108,7 @@ Red proof: Delete the CSP meta -> the console-warning assertion fails; change th
 Accept: npm run dist -- --dir produces dist/win-unpacked; the hygiene test passes; git ls-files shows none of the deleted paths.
 Red proof: Reference a missing file from build.files -> the hygiene test fails; re-add start.bat -> the no-root-launchers assertion fails.
 
-<!--row id=MR-18 tier=H status=todo lane=E flags= files=package.json,README.md,frontend/index.html,assets/installer.nsh-->
+<!--row id=MR-18 tier=H status=done lane=E flags= files=package.json,README.md,frontend/index.html,test/repo-hygiene.test.mjs commit=-->
 **MR-18 [H] One product name everywhere.** Gap (read): package.json productName is 'Hydro Growth Tracker' while nsis.shortcutName is 'Hydro Growth Tracker Pro'; installer-pro.nsh says 'HydroGrowth Tracker Pro'; the window says 'Vite + React'. OWNER decision: which name ships (recommend 'Hydro Growth Tracker', dropping 'Pro' until there is a non-Pro edition to contrast it with). Then a single grep-driven pass makes every surface agree.
 Accept: grep -rn -i "tracker pro\|HydroGrowth\|Vite + React" over tracked files (excluding this board) returns zero hits; the installed shortcut, window title and About dialog all read the chosen name.
 Red proof: Re-introduce 'Pro' in shortcutName -> the grep test (test/repo-hygiene.test.mjs names the forbidden strings) fails.
