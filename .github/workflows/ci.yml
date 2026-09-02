@@ -5,9 +5,23 @@ on:
     branches: ['**']
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two zones on opposite sides of UTC. Date-only strings used to parse
+        # as UTC midnight, which rendered the previous day west of Greenwich
+        # and picked tomorrow's date east of the dateline; both zones have to
+        # stay green. (Node on Windows ignores TZ, so this only bites here.)
+        tz: [America/Los_Angeles, Pacific/Auckland]
+    env:
+      TZ: ${{ matrix.tz }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,12 +46,12 @@ jobs:
         run: npm run build
         working-directory: frontend
 
-      - name: Migration tests
-        run: npm run test:migrate
+      - name: Backend tests (vitest + coverage gate)
+        run: npm test
 
-      - name: Backend integration tests
-        run: npm run test:server
-
-      - name: Frontend unit tests
+      - name: Frontend unit and component tests
         run: npm run test:unit
         working-directory: frontend
+
+      - name: Board lint
+        run: python tools/board.py lint

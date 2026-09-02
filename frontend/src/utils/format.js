@@ -2,18 +2,21 @@
 // app settings. Data is always stored canonically (length in cm, temp in °C,
 // volume in liters); these functions convert for display only.
 
+import { parseLocalDate } from './dates';
+
+// Date-only strings ('2026-06-26') are calendar days in the user's timezone
+// and are parsed as such (see utils/dates.js); full timestamps are instants.
+// Locale is left to the OS (undefined) rather than hard-coded to en-US.
 export function formatDate(dateString, options = {}) {
-  if (!dateString) return '';
-  const d = new Date(dateString);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', ...options });
+  const d = parseLocalDate(dateString);
+  if (!d) return '';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', ...options });
 }
 
 export function formatDateTime(dateString) {
-  if (!dateString) return '';
-  const d = new Date(dateString);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const d = parseLocalDate(dateString);
+  if (!d) return '';
+  return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 /* ----------------------------- unit helpers ----------------------------- */

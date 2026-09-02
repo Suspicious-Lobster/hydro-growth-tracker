@@ -65,7 +65,9 @@ describe('trends.isHarvestWindow', () => {
 });
 
 describe('trends.harvestCountdown', () => {
-  const day = (d) => new Date(`2026-01-${String(d).padStart(2, '0')}`).getTime();
+  // Local midnight, like the logs' date-only strings, so the arithmetic is
+  // exact in every timezone (a UTC-midnight `now` was off by the zone offset).
+  const day = (d) => new Date(2026, 0, d).getTime();
 
   it('counts down from the first late-flowering log (default 21 days)', () => {
     const logs = [
@@ -95,7 +97,8 @@ describe('trends.harvestCountdown', () => {
 });
 
 describe('trends.careStreak', () => {
-  const now = new Date('2026-01-10T12:00:00Z').getTime();
+  // Noon LOCAL on Jan 10: in UTC+13 a noon-UTC instant is already Jan 11.
+  const now = new Date(2026, 0, 10, 12).getTime();
 
   it('counts consecutive logging days ending today', () => {
     const logs = [log('2026-01-08', {}), log('2026-01-09', {}), log('2026-01-10', {})];

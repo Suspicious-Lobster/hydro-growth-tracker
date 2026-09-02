@@ -4,12 +4,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../contexts/ToastContext';
 import { FEEDING_SCHEDULE } from '../data/feedingSchedule';
 import { downloadBlob } from '../utils/download';
+import { parseLocalDate, toLocalISO } from '../utils/dates';
 
 const defaultStartDate = () => {
   const today = new Date();
   const next = new Date(today);
   next.setDate(today.getDate() + ((8 - today.getDay()) % 7)); // next Monday
-  return next.toISOString().split('T')[0];
+  return toLocalISO(next);
 };
 
 const FeedingScheduleCalendarExport = () => {
@@ -24,6 +25,8 @@ const FeedingScheduleCalendarExport = () => {
     FEEDING_SCHEDULE.forEach((week) => {
       const day = new Date(start);
       day.setDate(day.getDate() + (week.week - 1) * 7);
+      // en-US is deliberate here: this is the MM/DD/YYYY the calendar CSV
+      // import format expects, not a display string.
       const dateStr = day.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
 
       const nutrients = week.mkp_ml
@@ -51,7 +54,9 @@ const FeedingScheduleCalendarExport = () => {
   };
 
   const download = () => {
-    const csv = generateCalendarCSV(new Date(startDate));
+    // The picker gives 'YYYY-MM-DD'; parse it as a local day so week 1 is the
+    // Monday the user chose, not the day before it in western timezones.
+    const csv = generateCalendarCSV(parseLocalDate(startDate) || new Date());
     downloadBlob(`hydroponic_feeding_schedule_${startDate}.csv`, csv);
     toast.success('Calendar CSV downloaded');
   };

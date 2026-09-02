@@ -7,11 +7,14 @@ import { apiErrorMessage } from '../api/api';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
 import { getProfileStages, stageLabel } from '../data/recommendations';
 import { toCm, toCelsius, toLiters, lengthUnitLabel, tempUnitLabel, volumeUnitLabel } from '../utils/format';
+import { todayLocalISO } from '../utils/dates';
 
 const DRAFT_KEY = 'logFormDraft';
 const blankForm = () => ({
   plant_name: '',
-  date: new Date().toISOString().split('T')[0],
+  // The user's local calendar day, not the UTC one (which is tomorrow in a US
+  // evening and yesterday before 2am at UTC+2).
+  date: todayLocalISO(),
   height: '',
   growth_stage: '',
   ph: '', ec: '', ppm: '',

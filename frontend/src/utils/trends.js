@@ -4,6 +4,7 @@
 // beyond reading log timestamps, so these stay deterministic and unit-testable.
 
 import { sortLogsByDate, growthRate } from './stats';
+import { logTime as logDay, dayKey } from './dates';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
 import { getProfile } from '../data/recommendations';
 
@@ -11,8 +12,6 @@ const num = (v) => {
   const n = parseFloat(v);
   return Number.isNaN(n) ? null : n;
 };
-
-const logDay = (log) => new Date(log?.date ?? log?.created_at).getTime();
 
 // pH moving consistently one way across the last 3 readings (by a meaningful amount).
 // `leaving` flags when that drift is pushing pH out of the species' ideal band.
@@ -86,15 +85,15 @@ export function harvestCountdown(logs, species, now) {
   return { ready: days === 0, days };
 }
 
-// Consecutive calendar days (UTC buckets) with at least one log, counting back from
+// Consecutive LOCAL calendar days with at least one log, counting back from
 // today — or yesterday, so the streak isn't "broken" before the user logs today.
 export function careStreak(logs, now) {
   const days = new Set(
     (logs || [])
-      .map((l) => Math.floor(logDay(l) / 86400000))
+      .map((l) => dayKey(l))
       .filter((d) => Number.isFinite(d)),
   );
-  const today = Math.floor(now / 86400000);
+  const today = dayKey(now);
   const anchor = days.has(today) ? today : days.has(today - 1) ? today - 1 : null;
   if (anchor === null) return 0;
   let n = 0;

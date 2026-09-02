@@ -2,11 +2,14 @@
 // were copy-pasted across PlantCards, PlantManager, FeedingSchedule and
 // PlantSidebar; this is now the single source.
 
-// Timestamp a log is ordered by: the user-entered measurement `date`, falling
-// back to the server insert time. Using `date` keeps backdated / out-of-order
-// entries in true chronological order.
+import { logTime as rawLogTime } from './dates';
+
+// Timestamp a log is ordered by: the user-entered measurement `date` (a local
+// calendar day), falling back to the server insert time. Using `date` keeps
+// backdated / out-of-order entries in true chronological order. Unparseable
+// logs sort first (0) instead of scrambling the comparator with NaN.
 function logTime(log) {
-  const t = new Date(log?.date ?? log?.created_at).getTime();
+  const t = rawLogTime(log);
   return Number.isNaN(t) ? 0 : t;
 }
 
