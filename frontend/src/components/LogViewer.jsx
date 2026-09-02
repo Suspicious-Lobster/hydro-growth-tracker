@@ -4,46 +4,83 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import { useToast } from '../contexts/ToastContext';
 import { resolveImageUrl, apiErrorMessage } from '../api/api';
-import { formatDate, formatDateTime, formatLength, formatTemp, toCm, fromCm } from '../utils/format';
+import {
+  formatDate, formatDateTime, formatLength, formatTemp, formatVolume,
+  toCm, fromCm, toCelsius, fromCelsius, toLiters, fromLiters,
+  lengthUnitLabel, tempUnitLabel, volumeUnitLabel,
+} from '../utils/format';
 import { dayKey } from '../utils/dates';
-import { stageLabel } from '../data/recommendations';
+import { stageLabel, getProfileStages } from '../data/recommendations';
+import { GROWTH_STAGES } from '../data/plantKnowledge';
+import ConfirmDialog from './ui/ConfirmDialog';
+
+// Round a display-unit value to a sane number of decimals when prefilling an
+// input, so e.g. 10cm shown in inches doesn't render as 3.9370078740157...
+const round2 = (n) => Math.round(n * 100) / 100;
+
+// A field left blank in the edit form must clear the stored value (send
+// null), never silently keep the old one (which would happen if we sent
+// undefined or omitted the key).
+const numOrNull = (v) => (v === '' || v === null || v === undefined ? null : parseFloat(v));
 
 const LogViewer = () => {
   const { colors } = useTheme();
-  const { logs, settings, updateLog, deleteLog } = useAppData();
+  const { logs, plants, settings, updateLog, deleteLog } = useAppData();
   const toast = useToast();
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
-  const { length: lengthUnit, temp: tempUnit } = settings.units;
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const { length: lengthUnit, temp: tempUnit, volume: volumeUnit } = settings.units;
 
   const startEditing = (log) => {
     setEditingId(log.id);
     setEditForm({
-      plant_name: log.plant_name || '',
-      // Stored canonically in cm; show in the active display unit.
-      height: log.height == null ? '' : Math.round(fromCm(parseFloat(log.height), lengthUnit) * 100) / 100,
-      nutrients: log.nutrients || '',
+      plant_id: log.plant_id != null ? String(log.plant_id) : '',
+      date: log.date || '',
+      // Stored canonically; show in the active display units.
+      height: log.height == null ? '' : round2(fromCm(parseFloat(log.height), lengthUnit)),
+      growth_stage: log.growth_stage || '',
       ph: log.ph ?? '',
       ec: log.ec ?? '',
+      ppm: log.ppm ?? '',
+      water_temp: log.water_temp == null ? '' : round2(fromCelsius(parseFloat(log.water_temp), tempUnit)),
+      air_temp: log.air_temp == null ? '' : round2(fromCelsius(parseFloat(log.air_temp), tempUnit)),
+      humidity: log.humidity ?? '',
+      light_hours: log.light_hours ?? '',
+      reservoir_volume: log.reservoir_volume == null ? '' : round2(fromLiters(parseFloat(log.reservoir_volume), volumeUnit)),
+      nutrients: log.nutrients || '',
       notes: log.notes || '',
     });
   };
 
   const cancelEditing = () => { setEditingId(null); setEditForm({}); };
 
+  const selectedPlant = plants.find((p) => String(p.id) === String(editForm.plant_id));
+  const stageOptions = selectedPlant?.species ? getProfileStages(selectedPlant.species) : Object.values(GROWTH_STAGES);
+
   const saveLog = async (logId) => {
-    if (!editForm.plant_name.trim()) { toast.error('Plant name is required'); return; }
+    if (!editForm.plant_id) { toast.error('Select a plant'); return; }
     if (editForm.height === '' || parseFloat(editForm.height) < 0) { toast.error('Height must be a positive number'); return; }
     if (!editForm.nutrients.trim()) { toast.error('Nutrients are required'); return; }
     try {
       await updateLog(logId, {
-        plant_name: editForm.plant_name.trim(),
-        // Convert the display-unit input back to canonical cm for storage.
+        // Plant is chosen by id, never re-sent as free text — a typo'd
+        // plant_name used to make the server silently fork a new plant.
+        plant_id: Number(editForm.plant_id),
+        date: editForm.date,
+        // Convert the display-unit input back to canonical cm/°C/liters for storage.
         height: toCm(parseFloat(editForm.height), lengthUnit),
+        growth_stage: editForm.growth_stage || null,
+        ph: numOrNull(editForm.ph),
+        ec: numOrNull(editForm.ec),
+        ppm: numOrNull(editForm.ppm),
+        water_temp: editForm.water_temp === '' ? null : toCelsius(parseFloat(editForm.water_temp), tempUnit),
+        air_temp: editForm.air_temp === '' ? null : toCelsius(parseFloat(editForm.air_temp), tempUnit),
+        humidity: numOrNull(editForm.humidity),
+        light_hours: numOrNull(editForm.light_hours),
+        reservoir_volume: editForm.reservoir_volume === '' ? null : toLiters(parseFloat(editForm.reservoir_volume), volumeUnit),
         nutrients: editForm.nutrients.trim(),
-        // Send null (not undefined) so a cleared field is actually wiped.
-        ph: editForm.ph === '' ? null : parseFloat(editForm.ph),
-        ec: editForm.ec === '' ? null : parseFloat(editForm.ec),
         notes: editForm.notes,
       });
       toast.success('Log updated');
@@ -53,13 +90,19 @@ const LogViewer = () => {
     }
   };
 
-  const removeLog = async (logId) => {
-    if (!window.confirm('Delete this log?')) return;
+  const removeLog = (log) => setPendingDelete(log);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteLog(logId);
+      await deleteLog(pendingDelete.id);
       toast.success('Log deleted');
+      setPendingDelete(null);
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to delete log'));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -88,11 +131,31 @@ const LogViewer = () => {
                 {editingId === log.id ? (
                   <div className="space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <LabeledInput label="Plant" colors={colors} cls={inputCls} value={editForm.plant_name} onChange={(v) => setEditForm({ ...editForm, plant_name: v })} />
-                      <LabeledInput label={`Height (${lengthUnit})`} colors={colors} cls={inputCls} type="number" value={editForm.height} onChange={(v) => setEditForm({ ...editForm, height: v })} />
+                      <div>
+                        <label className={`block text-sm ${colors.text} mb-1`}>Plant</label>
+                        <select value={editForm.plant_id} onChange={(e) => setEditForm({ ...editForm, plant_id: e.target.value })} className={inputCls}>
+                          <option value="">Select plant…</option>
+                          {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </div>
+                      <LabeledInput label="Date" colors={colors} cls={inputCls} type="date" value={editForm.date} onChange={(v) => setEditForm({ ...editForm, date: v })} />
+                      <div>
+                        <label className={`block text-sm ${colors.text} mb-1`}>Growth stage</label>
+                        <select value={editForm.growth_stage} onChange={(e) => setEditForm({ ...editForm, growth_stage: e.target.value })} className={inputCls}>
+                          <option value="">Not set</option>
+                          {stageOptions.map((s) => <option key={s} value={s}>{stageLabel(s)}</option>)}
+                        </select>
+                      </div>
+                      <LabeledInput label={`Height (${lengthUnitLabel(lengthUnit)})`} colors={colors} cls={inputCls} type="number" value={editForm.height} onChange={(v) => setEditForm({ ...editForm, height: v })} />
                       <LabeledInput label="Nutrients" colors={colors} cls={inputCls} value={editForm.nutrients} onChange={(v) => setEditForm({ ...editForm, nutrients: v })} />
                       <LabeledInput label="pH" colors={colors} cls={inputCls} type="number" value={editForm.ph} onChange={(v) => setEditForm({ ...editForm, ph: v })} />
                       <LabeledInput label="EC" colors={colors} cls={inputCls} type="number" value={editForm.ec} onChange={(v) => setEditForm({ ...editForm, ec: v })} />
+                      <LabeledInput label="PPM" colors={colors} cls={inputCls} type="number" value={editForm.ppm} onChange={(v) => setEditForm({ ...editForm, ppm: v })} />
+                      <LabeledInput label={`Water temp (${tempUnitLabel(tempUnit)})`} colors={colors} cls={inputCls} type="number" value={editForm.water_temp} onChange={(v) => setEditForm({ ...editForm, water_temp: v })} />
+                      <LabeledInput label={`Air temp (${tempUnitLabel(tempUnit)})`} colors={colors} cls={inputCls} type="number" value={editForm.air_temp} onChange={(v) => setEditForm({ ...editForm, air_temp: v })} />
+                      <LabeledInput label="Humidity (%)" colors={colors} cls={inputCls} type="number" value={editForm.humidity} onChange={(v) => setEditForm({ ...editForm, humidity: v })} />
+                      <LabeledInput label="Light (hours)" colors={colors} cls={inputCls} type="number" value={editForm.light_hours} onChange={(v) => setEditForm({ ...editForm, light_hours: v })} />
+                      <LabeledInput label={`Reservoir (${volumeUnitLabel(volumeUnit)})`} colors={colors} cls={inputCls} type="number" value={editForm.reservoir_volume} onChange={(v) => setEditForm({ ...editForm, reservoir_volume: v })} />
                     </div>
                     <div>
                       <label className={`block text-sm ${colors.text} mb-1`}>Notes</label>
@@ -126,7 +189,7 @@ const LogViewer = () => {
                       </div>
                       <div className="flex gap-2">
                         <button onClick={() => startEditing(log)} className={`${colors.textMuted} hover:${colors.primary} p-2`} title="Edit"><Edit3 size={18} /></button>
-                        <button onClick={() => removeLog(log.id)} className={`${colors.textMuted} hover:text-red-500 p-2`} title="Delete"><Trash2 size={18} /></button>
+                        <button onClick={() => removeLog(log)} className={`${colors.textMuted} hover:text-red-500 p-2`} title="Delete"><Trash2 size={18} /></button>
                       </div>
                     </div>
 
@@ -139,6 +202,7 @@ const LogViewer = () => {
                       <Cell colors={colors} label="Air" value={log.air_temp != null ? formatTemp(log.air_temp, tempUnit) : '—'} />
                       <Cell colors={colors} label="Humidity" value={log.humidity != null ? `${log.humidity}%` : '—'} />
                       <Cell colors={colors} label="Light" value={log.light_hours != null ? `${log.light_hours} h` : '—'} />
+                      <Cell colors={colors} label="Reservoir" value={log.reservoir_volume != null ? formatVolume(log.reservoir_volume, volumeUnit) : '—'} />
                     </div>
 
                     <div className={`text-sm ${colors.textMuted} mb-2`}><strong>Nutrients:</strong> {log.nutrients || 'Not specified'}</div>
@@ -153,6 +217,16 @@ const LogViewer = () => {
           </div>
         )}
       </div>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete log"
+          message="Delete this log?"
+          busy={deleting}
+          onConfirm={confirmDelete}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 };

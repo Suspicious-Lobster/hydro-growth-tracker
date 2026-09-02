@@ -5,6 +5,7 @@ import { useAppData } from '../contexts/AppDataContext';
 import { useToast } from '../contexts/ToastContext';
 import { apiErrorMessage } from '../api/api';
 import Modal from './ui/Modal';
+import ConfirmDialog from './ui/ConfirmDialog';
 import NutrientCalculator from './NutrientCalculator';
 import FeedingScheduleCalendarExport from './FeedingScheduleCalendarExport';
 import { latestLog } from '../utils/stats';
@@ -24,6 +25,8 @@ const FeedingSchedule = () => {
   const [calculatorStage, setCalculatorStage] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const inputCls = `w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500`;
 
@@ -71,10 +74,20 @@ const FeedingSchedule = () => {
     catch (err) { toast.error(apiErrorMessage(err)); }
   };
 
-  const doDelete = async (s) => {
-    if (!window.confirm(`Delete the feeding schedule for ${s.plant_name}?`)) return;
-    try { await deleteSchedule(s.id); toast.success('Schedule deleted'); }
-    catch (err) { toast.error(apiErrorMessage(err)); }
+  const doDelete = (s) => setPendingDelete(s);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await deleteSchedule(pendingDelete.id);
+      toast.success('Schedule deleted');
+      setPendingDelete(null);
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -227,6 +240,16 @@ const FeedingSchedule = () => {
       {/* Nutrient calculator */}
       {calculatorStage !== null && (
         <NutrientCalculator plantStage={calculatorStage} onClose={() => setCalculatorStage(null)} />
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete schedule"
+          message={`Delete the feeding schedule for ${pendingDelete.plant_name}?`}
+          busy={deleting}
+          onConfirm={confirmDelete}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );
