@@ -257,3 +257,30 @@ describe('version and changelog', () => {
     expect(first[1]).toBe(pkg.version);
   });
 });
+
+describe('Node baseline (MR-35)', () => {
+  // Three incidents in one run came from tooling that assumes Node 22 while the
+  // machine ran 20: a root install changed which vite a bare script resolved,
+  // Electron 44's installer is ESM-only, electron-builder 26 exits 1 at its
+  // blockmap step. The requirement is declared once and CI must satisfy it.
+  const engines = pkg.engines && pkg.engines.node;
+  const frontendPkg = JSON.parse(fs.readFileSync(path.join(root, 'frontend', 'package.json'), 'utf-8'));
+  const ci = fs.readFileSync(path.join(root, '.github', 'workflows', 'ci.yml'), 'utf-8');
+  const requiredMajor = engines ? parseInt(/(\d+)/.exec(engines)[1], 10) : NaN;
+
+  it('both package.json files declare the same engines.node', () => {
+    expect(engines, 'root package.json needs engines.node').toMatch(/^>=\d+/);
+    expect(frontendPkg.engines && frontendPkg.engines.node).toBe(engines);
+  });
+
+  it('.nvmrc names the same major', () => {
+    const nvmrc = fs.readFileSync(path.join(root, '.nvmrc'), 'utf-8').trim();
+    expect(parseInt(nvmrc, 10)).toBe(requiredMajor);
+  });
+
+  it('every CI node-version satisfies engines', () => {
+    const versions = [...ci.matchAll(/node-version:\s*['"]?(\d+)/g)].map((m) => parseInt(m[1], 10));
+    expect(versions.length).toBeGreaterThan(0);
+    for (const v of versions) expect(v, `ci.yml node-version ${v} < engines ${requiredMajor}`).toBeGreaterThanOrEqual(requiredMajor);
+  });
+});

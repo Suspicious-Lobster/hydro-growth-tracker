@@ -5,6 +5,9 @@
   "author": "Suspicious-Lobster",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "main": "main.js",
   "scripts": {
     "frontend:dev": "npm --prefix frontend run dev",
