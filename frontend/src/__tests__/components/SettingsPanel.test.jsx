@@ -1,0 +1,92 @@
+// MR-25: SettingsPanel's save flow was previously unverified except by
+// hand. Proves changing the length unit to 'in' and saving sends that unit
+// through updateSettings and re-renders the length select as 'in'.
+import React from 'react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ThemeProvider } from '../../contexts/ThemeContext';
+import SettingsPanel from '../../components/SettingsPanel';
+
+const settings = {
+  units: { length: 'cm', temp: 'C', volume: 'liters' },
+  ppm_scale: 500,
+  default_species: null,
+};
+const updateSettings = vi.fn().mockResolvedValue({});
+
+vi.mock('../../contexts/AppDataContext', () => ({
+  useAppData: () => ({ settings, updateSettings }),
+}));
+
+vi.mock('../../contexts/AssistantContext', () => ({
+  useAssistant: () => ({
+    effectsEnabled: true,
+    muted: false,
+    soundEnabled: true,
+    toggleEffects: vi.fn(),
+    setMuted: vi.fn(),
+    setSoundEnabled: vi.fn(),
+    resetDismissed: vi.fn(),
+    startTour: vi.fn(),
+  }),
+}));
+
+const toastSuccess = vi.fn();
+const toastError = vi.fn();
+vi.mock('../../contexts/ToastContext', () => ({
+  useToast: () => ({ success: toastSuccess, error: toastError, info: vi.fn() }),
+}));
+
+// SettingsPanel renders BackupRestore + AboutDialog too; stub the api module
+// they depend on so those subtrees mount cleanly without real requests.
+vi.mock('../../api/api', () => ({
+  default: {
+    get: vi.fn().mockResolvedValue({ data: {} }),
+    post: vi.fn().mockResolvedValue({ data: {} }),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
+  apiErrorMessage: (err, fallback) => err?.message || fallback,
+}));
+
+function stubMatchMedia() {
+  window.matchMedia = vi.fn().mockImplementation(() => ({
+    matches: false,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+}
+
+function renderPanel() {
+  return render(
+    <ThemeProvider>
+      <SettingsPanel />
+    </ThemeProvider>
+  );
+}
+
+describe('SettingsPanel (MR-25)', () => {
+  beforeEach(() => {
+    stubMatchMedia();
+    updateSettings.mockClear();
+    toastSuccess.mockClear();
+  });
+
+  it('saves the length unit change and re-renders it', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    const lengthSelect = screen.getByDisplayValue('Centimeters (cm)');
+    await user.selectOptions(lengthSelect, 'in');
+    expect(screen.getByDisplayValue('Inches (in)')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /save settings/i }));
+
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+    const [payload] = updateSettings.mock.calls[0];
+    expect(payload.units.length).toBe('in');
+    expect(toastSuccess).toHaveBeenCalledWith('Settings saved');
+    expect(screen.getByDisplayValue('Inches (in)')).toBeInTheDocument();
+  });
+});
