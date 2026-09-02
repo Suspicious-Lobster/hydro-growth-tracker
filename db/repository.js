@@ -109,10 +109,84 @@ export function load(dataFile) {
 
 // Atomic write: serialize to a temp file then rename over the target so a
 // crash mid-write can never leave a truncated data file.
+// Synchronous sleep for the rename retry below (the whole data layer is sync).
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// On Windows an antivirus scanner or indexer can hold the target open for a
+// moment; renameSync then fails with EPERM/EBUSY/EACCES and an ordinary save
+// would surface as a 500. Retry a few times with backoff before giving up.
+export const RENAME_RETRIES = 5;
+function renameWithRetry(from, to) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      fs.renameSync(from, to);
+      return attempt;
+    } catch (error) {
+      const transient = ['EPERM', 'EBUSY', 'EACCES'].includes(error.code);
+      if (!transient || attempt >= RENAME_RETRIES) throw error;
+      sleepMs(20 * attempt);
+    }
+  }
+}
+
+// Atomic write: serialize to a temp file, fsync it, keep the previous file as
+// a rolling last-good copy (<dataFile>.bak), then rename over the target so a
+// crash mid-write can never leave a truncated data file.
 export function save(dataFile, data) {
   const tmp = `${dataFile}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, dataFile);
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeSync(fd, JSON.stringify(data, null, 2));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  if (fs.existsSync(dataFile)) fs.copyFileSync(dataFile, `${dataFile}.bak`);
+  renameWithRetry(tmp, dataFile);
+}
+
+/* ------------------------------- snapshots ------------------------------ */
+
+const stampNow = () => new Date().toISOString().replace(/[:.]/g, '-');
+
+// Copy the current data file to <stem>.<label>-<ts>.json beside it and keep
+// only the newest `keep` copies with that label. Returns the path written, or
+// null when there is no data file yet. Used before a destructive restore.
+export function snapshot(dataFile, label, keep = 5) {
+  if (!fs.existsSync(dataFile)) return null;
+  const dir = path.dirname(dataFile);
+  const stem = path.basename(dataFile, '.json');
+  const target = path.join(dir, `${stem}.${label}-${stampNow()}.json`);
+  fs.copyFileSync(dataFile, target);
+  pruneMatching(dir, (f) => f.startsWith(`${stem}.${label}-`) && f.endsWith('.json'), keep);
+  return target;
+}
+
+// Local calendar day, matching the app's date convention (frontend/src/utils/dates.js).
+const localDay = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// One dated copy of the data file per local calendar day in `backupsDir`,
+// keeping the newest `keep`. Cheap to call after every save: it only copies
+// when today's file is missing. Returns the path written or null.
+export function dailyBackup(dataFile, backupsDir, keep = 14, now = new Date()) {
+  if (!fs.existsSync(dataFile)) return null;
+  fs.mkdirSync(backupsDir, { recursive: true });
+  const stem = path.basename(dataFile, '.json');
+  const target = path.join(backupsDir, `${stem}-${localDay(now)}.json`);
+  if (fs.existsSync(target)) return null;
+  fs.copyFileSync(dataFile, target);
+  pruneMatching(backupsDir, (f) => f.startsWith(`${stem}-`) && f.endsWith('.json'), keep);
+  return target;
+}
+
+// Delete all but the newest `keep` files matching `test` in `dir`. Names carry
+// sortable timestamps, so lexical order is chronological.
+function pruneMatching(dir, test, keep) {
+  const names = fs.readdirSync(dir).filter(test).sort();
+  for (const f of names.slice(0, Math.max(0, names.length - keep))) {
+    try { fs.unlinkSync(path.join(dir, f)); } catch { /* best effort */ }
+  }
 }
 
 // Turn an (already schema-current) data object from an imported backup into a

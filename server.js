@@ -11,6 +11,7 @@ import cors from 'cors';
 import multer from 'multer';
 import { Parser } from 'json2csv';
 import fs from 'fs';
+import path from 'path';
 
 import * as repo from './db/repository.js';
 import { runMigration, migrateData, SchemaTooNewError } from './db/migrate.js';
@@ -41,7 +42,10 @@ export const DEFAULT_ALLOWED_ORIGINS = ['null', 'file://'];
 // GET / (health) and /uploads/* (images loaded by <img>, which cannot send
 // headers) stay open; upload filenames are random.
 // `allowedOrigins`: the only Origins that receive CORS headers.
-export function createServer({ dataFile, uploadsDir, token = null, allowedOrigins = DEFAULT_ALLOWED_ORIGINS }) {
+// `backupsDir`: where the once-a-day copies of the data file go (14 kept);
+// defaults to a backups/ folder beside the data file.
+export function createServer({ dataFile, uploadsDir, backupsDir = null, token = null, allowedOrigins = DEFAULT_ALLOWED_ORIGINS }) {
+  backupsDir = backupsDir || path.join(path.dirname(dataFile), 'backups');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
@@ -97,7 +101,14 @@ export function createServer({ dataFile, uploadsDir, token = null, allowedOrigin
   const writeData = (data) => {
     if (state.damaged) throw refuse();
     repo.save(dataFile, data);
+    // The daily copy is the recovery path for a damaged store; it must never
+    // turn a successful save into a failure.
+    try { repo.dailyBackup(dataFile, backupsDir); } catch (error) { console.error('Daily backup failed:', error.message); }
   };
+  // Take today's copy at startup too, so a day with no edits still has one.
+  if (!state.damaged) {
+    try { repo.dailyBackup(dataFile, backupsDir); } catch (error) { console.error('Daily backup failed:', error.message); }
+  }
 
   // Probe once at startup so the shell can warn immediately; a file that goes
   // bad later is caught per request by handle(). Skipped when the too-new
@@ -436,10 +447,15 @@ export function createServer({ dataFile, uploadsDir, token = null, allowedOrigin
       throw error;
     }
     const data = repo.prepareImport(migrated.data);
+    // Destructive by design, so the current store is snapshotted first
+    // (hydro-data.pre-restore-<ts>.json, newest 5 kept).
+    if (state.damaged) throw refuse();
+    const snapshotPath = repo.snapshot(dataFile, 'pre-restore', 5);
     writeData(data);
     res.json({
       message: 'Backup restored',
       counts: { plants: data.plants.length, logs: data.logs.length, schedules: data.schedules.length },
+      previousStoreSavedAs: snapshotPath,
     });
   }));
 
@@ -459,8 +475,8 @@ export function createServer({ dataFile, uploadsDir, token = null, allowedOrigin
 // { httpServer, state, port, apiBase }; `state.damaged` is set when the data
 // file could not be read, so the shell can tell the user before they touch
 // anything.
-export function startServer({ dataFile, uploadsDir, port = 0, host = '127.0.0.1', token = null, allowedOrigins }) {
-  const app = createServer({ dataFile, uploadsDir, token, allowedOrigins });
+export function startServer({ dataFile, uploadsDir, backupsDir = null, port = 0, host = '127.0.0.1', token = null, allowedOrigins }) {
+  const app = createServer({ dataFile, uploadsDir, backupsDir, token, allowedOrigins });
   return new Promise((resolve, reject) => {
     const httpServer = app.listen(port, host, () => {
       const actual = httpServer.address().port;

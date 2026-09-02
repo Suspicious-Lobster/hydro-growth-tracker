@@ -24,6 +24,7 @@ function storagePaths() {
   return {
     dataFile: path.join(baseDir, 'hydro-data.json'),
     uploadsDir: path.join(baseDir, 'uploads'),
+    backupsDir: path.join(baseDir, 'backups'),
   };
 }
 
@@ -70,26 +71,29 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
-    const { dataFile, uploadsDir } = storagePaths();
+    const { dataFile, uploadsDir, backupsDir } = storagePaths();
     const token = crypto.randomBytes(32).toString('hex');
     const allowedOrigins = isDev ? [...DEFAULT_ALLOWED_ORIGINS, DEV_RENDERER_ORIGIN] : DEFAULT_ALLOWED_ORIGINS;
     // port 0: the OS picks a free loopback port (a fixed 5000 collides with
     // macOS AirPlay Receiver); the renderer learns the real one via preload.
-    const { httpServer, state, apiBase } = await startServer({ dataFile, uploadsDir, port: 0, token, allowedOrigins });
+    const { httpServer, state, apiBase } = await startServer({ dataFile, uploadsDir, backupsDir, port: 0, token, allowedOrigins });
     backendServer = httpServer;
     backend = { apiBase, token };
     createWindow();
     if (state.damaged) {
-      // The store could not be read. Nothing will be written until the user
-      // repairs or restores it; tell them where the salvaged bytes are.
+      // The store cannot be served: unreadable (salvaged copy exists) or
+      // written by a newer version (file intact, no copy). Nothing will be
+      // written until the user acts; say where every recovery file lives.
       const { dialog } = await import('electron');
-      dialog.showErrorBox(
-        'Your plant data could not be read',
-        `${state.damaged.error}\n\nData file: ${state.damaged.dataFile}\n` +
-        `A copy of the unreadable file was saved as: ${state.damaged.salvagePath}\n\n` +
-        `To recover, restore a backup from Settings, or replace the data file with a good copy and restart.` +
-        (state.damaged.detail ? `\n\nDetail: ${state.damaged.detail}` : ''),
-      );
+      const d = state.damaged;
+      const lines = [d.error, '', `Data file: ${d.dataFile}`];
+      if (d.salvagePath) lines.push(`A copy of the unreadable file was saved as: ${d.salvagePath}`);
+      lines.push(`Daily backups: ${backupsDir}`, `Last good copy: ${dataFile}.bak`, '');
+      lines.push(d.tooNew
+        ? 'Update Hydro Growth Tracker to open this file, or restore an older backup from Settings after updating.'
+        : 'To recover, restore a backup from Settings, or replace the data file with a good copy and restart.');
+      if (d.detail) lines.push('', `Detail: ${d.detail}`);
+      dialog.showErrorBox(d.tooNew ? 'Your plant data needs a newer version' : 'Your plant data could not be read', lines.join('\n'));
     }
   } catch (error) {
     console.error('Error during app startup:', error);
