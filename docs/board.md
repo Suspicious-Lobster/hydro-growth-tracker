@@ -138,7 +138,7 @@ Red proof: Delete LICENSE -> the test fails; name a fake npm script in README ->
 Accept: Throwing inside a route in a test writes a line containing the route and message to the log path; the dialog path is unit-tested through the extracted lifecycle helper of MR-6; the boundary's copy button writes to the clipboard mock.
 Red proof: Remove the logger injection -> the log file is absent and the test fails.
 
-<!--row id=MR-25 tier=S status=doing lane=D deps=MR-12,MR-13,MR-33 files=frontend/src/__tests__/components/**,frontend/package.json,frontend/vitest.config.js,frontend/src/test-setup.js-->
+<!--row id=MR-25 tier=S status=done lane=D deps=MR-12,MR-13,MR-33 files=frontend/src/__tests__/components/**,frontend/package.json,frontend/vitest.config.js,frontend/src/test-setup.js commit=b3116bc-->
 **MR-25 [S] Component tests for every form and destructive flow.** Gap: 93 vitest tests cover only pure utils; not one component is rendered in a test, so unit conversion in AddLogForm (inches to cm), draft save/restore, validation messages, the restore-confirm modal and settings save are all unverified except by hand. Fix: jsdom environment, @testing-library/react and user-event, axios mocked via vi.mock; tests: AddLogForm converts 10 in to 25.4 cm in the payload and restores a draft; LogViewer edit (MR-12) ; PlantManager create/archive/restore; BackupRestore shows counts and posts only after confirm; SettingsPanel saves and re-renders a height in inches; Dashboard shows an out-of-range alert for pH 7.5 on a tomato. Every assertion is on rendered output or the recorded request (CODING-PRACTICES 1.2).
 Accept: npm run test:unit reports at least 25 component tests passing in addition to the existing 93; total count is printed and the floor asserted in CI (1.6).
 Red proof: Flip toCm to return v unchanged -> the AddLogForm payload test fails on 10 vs 25.4; remove the confirm step in BackupRestore -> the 'posts only after confirm' test fails.
@@ -153,7 +153,7 @@ Red proof: Swap tomato seedling ec min/max in a fixture copy -> the checker name
 Accept: npm --prefix frontend run lint exits 0 and prints 0 problems.
 Red proof: Remove the disable comment -> lint exits non-zero.
 
-<!--row id=MR-28 tier=S status=doing lane=B deps=MR-12,MR-13,MR-19 files=frontend/src/components/ui/Modal.jsx,frontend/src/components/PlantSidebar.jsx,frontend/src/components/PlantCards.jsx,e2e/a11y.spec.mjs-->
+<!--row id=MR-28 tier=S status=done lane=B deps=MR-12,MR-13,MR-19 files=frontend/src/components/**,frontend/src/__tests__/components/Modal.test.jsx,frontend/tailwind.config.js,e2e/** commit=6ff23d6-->
 **MR-28 [S] Accessibility floor: labelled controls, focus-trapped dialogs, zero serious axe findings.** Gap (read): icon-only buttons rely on title alone in several places; Modal closes on Escape but does not trap or restore focus; nothing measures accessibility. Fix: aria-label on every icon-only button; Modal traps Tab within itself and returns focus to the opener on close; an axe-core pass in the Playwright suite on each tab.
 Accept: The e2e a11y spec reports 0 serious or critical axe violations on the six tabs; a component test opens a Modal, presses Tab from its last control and asserts focus wraps to the first.
 Red proof: Remove one aria-label -> axe reports a button-name violation and the spec fails; remove the trap -> the wrap test fails.
@@ -173,7 +173,7 @@ Red proof: Bump only the root version -> the equality test fails.
 Accept: docs/decisions.md contains a dated ruling naming the channel and the profile decision, signed by the owner; the board's MR-21 body references it.
 Red proof: A decision row has no code to break; it closes on the ruling. The red proof is that MR-21 cannot start until the file exists (its Gap line asserts the path).
 
-<!--row id=MR-16 tier=O status=doing lane=C deps=MR-19 flags= files=package.json,package-lock.json,main.js,preload.js-->
+<!--row id=MR-16 tier=O status=done lane=C deps=MR-19 flags= files=package.json,package-lock.json,main.js,preload.js commit=aab5970-->
 **MR-16 [O] Upgrade Electron 29 to a currently supported major (and electron-builder to match).** Gap: node_modules/electron is 29.4.6 (2024); Electron supports the latest three majors only, so 29 receives no Chromium security fixes. A product shipping a two-year-old browser engine is not market ready. OWNER decision because a major upgrade can change preload, sandbox and builder behaviour and needs a real launch check on each platform the owner intends to ship. Depends on the e2e harness so the oracle exists before the bump.
 Accept: npm ls electron shows a supported major; the Playwright e2e suite is green against the upgraded build; npm audit reports no high or critical advisory attributable to electron or electron-builder.
 Red proof: The gate is the e2e suite: before bumping, break the preload path in main.js and confirm the suite fails on the first data load; then bump and watch it pass.
