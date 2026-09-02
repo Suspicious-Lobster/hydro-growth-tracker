@@ -6,6 +6,8 @@ columns and tagged by area: `[data]` `[ux]` `[bud]` `[infra]` `[feature]`.
 
 _Last updated: 2026-07-03_
 
+> **Market-readiness fixes and tests live on the machine board, not here:** `docs/board.md`, read by `python tools/board.py` (`lint`, `wave`, `show <id>`). This file stays the human feature backlog.
+
 ---
 
 ## 📋 To Do

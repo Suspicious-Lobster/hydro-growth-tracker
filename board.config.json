@@ -1,0 +1,52 @@
+{
+  "_README": "Project config for tools/board.py (the /work protocol). docs/board.md holds the machine-readable rows; TASKS.md stays the human feature backlog. Run: python tools/board.py lint",
+
+  "boards": [
+    { "path": "docs/board.md", "src": "market-ready" }
+  ],
+
+  "_row_id_pattern": "MR = market-ready pass. Any bold opener matching this is a row and must carry a header.",
+  "row_id_pattern": "^MR-\\d+$",
+
+  "_tiers": "H = mechanical, wrong-is-visible (Haiku). S = spec-driven build (Sonnet). O = subtle-wrong-is-expensive: data safety, security, gate design, Electron shell (Opus, the foreman).",
+  "tiers": ["H", "S", "O"],
+
+  "statuses": ["todo", "ready", "doing", "blocked", "done", "closed"],
+  "open_statuses": ["todo", "ready", "doing", "blocked"],
+
+  "flags": ["dg", "owner", "tree"],
+
+  "source_roots": ["db", "frontend/src", "scripts", "test", "e2e", ".github"],
+  "ignore_globs": ["dist/**", "frontend/dist/**", "node_modules/**", "frontend/node_modules/**", "*.lock", "package-lock.json"],
+
+  "runs_ledger": "docs/.board-runs.jsonl",
+  "churn_days": 14,
+
+  "prose_duties": {
+    "acceptance": ["accept", "acceptance", "oracle", "exit"],
+    "red proof": ["red proof", "red-proof", "redproof", "red-proven"]
+  },
+
+  "phase_pattern": "",
+  "phase_alias": {},
+  "phase_deps": {},
+
+  "work": {
+    "max_workers": 5,
+    "agents": { "H": "mech", "S": "implementer", "O": null },
+
+    "validate": "npm test && npm --prefix frontend run lint && npm --prefix frontend run test:unit && python tools/board.py lint",
+    "validate_counts": "backend: passed count (floor 80 until MR-24 lands, then vitest test count); frontend: vitest 'Tests N passed' (floor 93); a count that FALLS is a gate gone hollow",
+
+    "verify": [
+      { "when": "always", "run": "npm test" },
+      { "when": "frontend/**", "run": "npm --prefix frontend run lint && npm --prefix frontend run test:unit" },
+      { "when": "main.js,preload.js,server.js,frontend/**,e2e/**", "run": "npm run test:e2e" }
+    ],
+
+    "_whole_tree_claimants": "The Playwright Electron e2e drives a real window: one screen, one driver.",
+    "whole_tree_claimants": ["npm run test:e2e"],
+
+    "commit": "one commit per row, explicit paths only (never -A/.), multi-line message via a scratch file + git commit -F; push only to origin HEAD:claude/overhaul-app-functionality-83q0kq (PR #2) and only when asked"
+  }
+}
