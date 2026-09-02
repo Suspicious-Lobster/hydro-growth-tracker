@@ -23,3 +23,5 @@
 {"kind": "row", "run": "mr-run1", "wave": 8, "row": "MR-19", "tier": "O", "outcome": "done", "redproof": "real"}
 {"kind": "row", "run": "mr-run1", "wave": 8, "row": "MR-6", "tier": "O", "outcome": "done", "redproof": "real"}
 {"kind": "row", "run": "mr-run1", "wave": 8, "row": "MR-20", "tier": "O", "outcome": "done", "redproof": "none"}
+{"kind": "row", "run": "mr-run1", "wave": 9, "row": "MR-12", "tier": "S", "outcome": "done", "redproof": "real"}
+{"kind": "row", "run": "mr-run1", "wave": 9, "row": "MR-23", "tier": "S", "outcome": "done", "redproof": "real"}
