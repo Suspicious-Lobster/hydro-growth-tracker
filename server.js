@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import * as repo from './db/repository.js';
 import { runMigration, migrateData, SchemaTooNewError } from './db/migrate.js';
 import { validateLog, validatePlant, validateSchedule } from './validation.js';
+import { nullLogger } from './logger.js';
 
 // Marker embedded in exported backups so a restore can recognize its own files
 // (and reject an unrelated JSON) before replacing the store.
@@ -91,7 +92,7 @@ export const DEFAULT_ALLOWED_ORIGINS = ['null', 'file://'];
 // `allowedOrigins`: the only Origins that receive CORS headers.
 // `backupsDir`: where the once-a-day copies of the data file go (14 kept);
 // defaults to a backups/ folder beside the data file.
-export function createServer({ dataFile, uploadsDir, backupsDir = null, token = null, allowedOrigins = DEFAULT_ALLOWED_ORIGINS }) {
+export function createServer({ dataFile, uploadsDir, backupsDir = null, token = null, allowedOrigins = DEFAULT_ALLOWED_ORIGINS, logger = nullLogger }) {
   backupsDir = backupsDir || path.join(path.dirname(dataFile), 'backups');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
@@ -105,7 +106,7 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     try {
       migration = runMigration(dataFile);
     } catch (error) {
-      console.error('Data migration failed; serving existing data as-is:', error.message);
+      logger.error('Data migration failed; serving existing data as-is:', { message: error.message });
     }
   }
 
@@ -150,11 +151,11 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     repo.save(dataFile, data);
     // The daily copy is the recovery path for a damaged store; it must never
     // turn a successful save into a failure.
-    try { repo.dailyBackup(dataFile, backupsDir); } catch (error) { console.error('Daily backup failed:', error.message); }
+    try { repo.dailyBackup(dataFile, backupsDir); } catch (error) { logger.error('Daily backup failed:', { message: error.message }); }
   };
   // Take today's copy at startup too, so a day with no edits still has one.
   if (!state.damaged) {
-    try { repo.dailyBackup(dataFile, backupsDir); } catch (error) { console.error('Daily backup failed:', error.message); }
+    try { repo.dailyBackup(dataFile, backupsDir); } catch (error) { logger.error('Daily backup failed:', { message: error.message }); }
   }
 
   // Probe once at startup so the shell can warn immediately; a file that goes
@@ -267,7 +268,7 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
         const d = state.damaged || markDamaged(error);
         return res.status(503).json({ error: d.error, damaged: d });
       }
-      console.error(`Error handling ${req.method} ${req.path}:`, error);
+      logger.error(`Error handling ${req.method} ${req.path}`, { message: error.message, stack: error.stack });
       res.status(500).json({ error: 'Internal server error' });
     }
   };
@@ -571,7 +572,7 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
   // Multer / upload errors land here as JSON instead of an HTML stack trace.
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
-    console.error('Backend error:', err.message);
+    logger.error('Backend error:', { message: err.message });
     res.status(400).json({ error: err.message || 'Something went wrong' });
   });
 
@@ -584,12 +585,12 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
 // { httpServer, state, port, apiBase }; `state.damaged` is set when the data
 // file could not be read, so the shell can tell the user before they touch
 // anything.
-export function startServer({ dataFile, uploadsDir, backupsDir = null, port = 0, host = '127.0.0.1', token = null, allowedOrigins }) {
-  const app = createServer({ dataFile, uploadsDir, backupsDir, token, allowedOrigins });
+export function startServer({ dataFile, uploadsDir, backupsDir = null, port = 0, host = '127.0.0.1', token = null, allowedOrigins, logger = nullLogger }) {
+  const app = createServer({ dataFile, uploadsDir, backupsDir, token, allowedOrigins, logger });
   return new Promise((resolve, reject) => {
     const httpServer = app.listen(port, host, () => {
       const actual = httpServer.address().port;
-      console.log(`Embedded backend running on http://${host}:${actual} (JSON storage)`);
+      logger.info(`Embedded backend running on http://${host}:${actual} (JSON storage)`);
       resolve({ httpServer, state: app.hydroState, port: actual, apiBase: `http://${host}:${actual}` });
     });
     httpServer.on('error', reject);

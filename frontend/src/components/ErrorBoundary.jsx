@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, RefreshCw, Copy, Check } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 class ErrorBoundary extends React.Component {
@@ -45,6 +45,21 @@ class ErrorBoundary extends React.Component {
 
 const ErrorFallback = ({ error, errorInfo, onReset }) => {
   const { colors } = useTheme();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const details = [
+      error ? error.toString() : 'Unknown error',
+      '',
+      `Version: ${window.hydro?.version || 'development'}`,
+      '',
+      errorInfo?.componentStack || '',
+    ].join('\n');
+    navigator.clipboard.writeText(details).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <div className={`min-h-screen ${colors.bg} flex items-center justify-center p-4`}>
@@ -87,6 +102,13 @@ const ErrorFallback = ({ error, errorInfo, onReset }) => {
             className={`px-4 py-2 ${colors.bgAccent} ${colors.text} rounded-lg font-medium hover:opacity-80 transition-opacity border ${colors.border}`}
           >
             Reload Page
+          </button>
+          <button
+            onClick={handleCopy}
+            className={`px-4 py-2 ${colors.bgAccent} ${colors.text} rounded-lg font-medium hover:opacity-80 transition-opacity border ${colors.border} flex items-center justify-center gap-2`}
+          >
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+            {copied ? 'Copied' : 'Copy details'}
           </button>
         </div>
       </div>

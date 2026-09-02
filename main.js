@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { startServer, DEFAULT_ALLOWED_ORIGINS } from './server.js';
 import { wireLifecycle } from './lifecycle.js';
+import { createLogger } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +14,7 @@ const DEV_RENDERER_ORIGIN = 'http://localhost:5173';
 
 let mainWindow;
 let backendServer;
+let logger;
 // Where the backend ended up and the secret the renderer must present. Both
 // are minted per launch and reach the renderer only through preload.js.
 let backend = { apiBase: null, token: null };
@@ -25,6 +27,7 @@ function storagePaths() {
   // folder so it never touches the owner's data.
   const baseDir = process.env.HYDRO_USER_DATA || (isDev ? __dirname : app.getPath('userData'));
   return {
+    baseDir,
     dataFile: path.join(baseDir, 'hydro-data.json'),
     uploadsDir: path.join(baseDir, 'uploads'),
     backupsDir: path.join(baseDir, 'backups'),
@@ -123,12 +126,14 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
-    const { dataFile, uploadsDir, backupsDir } = storagePaths();
+    const { baseDir, dataFile, uploadsDir, backupsDir } = storagePaths();
+    logger = createLogger({ file: path.join(baseDir, 'logs', 'hydro.log') });
+    logger.info('app start', { version: app.getVersion(), baseDir, dataFile, uploadsDir, backupsDir });
     const token = crypto.randomBytes(32).toString('hex');
     const allowedOrigins = isDev ? [...DEFAULT_ALLOWED_ORIGINS, DEV_RENDERER_ORIGIN] : DEFAULT_ALLOWED_ORIGINS;
     // port 0: the OS picks a free loopback port (a fixed 5000 collides with
     // macOS AirPlay Receiver); the renderer learns the real one via preload.
-    const { httpServer, state, apiBase } = await startServer({ dataFile, uploadsDir, backupsDir, port: 0, token, allowedOrigins });
+    const { httpServer, state, apiBase } = await startServer({ dataFile, uploadsDir, backupsDir, port: 0, token, allowedOrigins, logger });
     backendServer = httpServer;
     backend = { apiBase, token };
     createWindow();
@@ -147,9 +152,28 @@ app.whenReady().then(async () => {
       dialog.showErrorBox(d.tooNew ? 'Your plant data needs a newer version' : 'Your plant data could not be read', lines.join('\n'));
     }
   } catch (error) {
-    console.error('Error during app startup:', error);
+    if (logger) logger.error('Error during app startup', { message: error.message, stack: error.stack });
+    else console.error('Error during app startup:', error);
     dialog.showErrorBox('Startup Error', `Failed to start the application: ${error.message}`);
   }
+});
+
+// A failed migration, a damaged store, or a route throw would otherwise be
+// invisible in a packaged app (there is no console to see them in); log the
+// full error and tell the user where the log lives instead of just crashing.
+process.on('uncaughtException', (error) => {
+  const logPath = logger ? logger.file : path.join(storagePaths().baseDir, 'logs', 'hydro.log');
+  if (logger) logger.error('Uncaught exception', { message: error.message, stack: error.stack });
+  else console.error('Uncaught exception:', error);
+  dialog.showErrorBox('Something went wrong', `An unexpected error occurred.\n\nDetails were written to: ${logPath}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  const logPath = logger ? logger.file : path.join(storagePaths().baseDir, 'logs', 'hydro.log');
+  if (logger) logger.error('Unhandled rejection', { message: error.message, stack: error.stack });
+  else console.error('Unhandled rejection:', error);
+  dialog.showErrorBox('Something went wrong', `An unexpected error occurred.\n\nDetails were written to: ${logPath}`);
 });
 
 // Single instance, macOS reopen, and closing the backend on quit (not on the

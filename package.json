@@ -36,6 +36,7 @@
       "db/**/*",
       "preload.js",
       "lifecycle.js",
+      "logger.js",
       "frontend/dist/**/*",
       "node_modules/**/*",
       "package.json"
