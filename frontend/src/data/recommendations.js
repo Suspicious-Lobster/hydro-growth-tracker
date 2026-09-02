@@ -29,6 +29,14 @@ export function getProfile(species) {
   return PLANT_PROFILES[species] || PLANT_PROFILES[PLANT_TYPES.GENERIC];
 }
 
+// True only when `species` has its own authored PLANT_PROFILES entry (not the
+// generic fallback). Used by the UI to flag species-specific vs generic
+// guidance instead of silently implying every species has real targets.
+export function hasOwnProfile(species) {
+  if (!species) return false;
+  return Object.prototype.hasOwnProperty.call(PLANT_PROFILES, species) && species !== PLANT_TYPES.GENERIC;
+}
+
 // Stages this species actually defines, in lifecycle order.
 const STAGE_ORDER = Object.values(GROWTH_STAGES);
 export function getProfileStages(species) {

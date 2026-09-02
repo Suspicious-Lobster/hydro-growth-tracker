@@ -4,7 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import { latestLog, currentHeight, totalGrowth, daysTracked } from '../utils/stats';
 import { formatLength, formatTemp } from '../utils/format';
-import { inferStage, stageLabel } from '../data/recommendations';
+import { inferStage, stageLabel, hasOwnProfile } from '../data/recommendations';
 import { measurementAlerts, describeAlert } from '../utils/ranges';
 
 const PlantCard = React.memo(({ plant, logs, lengthUnit, tempUnit, onSelect }) => {
@@ -24,6 +24,7 @@ const PlantCard = React.memo(({ plant, logs, lengthUnit, tempUnit, onSelect }) =
           <div className={`text-xs ${colors.textMuted} flex items-center gap-1`}>
             <Leaf size={12} />
             {plant.species || 'Unspecified'}{stage ? ` · ${stageLabel(stage)}` : ''}
+            {!hasOwnProfile(plant.species) && <span className={colors.textMuted}> · generic guidance</span>}
           </div>
         </div>
         {alerts.length > 0 ? (

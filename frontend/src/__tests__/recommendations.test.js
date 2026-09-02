@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { inferStage, getStageGuidance, getProfile, getProfileStages } from '../data/recommendations';
+import { inferStage, getStageGuidance, getProfile, getProfileStages, hasOwnProfile } from '../data/recommendations';
 import { GROWTH_STAGES, PLANT_TYPES } from '../data/plantKnowledge';
 
 describe('recommendations', () => {
@@ -33,5 +33,29 @@ describe('recommendations', () => {
 
   it('returns null stage for missing height', () => {
     expect(inferStage('tomato', null)).toBe(null);
+  });
+
+  // MR-34: every listed species except generic must have its own profile,
+  // not silently fall back to the generic one.
+  it('every PLANT_TYPES species except generic has its own profile', () => {
+    for (const type of Object.values(PLANT_TYPES)) {
+      if (type === PLANT_TYPES.GENERIC) continue;
+      expect(getProfile(type)).not.toBe(getProfile(PLANT_TYPES.GENERIC));
+    }
+  });
+
+  it('getProfile(basil) is not the generic profile', () => {
+    expect(getProfile('basil')).not.toBe(getProfile(PLANT_TYPES.GENERIC));
+  });
+
+  it('hasOwnProfile identifies species with a real authored profile', () => {
+    expect(hasOwnProfile('basil')).toBe(true);
+    expect(hasOwnProfile('')).toBe(false);
+    expect(hasOwnProfile('does-not-exist')).toBe(false);
+  });
+
+  it('infers vegetative stage for basil from its own height range', () => {
+    // Basil vegetative stage is 18-35cm.
+    expect(inferStage('basil', 25)).toBe(GROWTH_STAGES.VEGETATIVE);
   });
 });

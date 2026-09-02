@@ -131,14 +131,12 @@ describe('findViolations (real tables)', () => {
 
     console.log(`${species.length} species x ${invariantCount} invariants checked`);
 
-    // NOTE: PLANT_PROFILES currently defines only 3 of the 10 PLANT_TYPES
-    // (tomato, lettuce, generic) — cannabis, basil, pepper, cucumber,
-    // strawberry, spinach, kale have no profile and silently fall back to
-    // 'generic' via getProfile()/getStageGuidance(). The row brief assumed
-    // 10; the real table has 3. Asserting against the real count, not the
-    // assumed one, per "report a real gap, don't paper over it".
+    // NOTE (MR-34): all 10 PLANT_TYPES now have their own PLANT_PROFILES
+    // entry (tomato, lettuce, basil, pepper, cucumber, strawberry, spinach,
+    // kale, cannabis, generic), so getProfile()/getStageGuidance() no longer
+    // silently fall back to 'generic' for any listed species.
     expect(species.length).toBe(Object.keys(PLANT_PROFILES).length);
-    expect(species.length).toBe(3);
+    expect(species.length).toBe(10);
     expect(violations).toEqual([]);
   });
 });

@@ -276,6 +276,1098 @@ export const PLANT_PROFILES = {
     }
   },
 
+  [PLANT_TYPES.BASIL]: {
+    name: 'Basil',
+    category: 'leafy_green',
+    lifecycle: 'annual',
+    harvestTime: '30-60 days',
+    optimalTemp: { min: 20, max: 28, unit: 'C' },
+    optimalHumidity: { min: 40, max: 60 },
+    lightRequirement: '14-16 hours',
+    phRange: { min: 5.5, max: 6.5 },
+    stages: {
+      [GROWTH_STAGES.SEEDLING]: {
+        heightRange: { min: 0, max: 8 },
+        duration: '7-10 days',
+        ec: { min: 0.5, max: 0.8 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'low',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'low'
+        },
+        feeding: {
+          frequency: 'every 2 days',
+          concentration: 'quarter strength',
+          details: 'Light feeding while roots establish. Basil is sensitive to overfeeding early on.'
+        },
+        care: {
+          pruning: 'None required.',
+          monitoring: 'Watch for damping off. Keep medium moist but not waterlogged.',
+          environment: 'Warm conditions preferred, 22-26C. High humidity (60-70%) for germination.'
+        },
+        problems: [
+          { issue: 'Damping off', cause: 'Excess moisture, poor airflow', solution: 'Reduce watering, increase ventilation' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_VEG]: {
+        heightRange: { min: 8, max: 18 },
+        duration: '10-14 days',
+        ec: { min: 0.8, max: 1.1 },
+        nutrients: {
+          nitrogen: 'medium-high',
+          phosphorus: 'low',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'every 1-2 days',
+          concentration: 'half strength',
+          details: 'Increase feeding as roots fill out. Nitrogen supports leaf growth without pushing early flowering.'
+        },
+        care: {
+          pruning: 'Pinch the growing tip once 3-4 leaf sets form to encourage bushing.',
+          monitoring: 'Check for aphids on new growth. Watch leaf color for nitrogen deficiency.',
+          environment: 'Maintain warmth. Avoid cold drafts, which stunt growth.'
+        },
+        problems: [
+          { issue: 'Slow bushing', cause: 'No pinching done', solution: 'Pinch growing tips to force lateral branching' }
+        ]
+      },
+      [GROWTH_STAGES.VEGETATIVE]: {
+        heightRange: { min: 18, max: 35 },
+        duration: '21-35 days',
+        ec: { min: 1.1, max: 1.6 },
+        nutrients: {
+          nitrogen: 'high',
+          phosphorus: 'low-medium',
+          potassium: 'medium-high',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Sustained feeding for continuous leaf production. Remove flower spikes to keep leaves tender.'
+        },
+        care: {
+          pruning: 'Pinch flower spikes as soon as they appear. Harvest from the top down to encourage branching.',
+          monitoring: 'Watch for downy mildew on leaf undersides in humid conditions.',
+          environment: 'Good airflow between plants to reduce fungal risk.'
+        },
+        problems: [
+          { issue: 'Bolting/flowering', cause: 'Long days, heat stress', solution: 'Pinch flower spikes promptly' },
+          { issue: 'Downy mildew', cause: 'High humidity, poor airflow', solution: 'Increase ventilation, reduce humidity' }
+        ]
+      },
+      [GROWTH_STAGES.HARVEST]: {
+        heightRange: { min: 35, max: 45 },
+        duration: 'ongoing, harvest every 1-2 weeks',
+        ec: { min: 1.3, max: 1.6 },
+        nutrients: {
+          nitrogen: 'medium-high',
+          phosphorus: 'low-medium',
+          potassium: 'medium-high',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Maintain full feeding through repeated harvests. Harvest above a leaf node to keep the plant productive.'
+        },
+        care: {
+          pruning: 'Harvest the top third of each stem regularly; never strip a plant bare.',
+          monitoring: 'Continue removing any flower spikes to extend the harvest window.',
+          environment: 'Stable warm conditions extend productive life.'
+        },
+        problems: [
+          { issue: 'Leaves turning bitter', cause: 'Plant allowed to flower', solution: 'Harvest more frequently, remove flowers early' }
+        ]
+      }
+    }
+  },
+
+  [PLANT_TYPES.PEPPER]: {
+    name: 'Pepper',
+    category: 'fruiting',
+    lifecycle: 'annual',
+    harvestTime: '70-90 days',
+    optimalTemp: { min: 21, max: 29, unit: 'C' },
+    optimalHumidity: { min: 50, max: 65 },
+    lightRequirement: '14-16 hours',
+    phRange: { min: 5.8, max: 6.3 },
+    stages: {
+      [GROWTH_STAGES.SEEDLING]: {
+        heightRange: { min: 0, max: 10 },
+        duration: '14-21 days',
+        ec: { min: 0.8, max: 1.2 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'low'
+        },
+        feeding: {
+          frequency: 'every 2-3 days',
+          concentration: 'quarter strength',
+          details: 'Peppers germinate and establish slowly; keep feeding light until true leaves are well formed.'
+        },
+        care: {
+          pruning: 'None required.',
+          monitoring: 'Watch for damping off. Peppers like warm root zones (24-27C).',
+          environment: 'Warm and humid, 75-80% humidity during germination.'
+        },
+        problems: [
+          { issue: 'Slow/uneven germination', cause: 'Cold root zone', solution: 'Use bottom heat to keep media above 24C' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_VEG]: {
+        heightRange: { min: 10, max: 25 },
+        duration: '14-21 days',
+        ec: { min: 1.2, max: 1.6 },
+        nutrients: {
+          nitrogen: 'medium-high',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium-high',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'half strength',
+          details: 'Build up root and stem strength before the plant branches.'
+        },
+        care: {
+          pruning: 'Remove any early flower buds to build a stronger plant first.',
+          monitoring: 'Watch for stretching under low light.',
+          environment: 'Keep warm; peppers stall below 15C.'
+        },
+        problems: [
+          { issue: 'Leggy stems', cause: 'Insufficient light', solution: 'Increase light intensity or move closer to source' }
+        ]
+      },
+      [GROWTH_STAGES.VEGETATIVE]: {
+        heightRange: { min: 25, max: 45 },
+        duration: '21-35 days',
+        ec: { min: 1.6, max: 1.8 },
+        nutrients: {
+          nitrogen: 'high',
+          phosphorus: 'medium',
+          potassium: 'medium-high',
+          calcium: 'high',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Peak leaf and branch development. Support calcium supply to prevent blossom end rot later.'
+        },
+        care: {
+          pruning: 'Top the main stem once it forks to encourage multiple branches.',
+          monitoring: 'Check branching pattern (main "Y" split) and support structure.',
+          environment: 'Maintain consistent warmth and airflow.'
+        },
+        problems: [
+          { issue: 'Purple stems', cause: 'Cold stress or phosphorus deficiency', solution: 'Check root zone temperature, adjust feed' }
+        ]
+      },
+      [GROWTH_STAGES.PRE_FLOWER]: {
+        heightRange: { min: 45, max: 60 },
+        duration: '10-14 days',
+        ec: { min: 1.8, max: 2.0 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'high',
+          potassium: 'high',
+          calcium: 'high',
+          magnesium: 'medium-high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Transition toward bloom nutrients as flower buds form at branch forks.'
+        },
+        care: {
+          pruning: 'Stake or cage the plant before it becomes top-heavy with fruit.',
+          monitoring: 'Watch for first flowers opening.',
+          environment: 'Stable temperature improves fruit set.'
+        },
+        problems: [
+          { issue: 'Flower bud drop', cause: 'Temperature swings, stress', solution: 'Stabilize environment' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_FLOWER]: {
+        heightRange: { min: 60, max: 75 },
+        duration: '14-21 days',
+        ec: { min: 2.0, max: 2.2 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'high',
+          potassium: 'high',
+          calcium: 'high',
+          magnesium: 'medium-high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength bloom',
+          details: 'Higher phosphorus and potassium to support fruit set and early sizing.'
+        },
+        care: {
+          pruning: 'Remove weak inner growth to focus energy on developing pods.',
+          monitoring: 'Hand pollinate if airflow/pollinators are limited.',
+          environment: 'Avoid heat spikes above 32C, which cause flower drop.'
+        },
+        problems: [
+          { issue: 'Poor fruit set', cause: 'Heat stress, low pollination', solution: 'Hand pollinate, improve airflow' }
+        ]
+      },
+      [GROWTH_STAGES.MID_FLOWER]: {
+        heightRange: { min: 75, max: 90 },
+        duration: '21-35 days',
+        ec: { min: 2.2, max: 2.4 },
+        nutrients: {
+          nitrogen: 'low-medium',
+          phosphorus: 'high',
+          potassium: 'very high',
+          calcium: 'high',
+          magnesium: 'high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength bloom',
+          details: 'Peak fruiting nutrition. High potassium supports wall thickness and flavor development.'
+        },
+        care: {
+          pruning: 'Support heavy fruiting branches. Remove any diseased leaves.',
+          monitoring: 'Track fruit sizing and color change toward maturity.',
+          environment: 'Consistent conditions for even fruit development.'
+        },
+        problems: [
+          { issue: 'Blossom end rot', cause: 'Calcium deficiency, inconsistent watering', solution: 'Increase calcium, even out watering' }
+        ]
+      },
+      [GROWTH_STAGES.LATE_FLOWER]: {
+        heightRange: { min: 90, max: 110 },
+        duration: '14-21 days',
+        ec: { min: 1.8, max: 2.2 },
+        nutrients: {
+          nitrogen: 'low',
+          phosphorus: 'medium-high',
+          potassium: 'high',
+          calcium: 'medium-high',
+          magnesium: 'medium-high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'bloom with ripening enhancer',
+          details: 'Ease feeding slightly as pods ripen to full color.'
+        },
+        care: {
+          pruning: 'Harvest ripe pods regularly to encourage further fruiting.',
+          monitoring: 'Watch for sunscald on exposed fruit.',
+          environment: 'Good airflow prevents fruit rot in humid conditions.'
+        },
+        problems: [
+          { issue: 'Sunscald', cause: 'Direct intense light on exposed fruit', solution: 'Provide light shading for exposed pods' }
+        ]
+      }
+    }
+  },
+
+  [PLANT_TYPES.CUCUMBER]: {
+    name: 'Cucumber',
+    category: 'fruiting',
+    lifecycle: 'annual',
+    harvestTime: '50-70 days',
+    optimalTemp: { min: 18, max: 28, unit: 'C' },
+    optimalHumidity: { min: 60, max: 70 },
+    lightRequirement: '12-16 hours',
+    phRange: { min: 5.8, max: 6.0 },
+    stages: {
+      [GROWTH_STAGES.SEEDLING]: {
+        heightRange: { min: 0, max: 15 },
+        duration: '7-10 days',
+        ec: { min: 1.0, max: 1.3 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'low'
+        },
+        feeding: {
+          frequency: 'every 1-2 days',
+          concentration: 'quarter strength',
+          details: 'Fast-germinating; move to light feeding quickly as cucumbers grow rapidly from the start.'
+        },
+        care: {
+          pruning: 'None required.',
+          monitoring: 'Watch for damping off in cool, wet media.',
+          environment: 'Warm, humid conditions (75-80% humidity) for quick germination.'
+        },
+        problems: [
+          { issue: 'Damping off', cause: 'Cold, wet media', solution: 'Keep media warm and well-drained' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_VEG]: {
+        heightRange: { min: 15, max: 40 },
+        duration: '10-14 days',
+        ec: { min: 1.3, max: 1.6 },
+        nutrients: {
+          nitrogen: 'high',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium-high',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'half strength',
+          details: 'Rapid vine growth begins; ramp up feeding to keep pace.'
+        },
+        care: {
+          pruning: 'Begin training the vine onto a trellis or string.',
+          monitoring: 'Watch for tendrils grabbing support; guide as needed.',
+          environment: 'High humidity supports rapid leaf expansion.'
+        },
+        problems: [
+          { issue: 'Weak vine growth', cause: 'Insufficient nitrogen or light', solution: 'Increase feeding strength and light' }
+        ]
+      },
+      [GROWTH_STAGES.VEGETATIVE]: {
+        heightRange: { min: 40, max: 90 },
+        duration: '14-21 days',
+        ec: { min: 1.6, max: 1.9 },
+        nutrients: {
+          nitrogen: 'high',
+          phosphorus: 'medium',
+          potassium: 'high',
+          calcium: 'high',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Vigorous vine and leaf growth. Keep nitrogen high to build the canopy that will support fruiting.'
+        },
+        care: {
+          pruning: 'Remove lower leaves and side shoots below the first fruit set point. Continue trellis training.',
+          monitoring: 'Check for powdery mildew on leaves in dry conditions.',
+          environment: 'Maintain airflow through the dense canopy.'
+        },
+        problems: [
+          { issue: 'Powdery mildew', cause: 'Dry leaves, poor airflow', solution: 'Increase circulation, avoid leaf-dry stress' }
+        ]
+      },
+      [GROWTH_STAGES.PRE_FLOWER]: {
+        heightRange: { min: 90, max: 130 },
+        duration: '7-10 days',
+        ec: { min: 1.9, max: 2.1 },
+        nutrients: {
+          nitrogen: 'medium-high',
+          phosphorus: 'high',
+          potassium: 'high',
+          calcium: 'high',
+          magnesium: 'medium-high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Transition to bloom feed as female flowers begin to form.'
+        },
+        care: {
+          pruning: 'Remove any early male flowers if a seedless variety is desired.',
+          monitoring: 'Watch for first female flowers (small fruit behind the bloom).',
+          environment: 'Stable warmth aids flower development.'
+        },
+        problems: [
+          { issue: 'Few female flowers', cause: 'Heat or light stress', solution: 'Stabilize temperature and light schedule' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_FLOWER]: {
+        heightRange: { min: 130, max: 170 },
+        duration: '10-14 days',
+        ec: { min: 2.1, max: 2.3 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'high',
+          potassium: 'very high',
+          calcium: 'high',
+          magnesium: 'high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength bloom',
+          details: 'High potassium supports rapid fruit sizing, which happens quickly in cucumbers.'
+        },
+        care: {
+          pruning: 'Continue trellis training. Remove excess side shoots to focus energy on fruit.',
+          monitoring: 'Harvest fruit while young and tender; oversized fruit slows further production.',
+          environment: 'Consistent watering prevents bitter fruit.'
+        },
+        problems: [
+          { issue: 'Bitter fruit', cause: 'Inconsistent watering, stress', solution: 'Maintain even moisture and feeding' }
+        ]
+      },
+      [GROWTH_STAGES.MID_FLOWER]: {
+        heightRange: { min: 170, max: 210 },
+        duration: '14-28 days',
+        ec: { min: 2.2, max: 2.5 },
+        nutrients: {
+          nitrogen: 'low-medium',
+          phosphorus: 'high',
+          potassium: 'very high',
+          calcium: 'high',
+          magnesium: 'high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength bloom',
+          details: 'Peak, continuous fruiting. Harvest every 1-2 days to keep the vine producing.'
+        },
+        care: {
+          pruning: 'Remove yellowing lower leaves. Keep pruning side shoots to manage vine size.',
+          monitoring: 'Daily harvest checks; fruit sizes quickly at this stage.',
+          environment: 'Stable humidity and airflow reduce disease pressure on the dense canopy.'
+        },
+        problems: [
+          { issue: 'Downy mildew', cause: 'High humidity, poor airflow', solution: 'Increase ventilation, avoid leaf wetness' }
+        ]
+      },
+      [GROWTH_STAGES.LATE_FLOWER]: {
+        heightRange: { min: 210, max: 250 },
+        duration: '14-21 days',
+        ec: { min: 1.9, max: 2.3 },
+        nutrients: {
+          nitrogen: 'low',
+          phosphorus: 'medium-high',
+          potassium: 'high',
+          calcium: 'medium-high',
+          magnesium: 'medium-high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'bloom, reduced strength',
+          details: 'Production naturally tapers; ease feeding slightly as the vine ages.'
+        },
+        care: {
+          pruning: 'Remove spent vine sections. Continue harvesting remaining fruit promptly.',
+          monitoring: 'Watch for declining vigor signaling end of productive life.',
+          environment: 'Maintain airflow to limit late-season fungal issues.'
+        },
+        problems: [
+          { issue: 'Declining yield', cause: 'Natural plant aging', solution: 'Plan succession planting if continuous harvest needed' }
+        ]
+      }
+    }
+  },
+
+  [PLANT_TYPES.STRAWBERRY]: {
+    name: 'Strawberry',
+    category: 'fruiting',
+    lifecycle: 'perennial',
+    harvestTime: '60-90 days to first fruit',
+    optimalTemp: { min: 15, max: 24, unit: 'C' },
+    optimalHumidity: { min: 60, max: 70 },
+    lightRequirement: '10-12 hours',
+    phRange: { min: 5.5, max: 6.5 },
+    stages: {
+      [GROWTH_STAGES.SEEDLING]: {
+        heightRange: { min: 0, max: 5 },
+        duration: '14-21 days',
+        ec: { min: 0.6, max: 0.8 },
+        nutrients: {
+          nitrogen: 'low-medium',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'low'
+        },
+        feeding: {
+          frequency: 'every 2-3 days',
+          concentration: 'quarter strength',
+          details: 'Light feeding while the crown and root system establish.'
+        },
+        care: {
+          pruning: 'None required. Remove any runners that form this early.',
+          monitoring: 'Watch crown for rot; keep crown level with the medium surface, not buried.',
+          environment: 'Cool and humid, 70-75% humidity.'
+        },
+        problems: [
+          { issue: 'Crown rot', cause: 'Crown planted too deep or overwatered', solution: 'Keep crown at surface level, reduce watering' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_VEG]: {
+        heightRange: { min: 5, max: 10 },
+        duration: '14-21 days',
+        ec: { min: 0.8, max: 1.0 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'every 1-2 days',
+          concentration: 'half strength',
+          details: 'Build leaf canopy and root mass ahead of flowering.'
+        },
+        care: {
+          pruning: 'Remove runners to direct energy into the main crown unless propagating.',
+          monitoring: 'Check for spider mites on leaf undersides.',
+          environment: 'Cool conditions favor strong crown development.'
+        },
+        problems: [
+          { issue: 'Spider mites', cause: 'Low humidity, warm conditions', solution: 'Raise humidity, inspect leaf undersides regularly' }
+        ]
+      },
+      [GROWTH_STAGES.VEGETATIVE]: {
+        heightRange: { min: 10, max: 15 },
+        duration: '21-35 days',
+        ec: { min: 1.0, max: 1.2 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'medium',
+          potassium: 'medium-high',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Full canopy development ahead of flower truss emergence.'
+        },
+        care: {
+          pruning: 'Continue removing runners. Trim any damaged outer leaves.',
+          monitoring: 'Watch for first flower trusses emerging from the crown center.',
+          environment: 'Stable cool-to-moderate temperature promotes flowering.'
+        },
+        problems: [
+          { issue: 'No flower trusses forming', cause: 'Insufficient chill period or day length mismatch', solution: 'Check cultivar day-length requirements' }
+        ]
+      },
+      [GROWTH_STAGES.PRE_FLOWER]: {
+        heightRange: { min: 15, max: 18 },
+        duration: '7-14 days',
+        ec: { min: 1.1, max: 1.3 },
+        nutrients: {
+          nitrogen: 'low-medium',
+          phosphorus: 'high',
+          potassium: 'medium-high',
+          calcium: 'medium-high',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Higher phosphorus supports flower truss development.'
+        },
+        care: {
+          pruning: 'Thin weak flower buds to favor larger fruit on remaining trusses.',
+          monitoring: 'Watch for first open flowers.',
+          environment: 'Good airflow assists pollination.'
+        },
+        problems: [
+          { issue: 'Weak flower trusses', cause: 'Nutrient imbalance', solution: 'Increase phosphorus and potassium' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_FLOWER]: {
+        heightRange: { min: 18, max: 20 },
+        duration: '10-14 days',
+        ec: { min: 1.2, max: 1.4 },
+        nutrients: {
+          nitrogen: 'low',
+          phosphorus: 'high',
+          potassium: 'high',
+          calcium: 'medium-high',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength bloom',
+          details: 'Hand pollination with a soft brush improves fruit set indoors.'
+        },
+        care: {
+          pruning: 'Continue removing runners so all energy goes to fruit.',
+          monitoring: 'Watch for successful pollination (fruit beginning to swell behind the flower).',
+          environment: 'Gentle airflow aids pollen transfer.'
+        },
+        problems: [
+          { issue: 'Poor fruit set', cause: 'No pollinators, still air', solution: 'Hand pollinate with a soft brush' }
+        ]
+      },
+      [GROWTH_STAGES.MID_FLOWER]: {
+        heightRange: { min: 20, max: 22 },
+        duration: '14-28 days',
+        ec: { min: 1.25, max: 1.4 },
+        nutrients: {
+          nitrogen: 'low',
+          phosphorus: 'medium-high',
+          potassium: 'high',
+          calcium: 'medium-high',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength bloom',
+          details: 'Fruit sizing stage; maintain potassium for sweetness and firmness.'
+        },
+        care: {
+          pruning: 'Elevate developing fruit off the medium to prevent rot.',
+          monitoring: 'Check fruit color progression daily as it nears ripeness.',
+          environment: 'Good airflow around fruit reduces botrytis risk.'
+        },
+        problems: [
+          { issue: 'Botrytis (gray mold)', cause: 'High humidity, fruit contact with wet surfaces', solution: 'Elevate fruit, improve airflow, reduce humidity' }
+        ]
+      },
+      [GROWTH_STAGES.LATE_FLOWER]: {
+        heightRange: { min: 22, max: 25 },
+        duration: '14-21 days',
+        ec: { min: 1.0, max: 1.4 },
+        nutrients: {
+          nitrogen: 'low',
+          phosphorus: 'medium',
+          potassium: 'medium-high',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'reduced strength',
+          details: 'Ease EC slightly during ripening to favor sweetness over vegetative push.'
+        },
+        care: {
+          pruning: 'Harvest ripe berries every 1-2 days.',
+          monitoring: 'Watch for fully red color and easy detachment from the calyx.',
+          environment: 'Cooler, drier air during ripening improves flavor and shelf life.'
+        },
+        problems: [
+          { issue: 'Pale/uneven fruit color', cause: 'Insufficient light during ripening', solution: 'Increase light intensity in final ripening stage' }
+        ]
+      }
+    }
+  },
+
+  [PLANT_TYPES.SPINACH]: {
+    name: 'Spinach',
+    category: 'leafy_green',
+    lifecycle: 'annual',
+    harvestTime: '35-45 days',
+    optimalTemp: { min: 16, max: 22, unit: 'C' },
+    optimalHumidity: { min: 50, max: 60 },
+    lightRequirement: '10-12 hours',
+    phRange: { min: 6.0, max: 7.0 },
+    stages: {
+      [GROWTH_STAGES.SEEDLING]: {
+        heightRange: { min: 0, max: 5 },
+        duration: '7-10 days',
+        ec: { min: 1.0, max: 1.4 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'low'
+        },
+        feeding: {
+          frequency: 'every 2 days',
+          concentration: 'quarter strength',
+          details: 'Cool-season crop; keep root zone cool to avoid premature bolting later.'
+        },
+        care: {
+          pruning: 'None required.',
+          monitoring: 'Watch for damping off. Keep temperature below 22C.',
+          environment: 'Cool, 60-65% humidity for germination.'
+        },
+        problems: [
+          { issue: 'Poor germination', cause: 'Root zone too warm', solution: 'Keep temperature below 22C during germination' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_VEG]: {
+        heightRange: { min: 5, max: 10 },
+        duration: '10-14 days',
+        ec: { min: 1.4, max: 1.8 },
+        nutrients: {
+          nitrogen: 'high',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'half strength',
+          details: 'High nitrogen builds leaf mass quickly in this fast-growing crop.'
+        },
+        care: {
+          pruning: 'None required.',
+          monitoring: 'Watch for early bolting if temperatures spike.',
+          environment: 'Keep cool; spinach bolts readily above 24C.'
+        },
+        problems: [
+          { issue: 'Early bolting', cause: 'Heat stress, long day length', solution: 'Keep temperature down, shorten light period if possible' }
+        ]
+      },
+      [GROWTH_STAGES.VEGETATIVE]: {
+        heightRange: { min: 10, max: 20 },
+        duration: '14-28 days',
+        ec: { min: 1.8, max: 2.3 },
+        nutrients: {
+          nitrogen: 'high',
+          phosphorus: 'medium',
+          potassium: 'medium-high',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Sustained high nitrogen for continuous leaf production.'
+        },
+        care: {
+          pruning: 'Harvest outer leaves as they reach full size to encourage new growth.',
+          monitoring: 'Watch for leaf miner damage and downy mildew.',
+          environment: 'Cool with good airflow.'
+        },
+        problems: [
+          { issue: 'Leaf miner', cause: 'Adult flies laying eggs in leaves', solution: 'Remove affected leaves, use insect netting' }
+        ]
+      },
+      [GROWTH_STAGES.HARVEST]: {
+        heightRange: { min: 20, max: 25 },
+        duration: 'ongoing, harvest outer leaves',
+        ec: { min: 2.0, max: 2.3 },
+        nutrients: {
+          nitrogen: 'medium-high',
+          phosphorus: 'medium',
+          potassium: 'medium-high',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Maintain feeding through repeated outer-leaf harvests until the plant begins to bolt.'
+        },
+        care: {
+          pruning: 'Harvest outer leaves regularly, leaving the center crown intact.',
+          monitoring: 'Once a center stalk starts to elongate, harvest the whole plant before it bolts.',
+          environment: 'Keep as cool as practical to extend the harvest window.'
+        },
+        problems: [
+          { issue: 'Bitter leaves', cause: 'Plant has begun bolting', solution: 'Harvest promptly once bolting starts' }
+        ]
+      }
+    }
+  },
+
+  [PLANT_TYPES.KALE]: {
+    name: 'Kale',
+    category: 'leafy_green',
+    lifecycle: 'biennial',
+    harvestTime: '50-65 days',
+    optimalTemp: { min: 15, max: 24, unit: 'C' },
+    optimalHumidity: { min: 50, max: 60 },
+    lightRequirement: '12-14 hours',
+    phRange: { min: 6.0, max: 6.5 },
+    stages: {
+      [GROWTH_STAGES.SEEDLING]: {
+        heightRange: { min: 0, max: 8 },
+        duration: '7-10 days',
+        ec: { min: 0.8, max: 1.0 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'low'
+        },
+        feeding: {
+          frequency: 'every 2 days',
+          concentration: 'quarter strength',
+          details: 'Cool-season brassica; establishes steadily with light early feeding.'
+        },
+        care: {
+          pruning: 'None required.',
+          monitoring: 'Watch for damping off and flea beetle damage on cotyledons.',
+          environment: 'Cool, 65-70% humidity for germination.'
+        },
+        problems: [
+          { issue: 'Flea beetle damage', cause: 'Pest pressure on young leaves', solution: 'Use insect netting, treat if severe' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_VEG]: {
+        heightRange: { min: 8, max: 18 },
+        duration: '14-21 days',
+        ec: { min: 1.0, max: 1.25 },
+        nutrients: {
+          nitrogen: 'medium-high',
+          phosphorus: 'medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'half strength',
+          details: 'Build a strong leaf base; kale is a slower-growing brassica than spinach.'
+        },
+        care: {
+          pruning: 'None required.',
+          monitoring: 'Watch for cabbage worms and aphids.',
+          environment: 'Cool conditions produce sweeter, less bitter leaves.'
+        },
+        problems: [
+          { issue: 'Aphid clusters', cause: 'Warm, still air on new growth', solution: 'Increase airflow, spot-treat affected leaves' }
+        ]
+      },
+      [GROWTH_STAGES.VEGETATIVE]: {
+        heightRange: { min: 18, max: 35 },
+        duration: '21-42 days',
+        ec: { min: 1.25, max: 1.5 },
+        nutrients: {
+          nitrogen: 'high',
+          phosphorus: 'medium',
+          potassium: 'medium-high',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Sustained feeding for the large, thick leaves kale is grown for.'
+        },
+        care: {
+          pruning: 'Harvest outer/lower leaves once hand-sized, leaving the crown to keep producing.',
+          monitoring: 'Watch for cabbage worms; check leaf undersides.',
+          environment: 'Good airflow to keep dense foliage dry.'
+        },
+        problems: [
+          { issue: 'Cabbage worm holes', cause: 'Caterpillar feeding', solution: 'Hand-pick, use netting or Bt treatment' }
+        ]
+      },
+      [GROWTH_STAGES.HARVEST]: {
+        heightRange: { min: 35, max: 50 },
+        duration: 'ongoing, harvest outer leaves',
+        ec: { min: 1.4, max: 1.5 },
+        nutrients: {
+          nitrogen: 'medium-high',
+          phosphorus: 'medium',
+          potassium: 'medium-high',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Maintain feeding through ongoing harvests; kale can produce for months if kept cool.'
+        },
+        care: {
+          pruning: 'Continue harvesting outer leaves, always leaving the top crown intact.',
+          monitoring: 'Flavor improves after light cold exposure; watch for bolting in warm conditions.',
+          environment: 'Cooler temperatures extend the productive harvest window.'
+        },
+        problems: [
+          { issue: 'Tough, bitter leaves', cause: 'Heat stress or leaves left too long', solution: 'Harvest more frequently, keep cool' }
+        ]
+      }
+    }
+  },
+
+  [PLANT_TYPES.CANNABIS]: {
+    name: 'Cannabis',
+    category: 'fruiting',
+    lifecycle: 'annual',
+    harvestTime: '90-120 days',
+    optimalTemp: { min: 20, max: 28, unit: 'C' },
+    optimalHumidity: { min: 40, max: 60 },
+    lightRequirement: '12-18 hours',
+    phRange: { min: 5.8, max: 6.2 },
+    stages: {
+      [GROWTH_STAGES.SEEDLING]: {
+        heightRange: { min: 0, max: 15 },
+        duration: '7-14 days',
+        ec: { min: 0.4, max: 0.8 },
+        nutrients: {
+          nitrogen: 'low',
+          phosphorus: 'low',
+          potassium: 'low',
+          calcium: 'medium',
+          magnesium: 'low'
+        },
+        feeding: {
+          frequency: 'every 2-3 days',
+          concentration: 'quarter strength',
+          details: 'Very light feeding; young roots are easily burned by excess salts.'
+        },
+        care: {
+          pruning: 'None required.',
+          monitoring: 'Watch for damping off and nutrient burn on cotyledons.',
+          environment: 'Warm and humid, 65-70% humidity, gentle airflow.'
+        },
+        problems: [
+          { issue: 'Nutrient burn on tips', cause: 'Feeding too strong for seedling stage', solution: 'Dilute solution, feed less frequently' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_VEG]: {
+        heightRange: { min: 15, max: 35 },
+        duration: '14-21 days',
+        ec: { min: 0.8, max: 1.2 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'low-medium',
+          potassium: 'medium',
+          calcium: 'medium',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'half strength',
+          details: 'Ramp up nitrogen as the plant establishes its first true node sets.'
+        },
+        care: {
+          pruning: 'Top the main stem above the third or fourth node if training for multiple colas.',
+          monitoring: 'Watch for stretching under insufficient light.',
+          environment: 'Keep humidity moderate (55-65%) to encourage sturdy stem growth.'
+        },
+        problems: [
+          { issue: 'Excessive stretch', cause: 'Light too far away or too dim', solution: 'Raise light intensity or lower fixture' }
+        ]
+      },
+      [GROWTH_STAGES.VEGETATIVE]: {
+        heightRange: { min: 35, max: 70 },
+        duration: '21-42 days',
+        ec: { min: 1.2, max: 1.6 },
+        nutrients: {
+          nitrogen: 'high',
+          phosphorus: 'medium',
+          potassium: 'medium-high',
+          calcium: 'high',
+          magnesium: 'medium'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Peak vegetative growth. High nitrogen builds the canopy that will support flower yield.'
+        },
+        care: {
+          pruning: 'Low-stress train branches and remove lower growth that will not receive light in flower.',
+          monitoring: 'Check for pests (spider mites, thrips) before switching to flower.',
+          environment: 'Maintain strong airflow through the canopy.'
+        },
+        problems: [
+          { issue: 'Nitrogen toxicity (dark, clawed leaves)', cause: 'Overfeeding', solution: 'Flush with plain water, reduce feed strength' }
+        ]
+      },
+      [GROWTH_STAGES.PRE_FLOWER]: {
+        heightRange: { min: 70, max: 100 },
+        duration: '7-14 days',
+        ec: { min: 1.6, max: 1.8 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'medium-high',
+          potassium: 'high',
+          calcium: 'high',
+          magnesium: 'medium-high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength',
+          details: 'Transition feed toward bloom formula as the light schedule switches and pistils begin showing.'
+        },
+        care: {
+          pruning: 'Final defoliation pass to open the canopy to light before flowers bulk up.',
+          monitoring: 'Confirm plant sex; watch for the stretch that follows the light schedule switch.',
+          environment: 'Stable temperature and humidity reduce stress during the transition.'
+        },
+        problems: [
+          { issue: 'Hermaphroditism', cause: 'Stress during light transition', solution: 'Minimize light leaks and environmental stress' }
+        ]
+      },
+      [GROWTH_STAGES.EARLY_FLOWER]: {
+        heightRange: { min: 100, max: 130 },
+        duration: '14-21 days',
+        ec: { min: 1.8, max: 2.0 },
+        nutrients: {
+          nitrogen: 'medium',
+          phosphorus: 'high',
+          potassium: 'high',
+          calcium: 'high',
+          magnesium: 'high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength bloom',
+          details: 'Bloom nutrients with higher phosphorus and potassium as bud sites form.'
+        },
+        care: {
+          pruning: 'Support branches as bud weight increases. Continue light defoliation for airflow.',
+          monitoring: 'Track bud development at each node.',
+          environment: 'Lower humidity (45-55%) reduces bud rot risk as flowers thicken.'
+        },
+        problems: [
+          { issue: 'Slow bud development', cause: 'Light intensity too low for flower stage', solution: 'Increase light intensity for the flowering canopy' }
+        ]
+      },
+      [GROWTH_STAGES.MID_FLOWER]: {
+        heightRange: { min: 130, max: 160 },
+        duration: '21-35 days',
+        ec: { min: 2.0, max: 2.2 },
+        nutrients: {
+          nitrogen: 'low-medium',
+          phosphorus: 'high',
+          potassium: 'very high',
+          calcium: 'high',
+          magnesium: 'high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'full strength bloom',
+          details: 'Peak bud swell. High potassium supports density and resin production.'
+        },
+        care: {
+          pruning: 'Support heavy colas. Remove any leaves shading bud sites directly above them.',
+          monitoring: 'Watch trichome development for maturity cues.',
+          environment: 'Keep humidity below 50% to limit bud rot in dense colas.'
+        },
+        problems: [
+          { issue: 'Bud rot (botrytis)', cause: 'High humidity, dense un-aired colas', solution: 'Lower humidity, improve airflow, remove affected buds' }
+        ]
+      },
+      [GROWTH_STAGES.LATE_FLOWER]: {
+        heightRange: { min: 160, max: 200 },
+        duration: '14-21 days',
+        ec: { min: 2.0, max: 2.4 },
+        nutrients: {
+          nitrogen: 'low',
+          phosphorus: 'medium-high',
+          potassium: 'high',
+          calcium: 'medium-high',
+          magnesium: 'medium-high'
+        },
+        feeding: {
+          frequency: 'daily',
+          concentration: 'bloom, then plain water flush before harvest',
+          details: 'Ripen buds toward final harvest; many growers flush with plain water for the last 7-10 days.'
+        },
+        care: {
+          pruning: 'No further pruning; let the plant finish undisturbed.',
+          monitoring: 'Check trichome color (cloudy/amber ratio) to time harvest.',
+          environment: 'Cooler temperatures in the final days can enhance color and aroma.'
+        },
+        problems: [
+          { issue: 'Nutrient locked leaves at harvest', cause: 'No flush before harvest', solution: 'Flush with plain water for the final 7-10 days' }
+        ]
+      }
+    }
+  },
+
   // Add more plant types...
   [PLANT_TYPES.GENERIC]: {
     name: 'Generic Plant',
