@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { apiErrorMessage } from '../api/api';
 
 const AppDataContext = createContext();
@@ -16,6 +16,7 @@ const initialState = {
   schedules: [],
   settings: { units: { length: 'cm', volume: 'liters', temp: 'C' }, ppm_scale: 500, default_species: null },
   loading: true,
+  refreshing: false,
   error: null,
 };
 
@@ -23,10 +24,15 @@ function reducer(state, action) {
   switch (action.type) {
     case 'LOAD_START':
       return { ...state, loading: true, error: null };
+    case 'REFRESH_START':
+      return { ...state, refreshing: true, error: null };
     case 'LOAD_SUCCESS':
-      return { ...state, loading: false, error: null, ...action.payload };
+      return { ...state, loading: false, refreshing: false, error: null, ...action.payload };
     case 'LOAD_ERROR':
-      return { ...state, loading: false, error: action.error };
+      // A failed refresh keeps the last good data (plants/logs/schedules/settings
+      // are left untouched by not spreading action.payload); only the initial
+      // load has no prior data to fall back on.
+      return { ...state, loading: false, refreshing: false, error: action.error };
     case 'SET_SETTINGS':
       return { ...state, settings: action.settings };
     default:
@@ -36,11 +42,15 @@ function reducer(state, action) {
 
 export const AppDataProvider = ({ children }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
+  // Tracks whether the first successful load has already happened, so later
+  // mutations refresh quietly (refreshing) instead of remounting the visible
+  // view behind a full-screen spinner (loading).
+  const hasLoadedRef = useRef(false);
 
   // Single fetch of all collections. Used on mount and after any mutation so
   // local state always reflects the persisted source of truth.
   const loadAll = useCallback(async () => {
-    dispatch({ type: 'LOAD_START' });
+    dispatch({ type: hasLoadedRef.current ? 'REFRESH_START' : 'LOAD_START' });
     try {
       const [plants, logs, schedules, settings] = await Promise.all([
         api.get('/plants'),
@@ -57,6 +67,7 @@ export const AppDataProvider = ({ children }) => {
           settings: settings.data || initialState.settings,
         },
       });
+      hasLoadedRef.current = true;
     } catch (err) {
       dispatch({ type: 'LOAD_ERROR', error: apiErrorMessage(err, 'Failed to load data') });
     }

@@ -29,7 +29,7 @@ const TABS = [
 ];
 
 function AppContent() {
-  const { plants, logs, loading, error, refresh } = useAppData();
+  const { plants, logs, loading, refreshing, error, refresh } = useAppData();
   const { tourStep, tourDone } = useAssistant();
   const [selectedPlantId, setSelectedPlantId] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -100,8 +100,20 @@ function AppContent() {
           </div>
         </div>
 
+        {/* Refresh indicator: a subtle top bar shown while a background refresh
+            (post-mutation refetch) is in flight, instead of the full spinner. */}
+        {refreshing && (
+          <div
+            data-testid="refresh-bar"
+            className="h-0.5 w-full bg-light-primary dark:bg-dark-primary animate-pulse"
+          />
+        )}
+
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 bg-light-bg dark:bg-dark-bg transition-colors duration-300">
+        <div
+          className="flex-1 overflow-y-auto p-6 bg-light-bg dark:bg-dark-bg transition-colors duration-300"
+          aria-busy={refreshing}
+        >
           {error && (
             <div className="mb-4 bg-red-900/20 border border-red-500/30 rounded-lg p-4 flex items-center justify-between">
               <span className="text-red-400 text-sm">{error}</span>
