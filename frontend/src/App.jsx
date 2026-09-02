@@ -129,9 +129,19 @@ function AppContent() {
         >
           {damaged && (
             <div role="alert" data-testid="damaged-banner" className="mb-4 bg-red-900/20 border border-red-500/40 rounded-lg p-4 text-sm space-y-1">
-              <div className="text-red-400 font-semibold">Your plant data could not be read. Nothing will be saved until it is repaired.</div>
-              <div className="text-red-300">A copy of the unreadable file was kept at <span className="font-mono break-all">{damaged.salvagePath}</span>.</div>
-              <div className="text-red-300">Restore a backup from the Settings tab, or replace the data file and restart the app.</div>
+              <div className="text-red-400 font-semibold">
+                {damaged.tooNew
+                  ? 'Your plant data was saved by a newer version of this app. Nothing will be changed until you update the app.'
+                  : 'Your plant data could not be read. Nothing will be saved until it is repaired.'}
+              </div>
+              {damaged.salvagePath && (
+                <div className="text-red-300">A copy of the unreadable file was kept at <span className="font-mono break-all">{damaged.salvagePath}</span>.</div>
+              )}
+              <div className="text-red-300">
+                {damaged.tooNew
+                  ? `Data file: ${damaged.dataFile}. Install the newer version, or restore an older backup from Settings after updating.`
+                  : 'Restore a backup from the Settings tab, or replace the data file and restart the app.'}
+              </div>
             </div>
           )}
           {error && (

@@ -13,7 +13,7 @@ import { Parser } from 'json2csv';
 import fs from 'fs';
 
 import * as repo from './db/repository.js';
-import { runMigration, migrateData } from './db/migrate.js';
+import { runMigration, migrateData, SchemaTooNewError } from './db/migrate.js';
 import { validateLog, validatePlant, validateSchedule } from './validation.js';
 
 // Marker embedded in exported backups so a restore can recognize its own files
@@ -45,13 +45,14 @@ export function createServer({ dataFile, uploadsDir, token = null, allowedOrigin
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
+  let migration = { migrated: false };
   if (!fs.existsSync(dataFile)) {
     repo.save(dataFile, repo.emptyData());
   } else {
     // A migration failure (e.g. a read-only/full data dir) must not brick the
     // app: log it and serve the existing data rather than aborting startup.
     try {
-      runMigration(dataFile);
+      migration = runMigration(dataFile);
     } catch (error) {
       console.error('Data migration failed; serving existing data as-is:', error.message);
     }
@@ -73,19 +74,41 @@ export function createServer({ dataFile, uploadsDir, token = null, allowedOrigin
     return state.damaged;
   };
 
-  const readData = () => repo.load(dataFile);
+  // A file from a NEWER schema parses fine but must not be served: normalize()
+  // would silently drop every field the newer version added (probe P4). It is
+  // left untouched on disk and reported through the same damaged state, with
+  // no salvage copy because the file itself is intact.
+  if (migration.tooNew) {
+    const tooNew = new SchemaTooNewError(migration.found);
+    state.damaged = {
+      error: tooNew.message,
+      dataFile,
+      salvagePath: null,
+      tooNew: true,
+      detail: `schemaVersion ${migration.found} > supported ${repo.SCHEMA_VERSION}`,
+    };
+  }
+
+  const refuse = () => new repo.DamagedDataFileError(dataFile, state.damaged.salvagePath, new Error(state.damaged.error));
+  const readData = () => {
+    if (state.damaged) throw refuse();
+    return repo.load(dataFile);
+  };
   const writeData = (data) => {
-    if (state.damaged) throw new repo.DamagedDataFileError(dataFile, state.damaged.salvagePath, new Error('refused: store damaged'));
+    if (state.damaged) throw refuse();
     repo.save(dataFile, data);
   };
 
   // Probe once at startup so the shell can warn immediately; a file that goes
-  // bad later is caught per request by handle().
-  try {
-    readData();
-  } catch (error) {
-    if (error instanceof repo.DamagedDataFileError) markDamaged(error);
-    else throw error;
+  // bad later is caught per request by handle(). Skipped when the too-new
+  // check above has already set the state (readData() would just re-throw it).
+  if (!state.damaged) {
+    try {
+      readData();
+    } catch (error) {
+      if (error instanceof repo.DamagedDataFileError) markDamaged(error);
+      else throw error;
+    }
   }
 
   // A request may reference a plant by id; if so, that plant must exist.
@@ -403,7 +426,16 @@ export function createServer({ dataFile, uploadsDir, token = null, allowedOrigin
     if (!raw || typeof raw !== 'object' || (!Array.isArray(raw.plants) && !Array.isArray(raw.logs))) {
       return res.status(400).json({ error: 'This does not look like a Hydro backup file.' });
     }
-    const data = repo.prepareImport(migrateData(raw).data);
+    let migrated;
+    try {
+      migrated = migrateData(raw);
+    } catch (error) {
+      if (error instanceof SchemaTooNewError) {
+        return res.status(400).json({ error: `This backup ${error.message.slice('This data '.length)}` });
+      }
+      throw error;
+    }
+    const data = repo.prepareImport(migrated.data);
     writeData(data);
     res.json({
       message: 'Backup restored',

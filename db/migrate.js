@@ -26,9 +26,26 @@ function isSentinel(log) {
   );
 }
 
+// Thrown when a file or backup carries a schemaVersion this build does not
+// know. Treating it as v1 would strip every field the newer version added
+// (probe P4, 2026-09-02), so the only safe move is to refuse and say why.
+export class SchemaTooNewError extends Error {
+  constructor(found, supported = SCHEMA_VERSION) {
+    super(`This data was written by a newer version of Hydro Growth Tracker (schema v${found}; this app supports up to v${supported}). Update the app to open it.`);
+    this.name = 'SchemaTooNewError';
+    this.found = found;
+    this.supported = supported;
+  }
+}
+
+export const isTooNew = (raw) =>
+  raw != null && typeof raw.schemaVersion === 'number' && raw.schemaVersion > SCHEMA_VERSION;
+
 // Transform a raw (possibly v1) data object into the current schema. Returns
-// `{ data, changed }`. Idempotent: a v2 input is returned unchanged.
+// `{ data, changed }`. Idempotent: a v2 input is returned unchanged. Throws
+// SchemaTooNewError (without touching the input) for a newer schema.
 export function migrateData(raw) {
+  if (isTooNew(raw)) throw new SchemaTooNewError(raw.schemaVersion);
   if (raw && raw.schemaVersion === SCHEMA_VERSION) {
     return { data: raw, changed: false };
   }
@@ -134,6 +151,8 @@ export function runMigration(dataFile) {
   }
 
   if (raw && raw.schemaVersion === SCHEMA_VERSION) return { migrated: false };
+  // A newer file is left exactly as it is on disk; the caller refuses to serve it.
+  if (isTooNew(raw)) return { migrated: false, tooNew: true, found: raw.schemaVersion };
 
   // Mandatory backup before touching anything.
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
