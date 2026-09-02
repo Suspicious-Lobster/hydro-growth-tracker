@@ -20,3 +20,6 @@
 {"kind": "row", "run": "mr-run1", "wave": 7, "row": "MR-8", "tier": "S", "outcome": "done", "redproof": "real"}
 {"kind": "row", "run": "mr-run1", "wave": 7, "row": "MR-9", "tier": "S", "outcome": "done", "redproof": "real"}
 {"kind": "row", "run": "mr-run1", "wave": 7, "row": "MR-10", "tier": "S", "outcome": "done", "redproof": "real"}
+{"kind": "row", "run": "mr-run1", "wave": 8, "row": "MR-19", "tier": "O", "outcome": "done", "redproof": "real"}
+{"kind": "row", "run": "mr-run1", "wave": 8, "row": "MR-6", "tier": "O", "outcome": "done", "redproof": "real"}
+{"kind": "row", "run": "mr-run1", "wave": 8, "row": "MR-20", "tier": "O", "outcome": "done", "redproof": "none"}
