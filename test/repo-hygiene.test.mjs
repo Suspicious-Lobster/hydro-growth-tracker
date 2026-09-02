@@ -242,3 +242,18 @@ describe('frontend scripts run the frontend toolchain', () => {
     }
   });
 });
+
+describe('version and changelog', () => {
+  const frontendPkg = JSON.parse(fs.readFileSync(path.join(root, 'frontend', 'package.json'), 'utf-8'));
+  const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf-8');
+
+  it('root and frontend package.json carry the same version', () => {
+    expect(frontendPkg.version).toBe(pkg.version);
+  });
+
+  it("CHANGELOG.md's first version heading names the current version", () => {
+    const first = /^## (\S+)/m.exec(changelog);
+    expect(first, 'CHANGELOG needs a "## <version>" heading').not.toBeNull();
+    expect(first[1]).toBe(pkg.version);
+  });
+});
