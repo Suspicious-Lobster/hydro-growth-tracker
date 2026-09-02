@@ -116,3 +116,29 @@ describe('README.md only mentions real npm scripts', () => {
     });
   }
 });
+
+describe('licence and privacy docs', () => {
+  const licensePath = path.join(root, 'LICENSE');
+  const userGuidePath = path.join(root, 'docs', 'user-guide.md');
+
+  it('LICENSE exists and contains "MIT License"', () => {
+    expect(fs.existsSync(licensePath), 'expected a LICENSE file at repo root').toBe(true);
+    const license = fs.readFileSync(licensePath, 'utf-8');
+    expect(license).toContain('MIT License');
+  });
+
+  it('package.json license is MIT', () => {
+    expect(pkg.license).toBe('MIT');
+  });
+
+  it('README has a Privacy heading', () => {
+    expect(readme).toMatch(/^##+ .*Privacy/m);
+  });
+
+  it('docs/user-guide.md exists and describes where data lives', () => {
+    expect(fs.existsSync(userGuidePath), 'expected docs/user-guide.md to exist').toBe(true);
+    const guide = fs.readFileSync(userGuidePath, 'utf-8');
+    expect(guide).toContain('hydro-data.json');
+    expect(guide).toContain('uploads');
+  });
+});

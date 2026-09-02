@@ -33,6 +33,39 @@ nutrient mixes — all stored locally, fully offline.
 - **Dark / light themes**, **toast notifications**, and **add-log draft
   auto-save**.
 
+## 🔒 Privacy and your data
+
+All your data stays on your own computer. There is no telemetry, no
+analytics, and no network calls other than to the app's own small backend
+running on `127.0.0.1` (the app talks to itself only, using a fresh
+per-launch token).
+
+Where the data lives:
+
+- **Windows** — `%APPDATA%\Hydro Growth Tracker\`
+- **macOS** — `~/Library/Application Support/Hydro Growth Tracker/`
+- **Linux** — `~/.config/Hydro Growth Tracker/`
+- **Development** (`npm run dev`) — the project root, instead of the folders
+  above.
+
+Inside that folder: `hydro-data.json` (plants, logs, schedules, settings) and
+an `uploads/` folder (photos).
+
+If the data file can't be read, the app never overwrites it. It keeps a
+`hydro-data.corrupt-<timestamp>.json` copy beside it, shows an error, and
+refuses to save until the file is fixed or replaced. <!-- MR-3 --> The app
+also keeps a rolling `hydro-data.json.bak` last-good copy, a
+`hydro-data.pre-restore-<timestamp>.json` snapshot before every restore, and
+daily automatic backups (14 kept) in a `backups/` folder.
+
+Use **Settings → Download backup** / **Restore from backup** to back up or
+restore your data as a JSON file (photos are not included in that file; copy
+the `uploads/` folder separately if you want to keep photos). Uninstalling
+the app on Windows does not delete your data folder by default.
+
+See [`docs/user-guide.md`](docs/user-guide.md) for step-by-step backup,
+restore, and recovery instructions.
+
 ## 🏗️ Architecture
 
 The app runs as a single Electron process:
