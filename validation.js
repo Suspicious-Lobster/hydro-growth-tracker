@@ -14,7 +14,7 @@ function optionalRange(value, label, { min, max }) {
 }
 
 // Optional measurement fields shared by create and update of a log.
-const MEASUREMENT_RANGES = [
+export const MEASUREMENT_RANGES = [
   ['ph', 'pH', { min: 0, max: 14 }],
   ['ec', 'EC', { min: 0, max: 5 }],
   ['ppm', 'PPM', { min: 0, max: 3000 }],
@@ -25,54 +25,73 @@ const MEASUREMENT_RANGES = [
   ['reservoir_volume', 'Reservoir volume', { min: 0, max: 100000 }],
 ];
 
-// Validate a log payload. `requireDate` is false for updates, where the edit
-// form does not resend the date.
-export function validateLog(body, { requireDate } = { requireDate: true }) {
+// Runs every log rule once, tagging each message with the field it belongs
+// to. `validateLog` and `validateLogByField` both project from this so the
+// rule table (and its bounds/wording) has exactly one derivation.
+function runLogRules(body, { requireDate } = { requireDate: true }) {
   const { plant_name, plant_id, date, height, nutrients, notes, height_unit } = body;
-  const errors = [];
+  const tagged = [];
+  const push = (field, message) => tagged.push({ field, message });
 
   // A log must identify a plant by id or by (non-empty) name.
   const hasPlantId = plant_id !== undefined && plant_id !== null && plant_id !== '';
   if (!hasPlantId) {
     if (!isNonEmptyString(plant_name)) {
-      errors.push('Plant name is required and must be a non-empty string');
+      push('plant', 'Plant name is required and must be a non-empty string');
     } else if (plant_name.length > 100) {
-      errors.push('Plant name must be less than 100 characters');
+      push('plant', 'Plant name must be less than 100 characters');
     }
   }
 
   if (requireDate) {
-    if (!date) errors.push('Date is required');
-    else if (Number.isNaN(Date.parse(date))) errors.push('Date must be a valid date format');
+    if (!date) push('date', 'Date is required');
+    else if (Number.isNaN(Date.parse(date))) push('date', 'Date must be a valid date format');
   }
 
   const unit = height_unit === 'in' ? 'in' : 'cm';
   const maxHeight = unit === 'in' ? 400 : 1000;
   if (height === undefined || height === null || height === '') {
-    errors.push('Height is required');
+    push('height', 'Height is required');
   } else {
     const h = parseFloat(height);
     if (Number.isNaN(h) || h < 0 || h > maxHeight) {
-      errors.push(`Height must be a number between 0 and ${maxHeight} ${unit}`);
+      push('height', `Height must be a number between 0 and ${maxHeight} ${unit}`);
     }
   }
 
   if (!isNonEmptyString(nutrients)) {
-    errors.push('Nutrients information is required');
+    push('nutrients', 'Nutrients information is required');
   } else if (nutrients.length > 500) {
-    errors.push('Nutrients description must be less than 500 characters');
+    push('nutrients', 'Nutrients description must be less than 500 characters');
   }
 
   if (notes && notes.length > 1000) {
-    errors.push('Notes must be less than 1000 characters');
+    push('notes', 'Notes must be less than 1000 characters');
   }
 
   for (const [key, label, range] of MEASUREMENT_RANGES) {
     const err = optionalRange(body[key], label, range);
-    if (err) errors.push(err);
+    if (err) push(key, err);
   }
 
-  return errors;
+  return tagged;
+}
+
+// Validate a log payload. `requireDate` is false for updates, where the edit
+// form does not resend the date.
+export function validateLog(body, opts = { requireDate: true }) {
+  return runLogRules(body, opts).map((e) => e.message);
+}
+
+// Same rules as validateLog, keyed by field name -> first message for that
+// field. Lets a caller (the client form) render inline errors without
+// re-implementing any rule or bound.
+export function validateLogByField(body, opts = { requireDate: true }) {
+  const byField = {};
+  for (const { field, message } of runLogRules(body, opts)) {
+    if (!(field in byField)) byField[field] = message;
+  }
+  return byField;
 }
 
 // Validate a plant payload (create/update).

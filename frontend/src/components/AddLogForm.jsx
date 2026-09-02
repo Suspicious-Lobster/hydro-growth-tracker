@@ -8,6 +8,7 @@ import { GROWTH_STAGES } from '../data/plantKnowledge';
 import { getProfileStages, stageLabel } from '../data/recommendations';
 import { toCm, toCelsius, toLiters, lengthUnitLabel, tempUnitLabel, volumeUnitLabel } from '../utils/format';
 import { todayLocalISO } from '../utils/dates';
+import { validateLogByField } from '@shared/validation';
 
 const DRAFT_KEY = 'logFormDraft';
 const blankForm = () => ({
@@ -80,29 +81,18 @@ const AddLogForm = ({ defaultPlantId = null }) => {
     update({ height: String(Math.max(0, Math.round((cur + delta) * 10) / 10)) });
   };
 
-  const validate = () => {
-    const e = {};
-    const name = plantMode === 'existing' ? selectedPlant?.name : form.plant_name.trim();
-    if (!name) e.plant = 'Please select or name a plant';
-    if (form.height === '' || Number.isNaN(parseFloat(form.height)) || parseFloat(form.height) < 0) {
-      e.height = 'Height is required';
-    }
-    if (!form.nutrients.trim()) e.nutrients = 'Nutrients are required';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
   const numOrUndef = (v) => (v === '' || v === null ? undefined : parseFloat(v));
 
   const clearDraft = () => { localStorage.removeItem(DRAFT_KEY); setIsDirty(false); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate()) return;
-    setIsSubmitting(true);
 
-    // Build canonical payload (convert display units -> storage units).
-    const heightCm = toCm(parseFloat(form.height), lengthUnit);
+    // Build the canonical payload (convert display units -> storage units)
+    // first, then validate that exact payload with the server's own rule
+    // table (MR-33) — one derivation of every rule and bound, so a value
+    // that fails on the server can never first pass a client re-write of it.
+    const heightCm = form.height === '' ? undefined : toCm(parseFloat(form.height), lengthUnit);
     const payload = {
       date: form.date,
       height: heightCm,
@@ -118,8 +108,21 @@ const AddLogForm = ({ defaultPlantId = null }) => {
       nutrients: form.nutrients,
       notes: form.notes,
     };
-    if (plantMode === 'existing') payload.plant_id = selectedPlant.id;
+    if (plantMode === 'existing') payload.plant_id = selectedPlant?.id;
     else payload.plant_name = form.plant_name.trim();
+
+    const fieldErrors = validateLogByField(payload, { requireDate: true });
+    // Plant selection is UI state (which mode is active, whether a plant is
+    // picked) the server can't express; show that message over the shared
+    // validator's plant-name wording when neither is set.
+    const name = plantMode === 'existing' ? selectedPlant?.name : form.plant_name.trim();
+    if (!name) fieldErrors.plant = 'Please select or name a plant';
+    if (Object.keys(fieldErrors).length > 0) {
+      setErrors(fieldErrors);
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
 
     try {
       let config;
@@ -216,14 +219,14 @@ const AddLogForm = ({ defaultPlantId = null }) => {
 
         {/* Measurements */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <Field label="pH" colors={colors}><input name="ph" type="number" step="0.1" value={form.ph} onChange={handleChange} placeholder="5.5–6.5" className={inputCls()} /></Field>
-          <Field label="EC" colors={colors}><input name="ec" type="number" step="0.1" value={form.ec} onChange={handleChange} placeholder="1.2" className={inputCls()} /></Field>
-          <Field label="PPM" colors={colors}><input name="ppm" type="number" step="10" value={form.ppm} onChange={handleChange} placeholder="600" className={inputCls()} /></Field>
-          <Field label={`Water temp (${tempUnitLabel(tempUnit)})`} colors={colors}><input name="water_temp" type="number" step="0.1" value={form.water_temp} onChange={handleChange} className={inputCls()} /></Field>
-          <Field label={`Air temp (${tempUnitLabel(tempUnit)})`} colors={colors}><input name="air_temp" type="number" step="0.1" value={form.air_temp} onChange={handleChange} className={inputCls()} /></Field>
-          <Field label="Humidity (%)" colors={colors}><input name="humidity" type="number" step="1" value={form.humidity} onChange={handleChange} className={inputCls()} /></Field>
-          <Field label="Light (hrs)" colors={colors}><input name="light_hours" type="number" step="0.5" value={form.light_hours} onChange={handleChange} className={inputCls()} /></Field>
-          <Field label={`Reservoir (${volumeUnitLabel(volumeUnit)})`} colors={colors}><input name="reservoir_volume" type="number" step="1" value={form.reservoir_volume} onChange={handleChange} className={inputCls()} /></Field>
+          <Field label="pH" colors={colors} error={errors.ph}><input name="ph" type="number" step="0.1" value={form.ph} onChange={handleChange} placeholder="5.5–6.5" className={inputCls(errors.ph)} /></Field>
+          <Field label="EC" colors={colors} error={errors.ec}><input name="ec" type="number" step="0.1" value={form.ec} onChange={handleChange} placeholder="1.2" className={inputCls(errors.ec)} /></Field>
+          <Field label="PPM" colors={colors} error={errors.ppm}><input name="ppm" type="number" step="10" value={form.ppm} onChange={handleChange} placeholder="600" className={inputCls(errors.ppm)} /></Field>
+          <Field label={`Water temp (${tempUnitLabel(tempUnit)})`} colors={colors} error={errors.water_temp}><input name="water_temp" type="number" step="0.1" value={form.water_temp} onChange={handleChange} className={inputCls(errors.water_temp)} /></Field>
+          <Field label={`Air temp (${tempUnitLabel(tempUnit)})`} colors={colors} error={errors.air_temp}><input name="air_temp" type="number" step="0.1" value={form.air_temp} onChange={handleChange} className={inputCls(errors.air_temp)} /></Field>
+          <Field label="Humidity (%)" colors={colors} error={errors.humidity}><input name="humidity" type="number" step="1" value={form.humidity} onChange={handleChange} className={inputCls(errors.humidity)} /></Field>
+          <Field label="Light (hrs)" colors={colors} error={errors.light_hours}><input name="light_hours" type="number" step="0.5" value={form.light_hours} onChange={handleChange} className={inputCls(errors.light_hours)} /></Field>
+          <Field label={`Reservoir (${volumeUnitLabel(volumeUnit)})`} colors={colors} error={errors.reservoir_volume}><input name="reservoir_volume" type="number" step="1" value={form.reservoir_volume} onChange={handleChange} className={inputCls(errors.reservoir_volume)} /></Field>
         </div>
 
         <Field label="Nutrients used" colors={colors} error={errors.nutrients}>
