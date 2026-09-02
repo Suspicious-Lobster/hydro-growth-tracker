@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu, dialog } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -28,6 +28,53 @@ function storagePaths() {
   };
 }
 
+// MR-15: a minimal menu in production (no DevTools item — nothing should
+// hand an end user a JS console into their own plant data), the full dev
+// menu (with Toggle Developer Tools) when running from source.
+function buildMenu() {
+  const helpMenu = {
+    label: 'Help',
+    submenu: [
+      {
+        label: 'About Hydro Growth Tracker',
+        click: () => {
+          dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'About Hydro Growth Tracker',
+            message: 'Hydro Growth Tracker',
+            detail: `Version ${app.getVersion()}`,
+          });
+        },
+      },
+    ],
+  };
+
+  const viewSubmenu = [
+    { role: 'reload' },
+    { role: 'togglefullscreen' },
+    { role: 'resetZoom' },
+    { role: 'zoomIn' },
+    { role: 'zoomOut' },
+  ];
+  if (isDev) {
+    viewSubmenu.push({ type: 'separator' }, { role: 'toggleDevTools' });
+  }
+
+  const template = [
+    {
+      label: 'File',
+      submenu: [{ role: 'quit' }],
+    },
+    {
+      label: 'View',
+      submenu: viewSubmenu,
+    },
+    helpMenu,
+  ];
+
+  return Menu.buildFromTemplate(template);
+}
+
 function createWindow() {
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, 'assets', 'icons', 'icon.png')
@@ -50,6 +97,8 @@ function createWindow() {
       ],
     },
   });
+
+  Menu.setApplicationMenu(buildMenu());
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
@@ -84,7 +133,6 @@ app.whenReady().then(async () => {
       // The store cannot be served: unreadable (salvaged copy exists) or
       // written by a newer version (file intact, no copy). Nothing will be
       // written until the user acts; say where every recovery file lives.
-      const { dialog } = await import('electron');
       const d = state.damaged;
       const lines = [d.error, '', `Data file: ${d.dataFile}`];
       if (d.salvagePath) lines.push(`A copy of the unreadable file was saved as: ${d.salvagePath}`);
@@ -97,7 +145,6 @@ app.whenReady().then(async () => {
     }
   } catch (error) {
     console.error('Error during app startup:', error);
-    const { dialog } = await import('electron');
     dialog.showErrorBox('Startup Error', `Failed to start the application: ${error.message}`);
   }
 });

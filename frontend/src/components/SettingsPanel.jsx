@@ -7,12 +7,14 @@ import { useToast } from '../contexts/ToastContext';
 import { apiErrorMessage } from '../api/api';
 import { SPECIES_OPTIONS } from '../data/recommendations';
 import BackupRestore from './BackupRestore';
+import AboutDialog from './AboutDialog';
 
 const SettingsPanel = () => {
   const { colors } = useTheme();
   const { settings, updateSettings } = useAppData();
   const { effectsEnabled, muted, soundEnabled, toggleEffects, setMuted, setSoundEnabled, resetDismissed, startTour } = useAssistant();
   const toast = useToast();
+  const [showAbout, setShowAbout] = useState(false);
 
   const [form, setForm] = useState({
     length: settings.units.length,
@@ -109,10 +111,17 @@ const SettingsPanel = () => {
         >
           Replay the welcome tour
         </button>
+        <button
+          onClick={() => setShowAbout(true)}
+          className={`${colors.bgAccent} ${colors.text} border ${colors.border} px-4 py-2 rounded-lg text-sm font-medium`}
+        >
+          About
+        </button>
       </div>
     </div>
 
     <BackupRestore />
+    {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
     </div>
   );
 };
