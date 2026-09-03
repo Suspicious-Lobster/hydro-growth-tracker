@@ -44,6 +44,9 @@
       { "when": "main.js,preload.js,server.js,frontend/**,e2e/**", "run": "npm run test:e2e" }
     ],
 
+    "_verify_ladder": "MR-61: runs every gate on a DETACHED worktree at the sha under test with node_modules junctioned in, so in-flight worker edits (source files, not only tests) never poison a verdict. Unlinks the junctions before any removal (CODING-PRACTICES 2.4i).",
+    "verify_ladder": "sh tools/validate_worktree.sh <sha>",
+
     "_whole_tree_claimants": "The Playwright Electron e2e drives a real window: one screen, one driver.",
     "whole_tree_claimants": ["npm run test:e2e"],
 
