@@ -144,7 +144,8 @@ describe('assistantTips.buildCandidates', () => {
     const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs, stage: 'late_flowering' }, now);
     const cd = cands.find((c) => c.id.startsWith('insight:harvestcd:1:'));
     expect(cd).toBeTruthy();
-    expect(cd.text).toMatch(/days until/);
+    expect(cd.text).toMatch(/about \d+ days/);
+    expect(cd.text).toMatch(/\d+-\d+/);
   });
 
   it('celebrates harvest day as a milestone', () => {

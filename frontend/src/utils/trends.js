@@ -115,29 +115,91 @@ export function isHarvestWindow(stage) {
   return stage === GROWTH_STAGES.LATE_FLOWER || stage === GROWTH_STAGES.HARVEST;
 }
 
-// "14-21 days" -> 21. Falls back through a single leading number, else null.
-const parseMaxDays = (str) => {
+// "14-21 days" -> {min: 14, max: 21}. A single leading number -> min === max.
+// null when unparseable.
+const parseDaysRange = (str) => {
   const range = /(\d+)\s*-\s*(\d+)/.exec(str || '');
-  if (range) return parseInt(range[2], 10);
+  if (range) return { min: parseInt(range[1], 10), max: parseInt(range[2], 10) };
   const single = /(\d+)/.exec(str || '');
-  return single ? parseInt(single[1], 10) : null;
+  return single ? { min: parseInt(single[1], 10), max: parseInt(single[1], 10) } : null;
 };
 
-// Estimated days until harvest, or null when the plant isn't in the home stretch.
-// Anchored on the first log recorded in late flowering plus the species' typical
-// late-flower duration (default 21 days). `now` is injected for purity.
-// Returns { ready, days }: ready flips once a harvest-stage log exists or the
-// estimate reaches zero.
+// Lifecycle order of every growth stage, used to walk a plant's logs and find
+// where it moved from one stage to a later one.
+const STAGE_ORDER = Object.values(GROWTH_STAGES);
+const stageIndex = (stage) => STAGE_ORDER.indexOf(stage);
+
+// Walk logs (already sorted by date) and find every point where the explicit
+// growth_stage advances from one stage to a strictly later one. Returns
+// [{ from, to, days }] in chronological order, where `days` is the observed
+// duration of `from` (time between the first log at `from` and the first log
+// at `to`).
+const stageTransitions = (sorted) => {
+  const firstPerStage = [];
+  let lastStage = null;
+  for (const l of sorted) {
+    const s = l.growth_stage;
+    if (!s || stageIndex(s) === -1 || s === lastStage) continue;
+    firstPerStage.push({ stage: s, time: logDay(l) });
+    lastStage = s;
+  }
+  const transitions = [];
+  for (let i = 0; i < firstPerStage.length - 1; i += 1) {
+    const a = firstPerStage[i];
+    const b = firstPerStage[i + 1];
+    if (stageIndex(b.stage) > stageIndex(a.stage)) {
+      transitions.push({ from: a.stage, to: b.stage, days: (b.time - a.time) / 86400000 });
+    }
+  }
+  return transitions;
+};
+
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+// Estimated days until harvest, with a confidence range, or null when the
+// plant isn't in the home stretch. Anchored on the first log recorded in late
+// flowering plus the species' typical late-flower duration (low/high from the
+// profile's min/max, default 21/21 when unknown). The estimate is scaled by
+// a pacing factor: how the plant's most recently completed stage (the one
+// immediately before late flowering) actually took relative to that stage's
+// profile midpoint duration, clamped 0.5-2 — 1 when that transition isn't in
+// the logs. `now` is injected for purity.
+// Returns { ready, days, low, high, confidence }: ready flips once a
+// harvest-stage log exists or the estimate reaches zero; confidence is
+// 'high' with 2+ observed completed stage transitions (ending at or before
+// late flowering), 'medium' with 1, 'low' with none.
 export function harvestCountdown(logs, species, now) {
   const sorted = sortLogsByDate(logs);
-  if (sorted.some((l) => l.growth_stage === GROWTH_STAGES.HARVEST)) return { ready: true, days: 0 };
+  const ready = sorted.some((l) => l.growth_stage === GROWTH_STAGES.HARVEST);
+  if (ready) return { ready: true, days: 0, low: 0, high: 0, confidence: 'high' };
+
   const start = sorted.find((l) => l.growth_stage === GROWTH_STAGES.LATE_FLOWER);
   if (!start) return null;
+
   const profile = getProfile(species);
-  const dur = parseMaxDays(profile?.stages?.[GROWTH_STAGES.LATE_FLOWER]?.duration) ?? 21;
-  const eta = logDay(start) + dur * 86400000;
-  const days = Math.max(0, Math.ceil((eta - now) / 86400000));
-  return { ready: days === 0, days };
+  const transitions = stageTransitions(sorted);
+  const completed = transitions.filter((t) => stageIndex(t.to) <= stageIndex(GROWTH_STAGES.LATE_FLOWER));
+  const confidence = completed.length >= 2 ? 'high' : completed.length === 1 ? 'medium' : 'low';
+
+  let pacing = 1;
+  const intoLateFlower = transitions.find((t) => t.to === GROWTH_STAGES.LATE_FLOWER);
+  if (intoLateFlower) {
+    const midDur = parseDaysRange(profile?.stages?.[intoLateFlower.from]?.duration);
+    if (midDur) {
+      const midpoint = (midDur.min + midDur.max) / 2;
+      pacing = clamp(intoLateFlower.days / midpoint, 0.5, 2);
+    }
+  }
+
+  const range = parseDaysRange(profile?.stages?.[GROWTH_STAGES.LATE_FLOWER]?.duration) ?? { min: 21, max: 21 };
+  const midpoint = (range.min + range.max) / 2;
+  const startMs = logDay(start);
+  const daysUntil = (durationDays) => Math.max(0, Math.ceil((startMs + pacing * durationDays * 86400000 - now) / 86400000));
+
+  const days = daysUntil(midpoint);
+  const low = daysUntil(range.min);
+  const high = daysUntil(range.max);
+  return { ready: days === 0, days, low, high, confidence };
 }
 
 // Consecutive LOCAL calendar days with at least one log, counting back from

@@ -229,9 +229,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
       candidates.push({
         id: `insight:harvestcd:${pid}:${hc.days}`,
         kind: 'insight', expression: 'celebrating',
-        text: hc.days === 1
-          ? `ONE day until ${selectedPlant.name}'s harvest window. Bud can barely sit still. 🌾`
-          : `~${hc.days} days until ${selectedPlant.name} hits the harvest window. The countdown is ON. 🌾`,
+        text: `${selectedPlant.name} is about ${hc.days} days (${hc.low}-${hc.high}) from the harvest window. The countdown is ON. 🌾`,
         priority: TIP_KINDS.insight,
       });
     } else if (isHarvestWindow(stage)) {

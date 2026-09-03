@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { phTrend, ecTrend, driftAlerts, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
+import { PLANT_PROFILES, GROWTH_STAGES } from '../data/plantKnowledge';
 
 const log = (date, fields) => ({ date, created_at: `${date}T00:00:00Z`, ...fields });
 const PH_RANGE = { min: 5.8, max: 6.2 };
@@ -140,6 +141,38 @@ describe('trends.harvestCountdown', () => {
   it('returns null before late flowering is ever logged', () => {
     const logs = [log('2026-01-01', { growth_stage: 'vegetative' })];
     expect(harvestCountdown(logs, 'generic', day(2))).toBeNull();
+  });
+
+  // Precondition for the "only a late_flowering log" case below: tomato's
+  // late-flower duration must actually span a range, or low === high would
+  // trivially hold and prove nothing (CODING-PRACTICES 1.3).
+  it('tomato late-flower duration spans a range (precondition)', () => {
+    expect(PLANT_PROFILES.tomato.stages[GROWTH_STAGES.LATE_FLOWER].duration).toBe('14-21 days');
+  });
+
+  it('gives a low<=days<=high range with high confidence from two observed stage transitions', () => {
+    const logs = [
+      log('2026-01-01', { growth_stage: 'vegetative' }),
+      log('2026-01-31', { growth_stage: 'mid_flowering' }), // day 30
+      log('2026-03-02', { growth_stage: 'late_flowering' }), // day 60
+    ];
+    const hc = harvestCountdown(logs, 'tomato', new Date(2026, 2, 10).getTime());
+    expect(hc.ready).toBe(false);
+    expect(hc.confidence).toBe('high');
+    expect(hc.low).toBeLessThanOrEqual(hc.days);
+    expect(hc.days).toBeLessThanOrEqual(hc.high);
+  });
+
+  it('reports low confidence and a low<high range from only a late_flowering log', () => {
+    const logs = [log('2026-01-01', { growth_stage: 'late_flowering' })];
+    const hc = harvestCountdown(logs, 'tomato', day(3));
+    expect(hc.confidence).toBe('low');
+    expect(hc.low).toBeLessThan(hc.high);
+  });
+
+  it('is ready when a harvest_ready log exists, with confidence unaffected', () => {
+    const logs = [log('2026-01-01', { growth_stage: 'harvest_ready' })];
+    expect(harvestCountdown(logs, 'tomato', day(2))).toMatchObject({ ready: true, days: 0 });
   });
 });
 
