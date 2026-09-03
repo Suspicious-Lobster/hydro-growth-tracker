@@ -1,0 +1,653 @@
+// Data-access layer for the Hydro Growth Tracker backend.
+//
+// All persistence goes through this module. `load`/`save` own the JSON file
+// (atomic writes via temp-file + rename); the entity helpers are pure-ish
+// functions that mutate and return an in-memory data object so the HTTP layer
+// in server.js never touches the file shape directly. This is the seam that
+// would make a future swap to SQLite a localized change.
+
+import fs from 'fs';
+import path from 'path';
+import { parseDoses } from '../validation.js';
+
+// Still 2 after MR-37: `doses` on logs and the `reservoir_events` collection
+// are additive and normalize() fills them, so an older file loads unchanged
+// and an older app would still read a newer file's plants and logs.
+export const SCHEMA_VERSION = 2;
+
+// Default settings shape.
+export const defaultSettings = () => ({
+  units: { length: 'cm', volume: 'liters', temp: 'C' },
+  ppm_scale: 500,
+  default_species: null,
+  // MR-53: what a liter of each nutrient product costs, in the user's own
+  // currency (a plain number; the app never names a currency).
+  nutrient_prices: [],
+});
+
+// Bounds for the nutrient price list; the HTTP layer refuses a body outside
+// them, and updateSettings() normalizes whatever passed.
+export const NUTRIENT_PRICES_MAX = 20;
+export const NUTRIENT_PRICE_NAME_MAX = 60;
+export const NUTRIENT_PRICE_MAX = 100000;
+
+// Returns an error string, or null when `list` is an acceptable price list.
+export function validateNutrientPrices(list) {
+  if (!Array.isArray(list)) return 'nutrient_prices must be a list';
+  if (list.length > NUTRIENT_PRICES_MAX) return `nutrient_prices must have at most ${NUTRIENT_PRICES_MAX} entries`;
+  for (const p of list) {
+    if (!p || typeof p !== 'object') return 'Each price must be an object with name and price_per_liter';
+    const name = typeof p.name === 'string' ? p.name.trim() : '';
+    if (!name || name.length > NUTRIENT_PRICE_NAME_MAX) return `Each price needs a name of 1 to ${NUTRIENT_PRICE_NAME_MAX} characters`;
+    const price = parseFloat(p.price_per_liter);
+    if (Number.isNaN(price) || price < 0 || price > NUTRIENT_PRICE_MAX) return `price_per_liter must be a number between 0 and ${NUTRIENT_PRICE_MAX}`;
+  }
+  return null;
+}
+
+// Default shape of the JSON data file (current schema version).
+export const emptyData = () => ({
+  schemaVersion: SCHEMA_VERSION,
+  plants: [],
+  logs: [],
+  schedules: [],
+  reservoir_events: [],
+  settings: defaultSettings(),
+  nextId: 1,
+  nextPlantId: 1,
+  nextScheduleId: 1,
+  nextReservoirEventId: 1,
+});
+
+/* --------------------------- coercion helpers --------------------------- */
+
+// Coerce an optional numeric field to a number or null. Empty/blank/invalid
+// values become null so old logs and quick entries stay valid.
+const num = (v) => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseFloat(v);
+  return Number.isNaN(n) ? null : n;
+};
+
+const now = () => new Date().toISOString();
+
+/* ------------------------------ load / save ----------------------------- */
+
+// Merge a parsed file onto the current empty shape so fields added later are
+// always present. Acts as the final field-level back-compat safety net.
+export function normalize(parsed) {
+  const base = emptyData();
+  const merged = { ...base, ...(parsed || {}) };
+  const parsedSettings = (parsed && parsed.settings) || {};
+  merged.settings = {
+    ...base.settings,
+    ...parsedSettings,
+    units: { ...base.settings.units, ...(parsedSettings.units || {}) },
+  };
+  return merged;
+}
+
+// Thrown when the data file EXISTS but cannot be parsed. Callers must not
+// write over the file in this state; the bytes have been copied to
+// `salvagePath` for the user to recover from.
+export class DamagedDataFileError extends Error {
+  constructor(dataFile, salvagePath, cause) {
+    super(`Data file is damaged and cannot be read: ${dataFile}`);
+    this.name = 'DamagedDataFileError';
+    this.dataFile = dataFile;
+    this.salvagePath = salvagePath;
+    this.cause = cause;
+  }
+}
+
+// Copy an unreadable data file's bytes to hydro-data.corrupt-<ts>.json beside
+// it, once: if an earlier salvage copy already holds identical bytes, return
+// its path instead of writing another (every request would otherwise add one).
+function salvageDamagedFile(dataFile, bytes) {
+  const dir = path.dirname(dataFile);
+  const stem = path.basename(dataFile, '.json');
+  const existing = fs.readdirSync(dir).filter((f) => f.startsWith(`${stem}.corrupt-`) && f.endsWith('.json'));
+  for (const f of existing) {
+    const p = path.join(dir, f);
+    try {
+      if (fs.readFileSync(p).equals(bytes)) return p;
+    } catch { /* unreadable salvage copy: write a fresh one */ }
+  }
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const salvagePath = path.join(dir, `${stem}.corrupt-${ts}.json`);
+  fs.writeFileSync(salvagePath, bytes);
+  return salvagePath;
+}
+
+// Read the data file. A MISSING file is a fresh install and yields an empty
+// store. A file that exists but does not parse is NOT an empty store: it is
+// the user's data in a state we cannot read, so it is salvaged and a
+// DamagedDataFileError is thrown. (Probe P3, 2026-09-02: returning emptyData()
+// here let the next save overwrite a truncated file with zero plants.)
+export function load(dataFile) {
+  if (!fs.existsSync(dataFile)) return emptyData();
+  const bytes = fs.readFileSync(dataFile);
+  try {
+    return normalize(JSON.parse(bytes.toString('utf8')));
+  } catch (error) {
+    const salvagePath = salvageDamagedFile(dataFile, bytes);
+    console.error(`Data file unreadable; bytes salvaged to ${salvagePath}:`, error.message);
+    throw new DamagedDataFileError(dataFile, salvagePath, error);
+  }
+}
+
+// Atomic write: serialize to a temp file then rename over the target so a
+// crash mid-write can never leave a truncated data file.
+// Synchronous sleep for the rename retry below (the whole data layer is sync).
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// On Windows an antivirus scanner or indexer can hold the target open for a
+// moment; renameSync then fails with EPERM/EBUSY/EACCES and an ordinary save
+// would surface as a 500. Retry a few times with backoff before giving up.
+export const RENAME_RETRIES = 5;
+function renameWithRetry(from, to) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      fs.renameSync(from, to);
+      return attempt;
+    } catch (error) {
+      const transient = ['EPERM', 'EBUSY', 'EACCES'].includes(error.code);
+      if (!transient || attempt >= RENAME_RETRIES) throw error;
+      sleepMs(20 * attempt);
+    }
+  }
+}
+
+// Atomic write: serialize to a temp file, fsync it, keep the previous file as
+// a rolling last-good copy (<dataFile>.bak), then rename over the target so a
+// crash mid-write can never leave a truncated data file.
+export function save(dataFile, data) {
+  const tmp = `${dataFile}.tmp`;
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeSync(fd, JSON.stringify(data, null, 2));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  if (fs.existsSync(dataFile)) fs.copyFileSync(dataFile, `${dataFile}.bak`);
+  renameWithRetry(tmp, dataFile);
+}
+
+/* ------------------------------- snapshots ------------------------------ */
+
+const stampNow = () => new Date().toISOString().replace(/[:.]/g, '-');
+
+// Copy the current data file to <stem>.<label>-<ts>.json beside it and keep
+// only the newest `keep` copies with that label. Returns the path written, or
+// null when there is no data file yet. Used before a destructive restore.
+export function snapshot(dataFile, label, keep = 5) {
+  if (!fs.existsSync(dataFile)) return null;
+  const dir = path.dirname(dataFile);
+  const stem = path.basename(dataFile, '.json');
+  const target = path.join(dir, `${stem}.${label}-${stampNow()}.json`);
+  fs.copyFileSync(dataFile, target);
+  pruneMatching(dir, (f) => f.startsWith(`${stem}.${label}-`) && f.endsWith('.json'), keep);
+  return target;
+}
+
+// Local calendar day, matching the app's date convention (frontend/src/utils/dates.js).
+const localDay = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// One dated copy of the data file per local calendar day in `backupsDir`,
+// keeping the newest `keep`. Cheap to call after every save: it only copies
+// when today's file is missing. Returns the path written or null.
+export function dailyBackup(dataFile, backupsDir, keep = 14, now = new Date()) {
+  if (!fs.existsSync(dataFile)) return null;
+  fs.mkdirSync(backupsDir, { recursive: true });
+  const stem = path.basename(dataFile, '.json');
+  const target = path.join(backupsDir, `${stem}-${localDay(now)}.json`);
+  if (fs.existsSync(target)) return null;
+  fs.copyFileSync(dataFile, target);
+  pruneMatching(backupsDir, (f) => f.startsWith(`${stem}-`) && f.endsWith('.json'), keep);
+  return target;
+}
+
+// Delete all but the newest `keep` files matching `test` in `dir`. Names carry
+// sortable timestamps, so lexical order is chronological.
+function pruneMatching(dir, test, keep) {
+  const names = fs.readdirSync(dir).filter(test).sort();
+  for (const f of names.slice(0, Math.max(0, names.length - keep))) {
+    try { fs.unlinkSync(path.join(dir, f)); } catch { /* best effort */ }
+  }
+}
+
+// Turn an (already schema-current) data object from an imported backup into a
+// clean store ready to write: fill any missing top-level/settings fields, force
+// the collections to arrays, and rebuild the id counters from the max existing
+// id so a restored file can never hand out a colliding id. Callers should run a
+// possibly-older backup through migrateData() first to reach the current shape.
+export function prepareImport(raw) {
+  const data = normalize(raw);
+  data.plants = Array.isArray(data.plants) ? data.plants : [];
+  data.logs = Array.isArray(data.logs) ? data.logs : [];
+  data.schedules = Array.isArray(data.schedules) ? data.schedules : [];
+  data.reservoir_events = Array.isArray(data.reservoir_events) ? data.reservoir_events : [];
+  const nextAfter = (rows) => rows.reduce((m, r) => Math.max(m, Number(r?.id) || 0), 0) + 1;
+  data.nextPlantId = Math.max(Number(data.nextPlantId) || 1, nextAfter(data.plants));
+  data.nextId = Math.max(Number(data.nextId) || 1, nextAfter(data.logs));
+  data.nextScheduleId = Math.max(Number(data.nextScheduleId) || 1, nextAfter(data.schedules));
+  data.nextReservoirEventId = Math.max(Number(data.nextReservoirEventId) || 1, nextAfter(data.reservoir_events));
+  data.schemaVersion = SCHEMA_VERSION;
+  return data;
+}
+
+/* -------------------------------- plants -------------------------------- */
+
+export function listPlants(data, { includeArchived = false } = {}) {
+  const plants = includeArchived ? data.plants : data.plants.filter((p) => !p.archived);
+  return [...plants].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function getPlant(data, id) {
+  return data.plants.find((p) => p.id === id) || null;
+}
+
+// Look a plant up by exact (trimmed) name. Names are unique among ACTIVE
+// plants only, so an archived plant may share a name with a live one; the
+// live one always wins, and `activeOnly` refuses the archived fallback
+// altogether. (Probe P2, 2026-09-02: first-match returned the archived one, so
+// a log posted by name attached to a plant the user had put away.)
+export function findPlantByName(data, name, { activeOnly = false } = {}) {
+  if (!name) return null;
+  const trimmed = String(name).trim();
+  const matches = data.plants.filter((p) => p.name === trimmed);
+  const active = matches.find((p) => !p.archived);
+  if (active) return active;
+  return activeOnly ? null : (matches[0] || null);
+}
+
+// Un-archive a plant. Refuses when an active plant already carries the name
+// (the user must rename one first). Returns { plant } or { clash: plant }.
+export function restorePlant(data, id) {
+  const plant = getPlant(data, id);
+  if (!plant) return null;
+  if (!plant.archived) return { plant };
+  const clash = findPlantByName(data, plant.name, { activeOnly: true });
+  if (clash) return { clash };
+  plant.archived = false;
+  plant.updated_at = now();
+  return { plant };
+}
+
+export function createPlant(data, body) {
+  const ts = now();
+  const plant = {
+    id: data.nextPlantId,
+    name: String(body.name).trim(),
+    variety: body.variety ? String(body.variety) : null,
+    species: body.species || null,
+    system_type: body.system_type || null,
+    reservoir_volume: num(body.reservoir_volume),
+    reservoir_unit: body.reservoir_unit || 'liters',
+    start_date: body.start_date || null,
+    target_stage: body.target_stage || null,
+    archived: false,
+    created_at: ts,
+    updated_at: ts,
+  };
+  data.plants.push(plant);
+  data.nextPlantId += 1;
+  return plant;
+}
+
+// Update a plant. When the name changes, cascade the denormalized plant_name
+// cache to that plant's logs and schedules in the same write.
+export function updatePlant(data, id, body) {
+  const plant = getPlant(data, id);
+  if (!plant) return null;
+
+  const oldName = plant.name;
+  if (body.name !== undefined) plant.name = String(body.name).trim();
+  for (const f of ['variety', 'species', 'system_type', 'reservoir_unit', 'start_date', 'target_stage']) {
+    if (body[f] !== undefined) plant[f] = body[f] === '' ? null : body[f];
+  }
+  if (body.reservoir_volume !== undefined) plant.reservoir_volume = num(body.reservoir_volume);
+  if (body.archived !== undefined) plant.archived = !!body.archived;
+  plant.updated_at = now();
+
+  if (plant.name !== oldName) {
+    for (const log of data.logs) if (log.plant_id === plant.id) log.plant_name = plant.name;
+    for (const s of data.schedules) if (s.plant_id === plant.id) s.plant_name = plant.name;
+    for (const e of data.reservoir_events) if (e.plant_id === plant.id) e.plant_name = plant.name;
+  }
+  return plant;
+}
+
+export function archivePlant(data, id) {
+  const plant = getPlant(data, id);
+  if (!plant) return null;
+  plant.archived = true;
+  plant.updated_at = now();
+  return plant;
+}
+
+// Hard delete a plant and cascade-remove its logs and schedules. Returns the
+// image_url of every removed log (nulls filtered out) so the HTTP layer can
+// clean their files off disk; the file removal itself is not this module's
+// concern (db/repository.js does not know about uploadsDir).
+export function deletePlantCascade(data, id) {
+  const plant = getPlant(data, id);
+  if (!plant) return null;
+  const removedLogs = data.logs.filter((l) => l.plant_id === id);
+  data.plants = data.plants.filter((p) => p.id !== id);
+  data.logs = data.logs.filter((l) => l.plant_id !== id);
+  data.schedules = data.schedules.filter((s) => s.plant_id !== id);
+  data.reservoir_events = data.reservoir_events.filter((e) => e.plant_id !== id);
+  const imageUrls = removedLogs.map((l) => l.image_url).filter(Boolean);
+  return { plant, deletedLogs: removedLogs.length, imageUrls };
+}
+
+// Resolve the plant a log/schedule refers to. Prefers plant_id; falls back to
+// plant_name, auto-creating a plant for it (back-compat with name-only POSTs).
+export function resolvePlant(data, body) {
+  const { plant_id, plant_name } = body;
+  if (plant_id !== undefined && plant_id !== null && plant_id !== '') {
+    return getPlant(data, parseInt(plant_id, 10));
+  }
+  if (plant_name && String(plant_name).trim()) {
+    // Never attach new data to an archived plant: a live namesake wins, and
+    // with none a fresh plant is created.
+    return findPlantByName(data, plant_name, { activeOnly: true }) || createPlant(data, { name: plant_name });
+  }
+  return null;
+}
+
+/* --------------------------------- logs --------------------------------- */
+
+// Sort key for the user-entered measurement date: it is always a date-only
+// 'YYYY-MM-DD' string in this app (see frontend/src/utils/dates.js), which
+// compares correctly as a plain string. A missing/unparseable date sorts as
+// the epoch so it never throws and never floats to the top.
+const EPOCH_DATE = '0000-00-00';
+const dateSortKey = (log) => (typeof log?.date === 'string' && log.date ? log.date : EPOCH_DATE);
+
+// Sort key for the server insert timestamp: a real instant, so Date.parse is
+// the right tool (matches the frontend's own created_at handling). Missing or
+// unparseable falls back to epoch ms (0), never NaN.
+const createdAtSortKey = (log) => {
+  const t = Date.parse(log?.created_at);
+  return Number.isNaN(t) ? 0 : t;
+};
+
+// Newest first: by the user-entered `date`, then by insert time, then by id
+// as a final deterministic tiebreaker so two calls always agree (probe P8,
+// 2026-09-02: sorting by created_at alone showed a backdated log as if it had
+// just been entered).
+export function listLogs(data, { plant_id } = {}) {
+  let logs = data.logs;
+  if (plant_id !== undefined && plant_id !== null && plant_id !== '') {
+    const pid = parseInt(plant_id, 10);
+    logs = logs.filter((l) => l.plant_id === pid);
+  }
+  return [...logs].sort((a, b) => {
+    const byDate = dateSortKey(b).localeCompare(dateSortKey(a));
+    if (byDate !== 0) return byDate;
+    const byCreated = createdAtSortKey(b) - createdAtSortKey(a);
+    if (byCreated !== 0) return byCreated;
+    return (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+}
+
+export function getLog(data, id) {
+  return data.logs.find((l) => l.id === id) || null;
+}
+
+// Build the optional measurement fields shared by create and update.
+function measurementFields(body) {
+  return {
+    growth_stage: body.growth_stage || null,
+    ph: num(body.ph),
+    ec: num(body.ec),
+    ppm: num(body.ppm),
+    water_temp: num(body.water_temp),
+    air_temp: num(body.air_temp),
+    temp_unit: body.temp_unit === 'F' ? 'F' : 'C',
+    humidity: num(body.humidity),
+    light_hours: num(body.light_hours),
+    reservoir_volume: num(body.reservoir_volume),
+  };
+}
+
+// Structured dosing rows as stored: trimmed names, numeric ml/L. Takes the
+// array or its JSON-string form (multipart bodies); anything unparseable or
+// absent stores as []. validation.js has already refused a malformed list by
+// the time this runs, and both go through the same parseDoses.
+export function normalizeDoses(value) {
+  const parsed = parseDoses(value);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((d) => d && typeof d === 'object' && String(d.name || '').trim())
+    .map((d) => ({ name: String(d.name).trim(), ml_per_l: num(d.ml_per_l) ?? 0 }));
+}
+
+export function createLog(data, body) {
+  const plant = resolvePlant(data, body);
+  const log = {
+    id: data.nextId,
+    plant_id: plant ? plant.id : null,
+    plant_name: plant ? plant.name : (body.plant_name ? String(body.plant_name).trim() : ''),
+    date: body.date,
+    height: parseFloat(body.height),
+    height_unit: body.height_unit === 'in' ? 'in' : 'cm',
+    ...measurementFields(body),
+    nutrients: body.nutrients ? String(body.nutrients).trim() : '',
+    doses: normalizeDoses(body.doses),
+    notes: body.notes ? String(body.notes).trim() : '',
+    image_url: body.image_url || null,
+    created_at: now(),
+  };
+  data.logs.push(log);
+  data.nextId += 1;
+  return log;
+}
+
+// Update a log. Date and image are preserved (the edit form does not resend
+// them), matching the original PUT semantics.
+export function updateLog(data, id, body) {
+  const log = getLog(data, id);
+  if (!log) return null;
+
+  // Allow re-pointing a log at a different plant via plant_id/plant_name.
+  if ((body.plant_id !== undefined && body.plant_id !== '') ||
+      (body.plant_name !== undefined && body.plant_name !== log.plant_name)) {
+    const plant = resolvePlant(data, body);
+    if (plant) {
+      log.plant_id = plant.id;
+      log.plant_name = plant.name;
+    } else if (body.plant_name) {
+      log.plant_name = String(body.plant_name).trim();
+    }
+  }
+
+  if (body.height !== undefined) log.height = parseFloat(body.height);
+  if (body.height_unit !== undefined) log.height_unit = body.height_unit === 'in' ? 'in' : 'cm';
+  // Only touch measurement fields the caller actually sent. A field present and
+  // explicitly null clears it; an absent field keeps its stored value (so the
+  // partial edit form can't wipe measurements it never showed).
+  if ('growth_stage' in body) log.growth_stage = body.growth_stage || null;
+  if (body.temp_unit !== undefined) log.temp_unit = body.temp_unit === 'F' ? 'F' : 'C';
+  for (const f of ['ph', 'ec', 'ppm', 'water_temp', 'air_temp', 'humidity', 'light_hours', 'reservoir_volume']) {
+    if (f in body) log[f] = num(body[f]);
+  }
+  if (body.nutrients !== undefined) log.nutrients = String(body.nutrients).trim();
+  if ('doses' in body) log.doses = normalizeDoses(body.doses);
+  if (body.notes !== undefined) log.notes = body.notes ? String(body.notes).trim() : '';
+  // The image is preserved unless the caller stored a replacement (the HTTP
+  // layer passes the new /uploads URL after sniffing the bytes, MR-37).
+  if (body.image_url !== undefined) log.image_url = body.image_url || null;
+  log.updated_at = now();
+  return log;
+}
+
+export function deleteLog(data, id) {
+  const idx = data.logs.findIndex((l) => l.id === id);
+  if (idx === -1) return null;
+  const [deleted] = data.logs.splice(idx, 1);
+  return deleted;
+}
+
+/* ------------------------------- schedules ------------------------------ */
+
+export function listSchedules(data) {
+  return data.schedules;
+}
+
+export function getSchedule(data, id) {
+  return data.schedules.find((s) => s.id === id) || null;
+}
+
+export function createSchedule(data, body) {
+  const plant = resolvePlant(data, body);
+  const ts = now();
+  const schedule = {
+    id: data.nextScheduleId,
+    plant_id: plant ? plant.id : null,
+    plant_name: plant ? plant.name : (body.plant_name || ''),
+    nutrient_type: body.nutrient_type,
+    ec_level: body.ec_level || '',
+    frequency: body.frequency || 'daily',
+    custom_interval_days:
+      body.frequency === 'custom' ? parseInt(body.custom_interval_days, 10) || null : null,
+    notes: body.notes || '',
+    last_fed: null,
+    active: true,
+    created_at: ts,
+    updated_at: ts,
+  };
+  data.schedules.push(schedule);
+  data.nextScheduleId += 1;
+  return schedule;
+}
+
+export function updateSchedule(data, id, body) {
+  const schedule = getSchedule(data, id);
+  if (!schedule) return null;
+  if ((body.plant_id !== undefined && body.plant_id !== '') || body.plant_name !== undefined) {
+    const plant = resolvePlant(data, body);
+    if (plant) {
+      schedule.plant_id = plant.id;
+      schedule.plant_name = plant.name;
+    }
+  }
+  for (const f of ['nutrient_type', 'ec_level', 'frequency', 'notes']) {
+    if (body[f] !== undefined) schedule[f] = body[f];
+  }
+  if (body.custom_interval_days !== undefined) {
+    schedule.custom_interval_days = parseInt(body.custom_interval_days, 10) || null;
+  }
+  if (body.active !== undefined) schedule.active = !!body.active;
+  schedule.updated_at = now();
+  return schedule;
+}
+
+export function deleteSchedule(data, id) {
+  const idx = data.schedules.findIndex((s) => s.id === id);
+  if (idx === -1) return null;
+  const [deleted] = data.schedules.splice(idx, 1);
+  return deleted;
+}
+
+export function markFed(data, id) {
+  const schedule = getSchedule(data, id);
+  if (!schedule) return null;
+  schedule.last_fed = now();
+  schedule.updated_at = schedule.last_fed;
+  return schedule;
+}
+
+/* --------------------------- reservoir events --------------------------- */
+
+// A full water change ('change') or a top-off ('topoff') for one plant, with
+// the volume in liters (canonical, like every stored volume). Newest first by
+// the user-entered date, then by id, so two calls always agree.
+export function listReservoirEvents(data, { plant_id } = {}) {
+  let events = data.reservoir_events;
+  if (plant_id !== undefined && plant_id !== null && plant_id !== '') {
+    const pid = parseInt(plant_id, 10);
+    events = events.filter((e) => e.plant_id === pid);
+  }
+  return [...events].sort((a, b) => {
+    const byDate = dateSortKey(b).localeCompare(dateSortKey(a));
+    return byDate !== 0 ? byDate : (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+}
+
+export function getReservoirEvent(data, id) {
+  return data.reservoir_events.find((e) => e.id === id) || null;
+}
+
+export function createReservoirEvent(data, body) {
+  const plant = getPlant(data, parseInt(body.plant_id, 10));
+  if (!plant) return null;
+  const ts = now();
+  const event = {
+    id: data.nextReservoirEventId,
+    plant_id: plant.id,
+    plant_name: plant.name,
+    date: body.date,
+    kind: body.kind === 'topoff' ? 'topoff' : 'change',
+    volume: num(body.volume) ?? 0,
+    ec: num(body.ec),
+    ph: num(body.ph),
+    notes: body.notes ? String(body.notes).trim() : '',
+    created_at: ts,
+    updated_at: ts,
+  };
+  data.reservoir_events.push(event);
+  data.nextReservoirEventId += 1;
+  return event;
+}
+
+export function updateReservoirEvent(data, id, body) {
+  const event = getReservoirEvent(data, id);
+  if (!event) return null;
+  if (body.plant_id !== undefined && body.plant_id !== '') {
+    const plant = getPlant(data, parseInt(body.plant_id, 10));
+    if (plant) { event.plant_id = plant.id; event.plant_name = plant.name; }
+  }
+  if (body.date !== undefined) event.date = body.date;
+  if (body.kind !== undefined) event.kind = body.kind === 'topoff' ? 'topoff' : 'change';
+  if (body.volume !== undefined) event.volume = num(body.volume) ?? 0;
+  for (const f of ['ec', 'ph']) if (f in body) event[f] = num(body[f]);
+  if (body.notes !== undefined) event.notes = body.notes ? String(body.notes).trim() : '';
+  event.updated_at = now();
+  return event;
+}
+
+export function deleteReservoirEvent(data, id) {
+  const idx = data.reservoir_events.findIndex((e) => e.id === id);
+  if (idx === -1) return null;
+  const [deleted] = data.reservoir_events.splice(idx, 1);
+  return deleted;
+}
+
+/* -------------------------------- settings ------------------------------ */
+
+export function getSettings(data) {
+  return data.settings;
+}
+
+// Merge a settings patch, clamping every enum to a known value.
+export function updateSettings(data, body) {
+  const s = data.settings;
+  if (body.units) {
+    if (['cm', 'in'].includes(body.units.length)) s.units.length = body.units.length;
+    if (['liters', 'gallons'].includes(body.units.volume)) s.units.volume = body.units.volume;
+    if (['C', 'F'].includes(body.units.temp)) s.units.temp = body.units.temp;
+  }
+  if (body.ppm_scale === 500 || body.ppm_scale === 700) s.ppm_scale = body.ppm_scale;
+  if ('default_species' in body) s.default_species = body.default_species || null;
+  // Only a list that validateNutrientPrices() accepts is stored; anything
+  // else leaves the saved prices untouched (the route has already 400'd).
+  if ('nutrient_prices' in body && validateNutrientPrices(body.nutrient_prices) === null) {
+    s.nutrient_prices = body.nutrient_prices.map((p) => ({ name: p.name.trim(), price_per_liter: parseFloat(p.price_per_liter) }));
+  }
+  return s;
+}

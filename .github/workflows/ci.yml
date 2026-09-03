@@ -5,18 +5,34 @@ on:
     branches: ['**']
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-test:
+  # Unit, integration and lint, under two timezones on opposite sides of UTC.
+  # Date-only strings used to parse as UTC midnight, which rendered the
+  # previous day west of Greenwich and picked tomorrow's date east of the
+  # dateline; both zones have to stay green. (Node on Windows ignores TZ, so
+  # this only bites here.)
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: [America/Los_Angeles, Pacific/Auckland]
+    env:
+      TZ: ${{ matrix.tz }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Electron 44's installer needs Node 22.12+ (its downloader is ESM-only).
+          node-version: 22
 
-      # Install only what the checks need. --ignore-scripts skips the Electron
-      # binary download, which isn't required for lint/build/backend tests.
+      # --ignore-scripts skips the Electron binary download, which lint, build
+      # and the backend tests do not need.
       - name: Install root dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
@@ -28,9 +44,73 @@ jobs:
         run: npm run lint
         working-directory: frontend
 
+      # The About test reads frontend/dist/index.html for the CSP meta, so the
+      # build runs before the unit tests.
       - name: Build frontend
         run: npm run build
         working-directory: frontend
 
-      - name: Backend integration tests
-        run: npm run test:server
+      - name: Backend tests (vitest + coverage gate)
+        run: npm test
+
+      - name: Frontend unit and component tests
+        run: npm run test:unit
+        working-directory: frontend
+
+      - name: Board lint
+        run: python tools/board.py lint
+
+  # Packaging smoke and the Playwright end-to-end suite against the real app,
+  # on the platform the owner ships to. Playwright launches Electron directly;
+  # no browser download is needed.
+  package-and-e2e:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Electron 44's installer needs Node 22.12+ (its downloader is ESM-only).
+          node-version: 22
+
+      - name: Install root dependencies (with the Electron binary)
+        run: npm install --no-audit --no-fund
+
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+        working-directory: frontend
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+
+      - name: Package (unpacked, no installer)
+        run: npx electron-builder --dir --win --x64
+
+      - name: Packaged app has the real icon and the shell files
+        shell: bash
+        run: |
+          set -e
+          test -f "dist/win-unpacked/Hydro Growth Tracker.exe"
+          test -f dist/win-unpacked/resources/assets/icons/icon.png
+          echo "packaged files present"
+
+      - name: End-to-end (Playwright drives the Electron app)
+        run: npx playwright test
+        env:
+          ELECTRON_DISABLE_SECURITY_WARNINGS: '1'
+
+      - name: Upload e2e traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-traces
+          path: e2e/.results
+          if-no-files-found: ignore
+
+      - name: Upload unpacked build
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-unpacked
+          path: dist/win-unpacked
+          if-no-files-found: error

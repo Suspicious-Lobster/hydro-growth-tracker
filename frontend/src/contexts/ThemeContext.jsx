@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const ThemeContext = createContext();
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useTheme = () => {
   const context = useContext(ThemeContext);
   if (!context) {
@@ -42,7 +43,7 @@ export const ThemeProvider = ({ children }) => {
       textSecondary: 'text-dark-text-secondary',
       textMuted: 'text-dark-text-muted',
       primary: 'text-dark-primary',
-      primaryBg: 'bg-dark-primary',
+      primaryBg: 'bg-dark-primary-bg',
       primaryHover: 'hover:bg-dark-primary-hover',
       secondary: 'text-dark-secondary',
       accent: 'text-dark-accent',
@@ -58,7 +59,7 @@ export const ThemeProvider = ({ children }) => {
       textSecondary: 'text-light-text-secondary',
       textMuted: 'text-light-text-muted',
       primary: 'text-light-primary',
-      primaryBg: 'bg-light-primary',
+      primaryBg: 'bg-light-primary-bg',
       primaryHover: 'hover:bg-light-primary-hover',
       secondary: 'text-light-secondary',
       accent: 'text-light-accent',

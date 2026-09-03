@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+"""Seed docs/board.md with the market-readiness rows, via `board.py new`.
+
+One-shot script kept for the record of how the board was born; safe to re-run
+(board.py refuses duplicate ids, so a second run adds nothing). Every row is
+passed as an argv list -- no shell quoting -- and stays ASCII on purpose.
+"""
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+BOARD = [sys.executable, str(ROOT / "tools" / "board.py"), "new"]
+
+# (id, tier, lane, deps, flags, files, title, body, accept, redproof)
+ROWS = [
+    # ---------------------------------------------------------------- lane D first: the test floor every other row builds on
+    ("MR-24", "O", "D", "", "",
+     "test/**,vitest.config.mjs,package.json,test-server.mjs,test-migrate.mjs",
+     "Backend tests onto vitest with unit coverage of validation and repository.",
+     "Gap: test-server.mjs (57 checks) and test-migrate.mjs (23) are hand-rolled pass/fail scripts sharing ONE data dir across every check, with no runner, no isolation, no unit tests for validation.js (0 direct tests of its 25 rules) or db/repository.js. "
+     "Convert both into test/*.test.mjs under vitest at the repo root, one temp data dir per test, and add test/validation.test.mjs (every rule at its boundary: pH 0/14/14.1, EC 5/5.1, height 1000 cm vs 400 in, name 100/101 chars, date parse) and test/repository.test.mjs (pure entity helpers, prepareImport id rebuild, normalize). "
+     "Add a c8 coverage gate on server.js, db/**, validation.js at 90 percent lines. Keep the check count from FALLING: 80 today is the floor (CODING-PRACTICES 1.6). npm test runs it; test:e2e is left alone for MR-19.",
+     "npm test runs vitest and reports at least 80 passing tests plus the new unit files; coverage summary prints and the run exits non-zero below 90 percent lines on the three backend paths.",
+     "Change the EC upper bound in validation.js from 5 to 50 -> the boundary test fails. Delete the coverage threshold from the config -> the gate no longer fails when a route test is removed (the gate's own red).",
+     ),
+
+    # ---------------------------------------------------------------- lane A: data safety and security
+    ("MR-1", "O", "A", "MR-24", "",
+     "db/repository.js,server.js,main.js,frontend/src/App.jsx,frontend/src/api/api.js,test/**",
+     "A damaged data file must never be overwritten with an empty store.",
+     "Gap (probe P3, 2026-09-02): truncated hydro-data.json -> repo.load() logged an error and returned emptyData(); the next PUT /settings returned 200 and wrote a store with 0 plants over the user's file. 0 salvage copies. This is silent total data loss on the first write after any corruption. "
+     "Fix: load() distinguishes MISSING (fresh install, empty store is right) from UNREADABLE (parse error). Unreadable -> copy the bytes to hydro-data.corrupt-<ts>.json, put the server into a damaged state: every write route returns 503 {error:'data file damaged', path}, GET / reports status 'damaged'. main.js shows a dialog naming the salvage path and the backups folder. The renderer shows a persistent banner (App.jsx) and disables mutations while GET / reports damaged.",
+     "Probe P3 re-run: PUT /settings on a truncated file returns 503, the data file bytes are unchanged, and exactly one .corrupt-<ts>.json copy exists whose bytes equal the original. A fresh install with NO file still starts with an empty store (the missing-vs-unreadable branch both ways, 1.9).",
+     "Revert load() to returning emptyData() on parse error -> the test asserting 503 and unchanged bytes fails with plants 0. Separately, delete the missing-file branch -> the fresh-install test fails.",
+     ),
+
+    ("MR-2", "O", "A", "MR-24", "",
+     "db/migrate.js,server.js,test/**",
+     "Refuse data files and backups from a NEWER schema version.",
+     "Gap (probe P4, 2026-09-02): migrateData({schemaVersion:3,...}) treated the file as v1: changed=true, result schemaVersion 2, a plant's new_field dropped; POST /backup/restore of that v3 envelope returned 200 and wrote the stripped plants. A user who downgrades, or restores a backup from a later release, silently loses every field the newer version added. "
+     "Fix: migrateData returns {error:'newer schema'} (or throws a typed error) for schemaVersion > SCHEMA_VERSION; runMigration leaves the file untouched and returns {migrated:false, tooNew:true}; createServer surfaces that as the same damaged state as MR-1 with a 'please update the app' message; restore returns 400 with a clear message.",
+     "migrateData on schemaVersion 3 returns an error and does not mutate its input; runMigration leaves the on-disk bytes identical; POST /backup/restore of a v3 envelope returns 400 and the store is unchanged (GET /plants before == after).",
+     "Remove the version comparison -> the restore test reads 200 and the plants list changes; the migrate test sees changed=true.",
+     ),
+
+    ("MR-3", "O", "A", "MR-24", "",
+     "db/repository.js,server.js,main.js,test/**",
+     "Write safety: pre-restore snapshot, last-good backup on every save, Windows-safe rename.",
+     "Gap (probe P5, 2026-09-02): POST /backup/restore replaced the store with 0 pre-restore copies written; a mistaken restore is unrecoverable. save() does a bare writeFileSync + renameSync: no fsync, and on Windows renameSync fails with EPERM/EBUSY while an antivirus or indexer holds the target, which would surface as a 500 on an ordinary save. "
+     "Fix: before restore write hydro-data.pre-restore-<ts>.json (keep the newest 5); on every successful save keep the previous file as hydro-data.json.bak (rolling, one copy); fsync the temp file before rename; retry rename up to 5 times with backoff on EPERM/EBUSY/EACCES; a daily auto-backup into <userData>/backups/hydro-data-<date>.json keeping 14 (TASKS.md item 18, pulled forward because it is the recovery path for MR-1).",
+     "After restore a pre-restore file exists whose bytes equal the previous store; after two saves .bak equals the first save's bytes; a save whose first rename throws EPERM (fs mocked once) succeeds and the file holds the new data; the backups dir gains one dated file per calendar day and never exceeds 14.",
+     "Remove the snapshot call -> the byte-equality test fails; remove the retry -> the mocked-EPERM test throws; set the retention to 100 -> the 14-file cap test fails.",
+     ),
+
+    ("MR-4", "O", "A", "MR-24", "",
+     "db/repository.js,server.js,validation.js,test/**",
+     "Plant-name uniqueness across the archive boundary; restore endpoint with clash check.",
+     "Gap (probe P2, 2026-09-02): with an archived 'Tomato' present, POST /plants 'Tomato' -> 201 (two plants share the name), then POST /logs by plant_name 'Tomato' attached to the ARCHIVED plant (id 1, not the active id 2), and PUT restore of the archived one -> 200, leaving TWO ACTIVE plants named 'Tomato'. findPlantByName returns the first match regardless of archived state. "
+     "Rule: a name is unique among ACTIVE plants. findPlantByName(data, name, {activeOnly}) prefers the active match; resolvePlant (logs and schedules by name) resolves to the active plant, never an archived one, and creates a new plant only when no active one exists. New POST /plants/:id/restore returns 409 if an active plant already has the name. PUT /plants/:id no longer requires name (partial update); validation checks name only when present. PlantManager's restore switches to the new endpoint.",
+     "Probe P2 re-run: creating 'Tomato' beside an archived 'Tomato' -> 201; a log posted by name attaches to the ACTIVE id; restoring the archived one -> 409 and the active count stays 1; renaming the archived one first, then restoring -> 200.",
+     "Revert findPlantByName to first-match -> the log-by-name test reads the archived id; remove the restore clash check -> the 409 test reads 200 and active count 2.",
+     ),
+
+    ("MR-5", "O", "A", "MR-24", "",
+     "server.js,main.js,preload.js,frontend/src/api/api.js,frontend/vite.config.js,test/**",
+     "Lock and relocate the local API: loopback only, random port, per-launch token, no wildcard CORS.",
+     "Gap (probe P1, 2026-09-02): GET /plants with Origin https://evil.example returned access-control-allow-origin: https://evil.example and allow-credentials: true, and there is no authentication. Any web page open in the user's browser can read, alter or wipe their grow data on http://localhost:5000. Port 5000 is also fixed: on macOS 12+ the AirPlay Receiver listens on 5000, so the app fails to start there. "
+     "Fix: listen on 127.0.0.1 port 0; main.js mints a random 32-byte token per launch and passes {apiBase, token} to the renderer through preload.js via contextBridge (window.hydro); server middleware requires X-Hydro-Token on every route except GET / and /uploads/*; CORS allows only the dev origin http://localhost:5173 (and only when NODE_ENV=development); api.js reads window.hydro, falling back to VITE_API_BASE_URL plus VITE_API_TOKEN in dev. resolveImageUrl uses the same base. Dev script passes the token to Vite via env.",
+     "Request without the token -> 401 on /plants, /logs, /feeding, /settings, /backup; with the token -> 200; a request carrying Origin https://evil.example gets NO access-control-allow-origin header; two createServer instances on port 0 get different ports; server.address().address is 127.0.0.1. The Playwright smoke (MR-19) still loads data end to end through preload.",
+     "Delete the token middleware -> the 401 test reads 200. Re-enable origin:true -> the evil-origin header test finds the reflected origin.",
+     ),
+
+    ("MR-6", "O", "C", "MR-5", "",
+     "main.js,e2e/**",
+     "Single-instance lock and correct quit lifecycle.",
+     "Gap (read from main.js, not probed): no app.requestSingleInstanceLock(), so two launches run two servers writing the same hydro-data.json -- last writer wins, silently. backendServer.close() runs on window-all-closed, but on macOS the app stays alive and 'activate' recreates a window whose renderer now has no backend. "
+     "Fix: request the lock, quit the second instance and focus the first's window via second-instance; close the server on before-quit only; activate recreates the window against the still-running server.",
+     "Playwright: launching a second _electron instance against the same userData exits without opening a window and the first window is focused; closing the only window on Windows quits the app; a unit-level test of the lifecycle wiring (extracted into a small createLifecycle(app, startServer) helper) shows the server close is registered on before-quit and NOT on window-all-closed.",
+     "Remove requestSingleInstanceLock -> the second launch opens a window and the e2e fails; move close() back to window-all-closed -> the wiring test fails.",
+     ),
+
+    ("MR-7", "S", "A", "MR-24", "",
+     "server.js,db/repository.js,test/**",
+     "Uploads: remove files when their log or plant is deleted; sniff image bytes and force the extension.",
+     "Gap (probe P6, 2026-09-02): a file named evil.html sent with mimetype image/png was stored as /uploads/<ts>-evil.html and is served by express.static from the API origin; deleting the log left the file on disk (uploads before/after delete: 1/1). Disk grows forever and the extension comes from the client. "
+     "Fix: after multer stores the file, read the first 12 bytes; accept only PNG/JPEG/GIF/WebP magic numbers, rename to <random>.<ext-from-magic>, otherwise unlink and 400. deleteLog and deletePlantCascade return the image_url(s) removed; the route unlinks them (errors logged, never fatal). Make handle() await async handlers so the unlink is inside the try.",
+     "Probe P6 re-run: evil.html with PNG bytes is stored as .png; a PNG-mimetype upload with HTML bytes -> 400 and nothing on disk; deleting a log with an image leaves the uploads dir one file smaller; deleting a plant removes every image of its logs.",
+     "Remove the unlink -> the before/after count test reads equal; remove the magic check -> the HTML-bytes upload test reads 201.",
+     ),
+
+    ("MR-8", "S", "A", "MR-24", "",
+     "server.js,test/**",
+     "CSV export: neutralise formula cells and write a UTF-8 BOM.",
+     "Gap (probe P7, 2026-09-02): a nutrients value of =HYPERLINK(\"http://evil\",\"click\") was written raw into the CSV; Excel and Sheets evaluate it on open (CSV injection). Non-ASCII notes also open garbled in Excel without a BOM. "
+     "Fix: a csvSafe(value) helper prefixes a single quote to any string cell starting with =, +, -, @, tab or CR; export writes \\uFEFF first; the same helper is unit-tested on its own.",
+     "Probe P7 re-run: the exported cell starts with '=HYPERLINK (quote-prefixed); a plain numeric string -5 is also prefixed; the response body's first code point is U+FEFF; a note with an accented character round-trips byte-exact after the BOM.",
+     "Remove the prefix for '=' only -> the =HYPERLINK assertion fails while the -5 one passes (1.5b: one assertion per trigger character).",
+     ),
+
+    ("MR-9", "H", "A", "MR-24", "",
+     "server.js,db/repository.js,test/**",
+     "Remove the deprecated delete-logs-by-plant-name route.",
+     "Gap: DELETE /logs/plant/:plantName and repo.deleteLogsByPlantName delete every log whose plant_name matches -- across an archived plant and an active one that share a name (see MR-4). grep -rn \"logs/plant\" frontend/src returns nothing: no client calls it. Remove the route, the helper, and the test that exercised it; add a test that the path now 404s.",
+     "grep -rn deleteLogsByPlantName . --include=*.js --include=*.mjs (excluding node_modules) returns zero hits; DELETE /logs/plant/Tomato returns 404 and the log count is unchanged.",
+     "Re-add the route -> the 404 test reads 200.",
+     ),
+
+    ("MR-10", "S", "B", "MR-24", "",
+     "db/repository.js,frontend/src/components/LogViewer.jsx,frontend/src/components/PlantDetail.jsx,test/**",
+     "Order and display logs by the measurement date the user entered.",
+     "Gap (probe P8, 2026-09-02): GET /logs returned a log dated 2020-01-01 FIRST because listLogs sorts by created_at (insert time); LogViewer and the PlantDetail history table both render formatDate(log.created_at), so a backdated entry shows today's date. Meanwhile utils/stats sorts by date. Two orderings for one list (CODING-PRACTICES 5.4). "
+     "Fix: listLogs sorts by date desc, then created_at desc, with a deterministic fallback when either is missing (a log with no created_at made the comparator NaN in probe P8's first run); LogViewer and PlantDetail show log.date, with created_at only as a secondary 'logged <datetime>' caption.",
+     "A backdated log lists last in GET /logs and its row shows 2020 in both views (component test asserts the rendered date text, 1.2); a log with created_at missing sorts without throwing and never reorders between two calls.",
+     "Revert the sort key to created_at -> the ordering test fails; revert the JSX to created_at -> the rendered-text test fails.",
+     ),
+
+    ("MR-11", "O", "B", "", "",
+     "frontend/src/utils/format.js,frontend/src/utils/dates.js,frontend/src/components/AddLogForm.jsx,frontend/src/components/FeedingScheduleCalendarExport.jsx,frontend/src/utils/stats.js,frontend/src/utils/trends.js,frontend/src/__tests__/format.test.js,frontend/src/__tests__/dates.test.js,.github/workflows/ci.yml",
+     "Calendar dates are local dates everywhere: form default, display, sorting, streaks.",
+     "Gap (measured 2026-09-02 with explicit offsets, because Node on Windows ignores TZ): formatDate('2026-06-26') renders 'Jun 25, 2026' for a user in America/Los_Angeles (date-only strings parse as UTC midnight, then render in local time); AddLogForm's default date is new Date().toISOString().slice(0,10), which at 8pm in Los Angeles yields tomorrow and on THIS machine (Africa/Johannesburg) before 2am yields yesterday. careStreak buckets by UTC day. Locale is hard-coded en-US. "
+     "Fix: one utils/dates.js with parseLocalDate('YYYY-MM-DD') (components, not Date.parse), todayLocalISO(now), and dayKey(log) used by format, stats, trends and the calendar export; formatDate uses the user's locale (undefined) and parseLocalDate for date-only input, Date for full timestamps. CI runs the frontend unit tests under TZ=America/Los_Angeles AND TZ=Pacific/Auckland on ubuntu (where TZ is honoured).",
+     "Unit tests: formatDate('2026-06-26') contains '26' under both CI zones; todayLocalISO(new Date(2026,5,26,20)) === '2026-06-26' and todayLocalISO(new Date(2026,5,26,1)) === '2026-06-26' (built with local components so the assertion is zone-independent by construction, and the CI zones prove the negative-offset case); careStreak counts a 23:30 log and the next day's 00:30 log as two days.",
+     "Revert formatDate to new Date(string) -> the TZ=America/Los_Angeles CI job fails on '25'; revert the default date to toISOString -> the 8pm test fails on '27' in the LA job.",
+     ),
+
+    ("MR-12", "S", "B", "MR-10", "",
+     "frontend/src/components/LogViewer.jsx,frontend/src/components/FeedingSchedule.jsx,frontend/src/components/ui/ConfirmDialog.jsx",
+     "Log editing picks the plant from a selector, edits every field, and confirms deletes in-app.",
+     "Gap (read from LogViewer.jsx): the edit form sends plant_name as free text; the server's resolvePlant then CREATES a new plant for any typo, so 'fixing' a name silently forks the plant. The edit form omits date, PPM, temps, humidity, light, reservoir and stage (users cannot correct them). Deletes use window.confirm, which blocks the renderer and cannot be styled or tested; every other destructive action already uses Modal. "
+     "Fix: plant chosen by plant_id from useAppData().plants; all measurement fields editable in the active display units (reuse AddLogForm's conversion helpers); PUT sends plant_id never plant_name; a ConfirmDialog built on Modal replaces window.confirm here and in FeedingSchedule.",
+     "Component test: editing a log and saving calls updateLog with {plant_id: <number>} and no plant_name key, and the store's plant count is unchanged; editing the date field sends date; clicking delete renders the ConfirmDialog and no window.confirm is called (spy asserts 0 calls).",
+     "Send plant_name again -> the payload test fails; call window.confirm -> the spy count reads 1.",
+     ),
+
+    ("MR-13", "S", "B", "", "",
+     "frontend/src/contexts/AppDataContext.jsx,frontend/src/App.jsx,frontend/src/__tests__/components/AppDataContext.test.jsx",
+     "Mutations refresh in the background instead of unmounting the current view.",
+     "Gap (read from AppDataContext.jsx and App.jsx): loadAll dispatches LOAD_START on every mutation, App renders a spinner while loading, so every save unmounts the visible view and wipes its local state (PlantManager's archived list, LogViewer's scroll, Bud's position). "
+     "Fix: loading is true only until the first successful load; later refreshes set refreshing (used for a subtle top bar), and a failed refresh keeps the last good data with the error banner.",
+     "Component test: mount a view with local state, trigger a mutation, and assert the same element instance is still mounted with its state intact after the refetch resolves; the initial load still shows the spinner.",
+     "Dispatch LOAD_START from the refresh path -> the local state assertion fails.",
+     ),
+
+    ("MR-33", "S", "B", "MR-11", "",
+     "validation.js,frontend/src/components/AddLogForm.jsx,frontend/vite.config.js,frontend/src/__tests__/validation-shared.test.js",
+     "One set of validation rules: the frontend imports the server's validation.js.",
+     "Gap (read): AddLogForm.validate() re-implements three of the server's 25 rules and none of the ranges, so a pH of 15 passes the client and fails on the server with a toast. CODING-PRACTICES 5.4: one derivation per fact. "
+     "Fix: validation.js exports the rule table (already pure ESM, no Node imports); vite.config.js allows the import from the repo root (server.fs.allow or an alias); AddLogForm runs validateLog on the canonical payload before posting and maps each message to its field.",
+     "Entering pH 15 shows the server's exact message inline without a request (axios mock records 0 calls); a valid form posts once. A test imports the same function from both paths and asserts identity.",
+     "Duplicate the pH rule locally with a different bound -> the identity test fails and the inline message differs from the server's text.",
+     ),
+
+    # ---------------------------------------------------------------- lane C: Electron shell and packaging
+    ("MR-14", "S", "C", "", "",
+     "assets/**,scripts/make-icons.mjs,package.json,main.js",
+     "Real application icons for Windows, macOS and Linux.",
+     "Gap (measured 2026-09-02): assets/icons/icon.png is a 98-byte TEXT file holding the base64 of a 1x1 PNG; `file` reports ASCII text. package.json points mac and linux icons at an SVG, which electron-builder cannot use, and sets no win icon, so the installer and taskbar show Electron's default. "
+     "Fix: scripts/make-icons.mjs rasterises assets/icon.svg with sharp to 1024 PNG and derives icon.ico (16-256) and icon.icns; package.json build.win/mac/linux point at them; BrowserWindow gets icon on Linux; a repo test asserts the PNG magic bytes and 1024x1024 dimensions and that every icon path in package.json exists.",
+     "test/assets.test.mjs: icon.png starts with 89 50 4E 47 and its IHDR reads 1024x1024; icon.ico and icon.icns exist and are over 10 KB; every build.*.icon path resolves. electron-builder --dir completes with no 'default Electron icon is used' warning in its log.",
+     "Replace icon.png with the current text file -> the magic-bytes test fails; point build.win.icon at a missing path -> the path test fails.",
+     ),
+
+    ("MR-15", "S", "C", "MR-5", "",
+     "frontend/index.html,main.js,frontend/src/components/AboutDialog.jsx",
+     "Window title, Content-Security-Policy, production menu and About dialog.",
+     "Gap (read): frontend/index.html's title is 'Vite + React' and its favicon is vite.svg; there is no CSP meta so Electron prints its insecure-CSP warning and any injected script would run; the default menu exposes Toggle Developer Tools in production; nothing shows the version. "
+     "Fix: title 'Hydro Growth Tracker'; CSP meta: default-src 'self'; connect-src 'self' <apiBase from MR-5 via preload>; img-src 'self' data: blob: <apiBase>; style-src 'self' 'unsafe-inline' (Tailwind) ; a minimal application menu (File: Backup..., Quit; Help: About) in production, full menu in dev; About reads app.getVersion() through preload.",
+     "Playwright: window title equals 'Hydro Growth Tracker'; a CSP meta element exists and the console shows no 'Insecure Content-Security-Policy' warning; Help > About shows the package.json version string.",
+     "Delete the CSP meta -> the console-warning assertion fails; change the title -> the title assertion fails.",
+     ),
+
+    ("MR-16", "O", "C", "MR-19", "owner",
+     "package.json,package-lock.json,main.js,preload.js",
+     "Upgrade Electron 29 to a currently supported major (and electron-builder to match).",
+     "Gap: node_modules/electron is 29.4.6 (2024); Electron supports the latest three majors only, so 29 receives no Chromium security fixes. A product shipping a two-year-old browser engine is not market ready. OWNER decision because a major upgrade can change preload, sandbox and builder behaviour and needs a real launch check on each platform the owner intends to ship. Depends on the e2e harness so the oracle exists before the bump.",
+     "npm ls electron shows a supported major; the Playwright e2e suite is green against the upgraded build; npm audit reports no high or critical advisory attributable to electron or electron-builder.",
+     "The gate is the e2e suite: before bumping, break the preload path in main.js and confirm the suite fails on the first data load; then bump and watch it pass.",
+     ),
+
+    ("MR-17", "S", "E", "", "",
+     "assets/installer.nsh,assets/installer-pro.nsh,start.bat,start.ps1,package.bat,setup.js,convert-icons.bat,scripts/pre-build.js,package.json,README.md,test/repo-hygiene.test.mjs",
+     "Remove dead installer scripts and dev-launcher cruft; make package.json describe what is built.",
+     "Gap (read): assets/installer*.nsh are not referenced by package.json's nsis block (no include key) and reference header.bmp/wizard.bmp that do not exist; installer.nsh creates $INSTDIR\\database which the app never uses. scripts/pre-build.js regenerates start.bat/start.ps1 as 'production files' although they only run npm run dev. package.bat, setup.js and convert-icons.bat are unreferenced. README promises a Windows portable build the config does not produce. "
+     "Fix: delete the listed files; drop the pre-build step from dist; add the portable target (or drop the README claim -- recommend adding it); a repo-hygiene test asserts every path named in package.json scripts and build.files exists and no *.bat/*.ps1 remain at the root.",
+     "npm run dist -- --dir produces dist/win-unpacked; the hygiene test passes; git ls-files shows none of the deleted paths.",
+     "Reference a missing file from build.files -> the hygiene test fails; re-add start.bat -> the no-root-launchers assertion fails.",
+     ),
+
+    ("MR-18", "H", "E", "", "owner",
+     "package.json,README.md,frontend/index.html,assets/installer.nsh",
+     "One product name everywhere.",
+     "Gap (read): package.json productName is 'Hydro Growth Tracker' while nsis.shortcutName is 'Hydro Growth Tracker Pro'; installer-pro.nsh says 'HydroGrowth Tracker Pro'; the window says 'Vite + React'. OWNER decision: which name ships (recommend 'Hydro Growth Tracker', dropping 'Pro' until there is a non-Pro edition to contrast it with). Then a single grep-driven pass makes every surface agree.",
+     "grep -rn -i \"tracker pro\\|HydroGrowth\\|Vite + React\" over tracked files (excluding this board) returns zero hits; the installed shortcut, window title and About dialog all read the chosen name.",
+     "Re-introduce 'Pro' in shortcutName -> the grep test (test/repo-hygiene.test.mjs names the forbidden strings) fails.",
+     ),
+
+    ("MR-19", "O", "D", "MR-5", "tree",
+     "e2e/**,playwright.config.mjs,package.json,test-e2e.cjs",
+     "Playwright end-to-end suite that drives the real Electron app.",
+     "Gap: test-e2e.cjs is not a test -- it greps source files for strings like 'localStorage' and 'isDirty' and runs npm install as a step; it passes with every feature deleted so long as the words remain (CODING-PRACTICES 3.4b, a gate watching a filing cabinet). Nothing launches the app. "
+     "Fix: @playwright/test with _electron.launch against main.js and a temp userData; specs: first-run empty state; create plant; add log with a real PNG and see it on the dashboard with its photo; edit a log; export CSV and read the file; backup then wipe then restore and see the counts return; archive and delete a plant; settings unit change re-renders heights in inches. Delete test-e2e.cjs; test:e2e runs Playwright. flags=tree: it owns the screen.",
+     "npm run test:e2e passes locally with at least 8 specs, each asserting rendered text or a file on disk, never the request payload alone; the run writes a trace on failure.",
+     "Break POST /logs to return 500 -> the add-log spec fails at 'log appears on dashboard'; the suite must be seen red this way before it is trusted.",
+     ),
+
+    ("MR-20", "O", "D", "MR-19,MR-14,MR-11", "",
+     ".github/workflows/ci.yml",
+     "CI: packaging smoke on Windows, e2e, and a timezone matrix.",
+     "Gap: ci.yml runs lint, build, the two backend scripts and frontend unit tests on ubuntu only; nothing packages the app or launches it, and the TZ bugs of MR-11 are invisible on a UTC runner. "
+     "Fix: job 1 (ubuntu) lint + unit + backend, run twice under TZ=America/Los_Angeles and TZ=Pacific/Auckland; job 2 (windows-latest) npm run dist -- --dir then the Playwright e2e against the unpacked build, uploading the trace and the unpacked dir as artefacts; concurrency cancel-in-progress; Node 20 pinned.",
+     "A push to the PR branch shows both jobs green; the artefact list contains win-unpacked; deliberately breaking main.js in a scratch commit turns job 2 red (then revert).",
+     "The scratch-commit break IS the red proof: job 2 must be observed red once before the badge is believed.",
+     ),
+
+    ("MR-21", "O", "C", "MR-20", "owner",
+     "package.json,.github/workflows/release.yml,main.js,docs/release.md",
+     "Code signing, notarisation and auto-update.",
+     "Gap: no signing config, so Windows SmartScreen shows 'unknown publisher' and macOS Gatekeeper refuses to open the app; no update channel, so every fix needs a manual reinstall. OWNER decision: buying an OV/EV code-signing certificate (Windows) and an Apple Developer membership (macOS) is a purchase; hosting releases on GitHub Releases is a channel choice. Recommend: GitHub Releases + electron-updater; sign Windows via CSC_LINK secrets; notarise mac via notarytool in CI.",
+     "signtool verify /pa passes on the built installer; spctl --assess passes on the mac build; a test against a mocked update feed shows the app detects a newer version and downloads it; docs/release.md walks a release end to end.",
+     "Build without the secrets -> signtool verify fails and the release workflow refuses to publish (the workflow asserts the signature before upload).",
+     ),
+
+    ("MR-22", "S", "E", "", "",
+     "LICENSE,README.md,docs/user-guide.md,test/repo-hygiene.test.mjs",
+     "LICENSE file, privacy statement and a user guide that says where the data lives.",
+     "Gap: README and package.json claim MIT but there is no LICENSE file (ls LICENSE* -> none), so the licence is unenforceable and GitHub shows none; nothing tells a user that all data is local with no telemetry, where hydro-data.json and uploads live per OS, or how to back up before an uninstall. "
+     "Fix: MIT LICENSE with the author; README 'Privacy and your data' section; docs/user-guide.md covering first run, backup/restore, where data lives (%APPDATA%, ~/Library/Application Support, ~/.config), and recovery from the .corrupt/.bak files of MR-1 and MR-3.",
+     "The hygiene test asserts LICENSE exists, contains 'MIT License', and package.json license equals MIT; README contains a 'Privacy' heading; every npm script named in README exists in package.json.",
+     "Delete LICENSE -> the test fails; name a fake npm script in README -> the script-existence assertion fails.",
+     ),
+
+    ("MR-23", "S", "C", "MR-5", "",
+     "main.js,server.js,frontend/src/components/ErrorBoundary.jsx,test/**",
+     "Errors go to a log file the user can find, and the error screen can copy them.",
+     "Gap: console.error is the only sink; in the packaged app there is no console, so a failed migration, a damaged store or a route throw vanish. The ErrorBoundary hides details outside dev and offers no way to report. "
+     "Fix: a tiny logger (append-only, <userData>/logs/hydro.log, rotated at 1 MB) injected into createServer and used by main.js; unhandled main-process errors show a dialog naming the log path; ErrorBoundary shows a 'Copy details' button (error, component stack, app version) in production too.",
+     "Throwing inside a route in a test writes a line containing the route and message to the log path; the dialog path is unit-tested through the extracted lifecycle helper of MR-6; the boundary's copy button writes to the clipboard mock.",
+     "Remove the logger injection -> the log file is absent and the test fails.",
+     ),
+
+    # ---------------------------------------------------------------- lane D: the rest of the test floor
+    ("MR-25", "S", "D", "MR-12,MR-13,MR-33", "",
+     "frontend/src/__tests__/components/**,frontend/package.json,frontend/vitest.config.js,frontend/src/test-setup.js",
+     "Component tests for every form and destructive flow.",
+     "Gap: 93 vitest tests cover only pure utils; not one component is rendered in a test, so unit conversion in AddLogForm (inches to cm), draft save/restore, validation messages, the restore-confirm modal and settings save are all unverified except by hand. "
+     "Fix: jsdom environment, @testing-library/react and user-event, axios mocked via vi.mock; tests: AddLogForm converts 10 in to 25.4 cm in the payload and restores a draft; LogViewer edit (MR-12) ; PlantManager create/archive/restore; BackupRestore shows counts and posts only after confirm; SettingsPanel saves and re-renders a height in inches; Dashboard shows an out-of-range alert for pH 7.5 on a tomato. Every assertion is on rendered output or the recorded request (CODING-PRACTICES 1.2).",
+     "npm run test:unit reports at least 25 component tests passing in addition to the existing 93; total count is printed and the floor asserted in CI (1.6).",
+     "Flip toCm to return v unchanged -> the AddLogForm payload test fails on 10 vs 25.4; remove the confirm step in BackupRestore -> the 'posts only after confirm' test fails.",
+     ),
+
+    ("MR-26", "S", "D", "", "",
+     "frontend/src/__tests__/plantKnowledge.test.js",
+     "Invariant tests over the plant knowledge base and feeding programme.",
+     "Gap: plantKnowledge.js (632 lines of hand-typed ranges) and feedingSchedule.js drive every recommendation and alert, and nothing checks them: a swapped min/max or a gap between stage height ranges would misclassify every reading silently. "
+     "Fix: for every species: phRange, optimalTemp, optimalHumidity present with min < max; stages appear in GROWTH_STAGES order; heightRanges are contiguous and non-overlapping; every ec range min < max; every FEEDING_SCHEDULE week names a stage that stageToWeek can map back. The checker is a function tested against the real table AND against a deliberately corrupted copy so its own red is proven (1.1f).",
+     "The test prints species x invariants checked (expected 10 species) and passes on the real table; the corrupted-copy test asserts the checker returns the exact violation.",
+     "Swap tomato seedling ec min/max in a fixture copy -> the checker names 'tomato.seedling.ec'; if it does not, the checker is the defect.",
+     ),
+
+    ("MR-27", "H", "D", "", "",
+     "frontend/src/contexts/ThemeContext.jsx,frontend/package.json",
+     "Lint at zero warnings.",
+     "Gap: lint runs with --max-warnings 1 -- a ceiling set to exactly the one warning the tree has (CODING-PRACTICES 1.7c: a floor set from the shipped file certifies the file, not the property). The warning is react-refresh/only-export-components on ThemeContext's useTheme export; the other two contexts already carry the documented disable comment. "
+     "Fix: add the same eslint-disable-next-line with its reason to ThemeContext, set --max-warnings 0.",
+     "npm --prefix frontend run lint exits 0 and prints 0 problems.",
+     "Remove the disable comment -> lint exits non-zero.",
+     ),
+
+    ("MR-28", "S", "B", "MR-12,MR-13,MR-19", "",
+     "frontend/src/components/ui/Modal.jsx,frontend/src/components/PlantSidebar.jsx,frontend/src/components/PlantCards.jsx,e2e/a11y.spec.mjs",
+     "Accessibility floor: labelled controls, focus-trapped dialogs, zero serious axe findings.",
+     "Gap (read): icon-only buttons rely on title alone in several places; Modal closes on Escape but does not trap or restore focus; nothing measures accessibility. "
+     "Fix: aria-label on every icon-only button; Modal traps Tab within itself and returns focus to the opener on close; an axe-core pass in the Playwright suite on each tab.",
+     "The e2e a11y spec reports 0 serious or critical axe violations on the six tabs; a component test opens a Modal, presses Tab from its last control and asserts focus wraps to the first.",
+     "Remove one aria-label -> axe reports a button-name violation and the spec fails; remove the trap -> the wrap test fails.",
+     ),
+
+    # ---------------------------------------------------------------- lane E: docs and decisions
+    ("MR-29", "S", "E", "MR-24", "",
+     "README.md,TASKS.md,docs/**,test/repo-hygiene.test.mjs",
+     "Docs match the build: README, TASKS pointer, architecture notes for the token and port.",
+     "Gap: README documents the fixed port 5000 architecture, a portable build that is not configured, and a test:e2e that is the string-grep script; TASKS.md does not point at the machine board. "
+     "Fix: README reflects MR-5, MR-17, MR-19; TASKS.md gains a line pointing at docs/board.md and board.py; the hygiene test cross-checks README's npm scripts and the ports/paths it names against package.json and main.js.",
+     "The hygiene test passes; README no longer contains 'localhost:5000'.",
+     "Put 'localhost:5000' back in README -> the hygiene test fails.",
+     ),
+
+    ("MR-30", "H", "E", "MR-20", "",
+     "package.json,frontend/package.json,CHANGELOG.md,test/repo-hygiene.test.mjs",
+     "Version 1.2.0 and a CHANGELOG.",
+     "Gap: no CHANGELOG exists; root and frontend package.json both say 1.1.0 and nothing keeps them equal. Fix: bump both to 1.2.0, write CHANGELOG.md from the board's done rows (one line per row, grouped by lane), and assert version equality in the hygiene test.",
+     "The hygiene test asserts root and frontend versions are equal and CHANGELOG.md's first heading names that version.",
+     "Bump only the root version -> the equality test fails.",
+     ),
+
+    ("MR-31", "O", "E", "", "owner",
+     "docs/decisions.md",
+     "Owner ruling: distribution channel, and whether the cannabis profile ships.",
+     "Gap: PLANT_TYPES includes cannabis with a full profile. Direct download has no policy issue; the Microsoft Store and Apple App Store restrict cannabis-related apps, and some jurisdictions restrict cultivation guidance. This is a product and legal decision, not a code decision. Options: (a) direct download only, keep the profile (recommend: simplest, widest); (b) stores too, ship the profile behind an opt-in with a jurisdiction note; (c) drop the profile. Record the ruling in docs/decisions.md; MR-21 consumes it.",
+     "docs/decisions.md contains a dated ruling naming the channel and the profile decision, signed by the owner; the board's MR-21 body references it.",
+     "A decision row has no code to break; it closes on the ruling. The red proof is that MR-21 cannot start until the file exists (its Gap line asserts the path).",
+     ),
+]
+
+
+def in_dependency_order(rows):
+    """Yield rows so every dep precedes its dependant (board.py refuses a
+    phantom dep). Aborts loudly on a cycle or an unknown dep instead of
+    silently dropping a row (CODING-PRACTICES 1.7)."""
+    ids = {r[0] for r in rows}
+    done: set[str] = set()
+    pending = list(rows)
+    while pending:
+        progressed = False
+        for row in list(pending):
+            deps = [d for d in row[3].split(",") if d]
+            unknown = [d for d in deps if d not in ids]
+            if unknown:
+                raise SystemExit(f"{row[0]} names deps that are not rows: {unknown}")
+            if all(d in done for d in deps):
+                yield row
+                done.add(row[0])
+                pending.remove(row)
+                progressed = True
+        if not progressed:
+            raise SystemExit(f"dependency cycle among {[r[0] for r in pending]}")
+
+
+def main() -> int:
+    failures = 0
+    for (rid, tier, lane, deps, flags, files, title, body, accept, redproof) in in_dependency_order(ROWS):
+        argv = BOARD + [rid, "--tier", tier, "--lane", lane, "--files", files,
+                        "--title", title, "--body", body,
+                        "--accept", accept, "--redproof", redproof]
+        if deps:
+            argv += ["--deps", deps]
+        if flags:
+            argv += ["--flags", flags]
+        res = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+        first = (res.stdout or res.stderr).strip().splitlines()[:1]
+        print(f"{rid}: rc={res.returncode} {first[0] if first else ''}")
+        if res.returncode != 0:
+            failures += 1
+            print(res.stderr.strip())
+    print(f"seeded {len(ROWS) - failures} of {len(ROWS)} rows; {failures} failed")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

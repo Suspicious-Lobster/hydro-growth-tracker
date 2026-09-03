@@ -1,9 +1,10 @@
 // Embedded backend for Hydro Growth Tracker.
 //
-// This Express app is backed by a single JSON file and is the app's only
-// data service in both development and production. It is created as a factory
-// so the Electron main process can supply storage paths, and so it can be
-// exercised in isolation by tests.
+// This Express app is backed by a single JSON file and is the app's only data
+// service in both development and production. File I/O and the data shape live
+// in db/repository.js; this module is just the HTTP layer. It is created as a
+// factory so the Electron main process can supply storage paths, and so it can
+// be exercised in isolation by tests.
 
 import express from 'express';
 import cors from 'cors';
@@ -11,82 +12,352 @@ import multer from 'multer';
 import { Parser } from 'json2csv';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import AdmZip from 'adm-zip';
 
-// Default shape of the JSON data file.
-export const emptyData = () => ({ logs: [], schedules: [], nextId: 1, nextScheduleId: 1 });
+import * as repo from './db/repository.js';
+import { runMigration, migrateData, SchemaTooNewError } from './db/migrate.js';
+import { validateLog, validatePlant, validateSchedule, validateReservoirEvent } from './validation.js';
+import { nullLogger } from './logger.js';
 
-// Validate a log payload. `requireDate` is false for updates, where the edit
-// form does not resend the date.
-export function validateLog(body, { requireDate } = { requireDate: true }) {
-  const { plant_name, date, height, nutrients, notes } = body;
-  const errors = [];
+// Marker embedded in exported backups so a restore can recognize its own files
+// (and reject an unrelated JSON) before replacing the store.
+const BACKUP_TYPE = 'hydro-growth-tracker-backup';
 
-  if (!plant_name || typeof plant_name !== 'string' || plant_name.trim().length === 0) {
-    errors.push('Plant name is required and must be a non-empty string');
-  } else if (plant_name.length > 100) {
-    errors.push('Plant name must be less than 100 characters');
-  }
-
-  if (requireDate) {
-    if (!date) {
-      errors.push('Date is required');
-    } else if (isNaN(Date.parse(date))) {
-      errors.push('Date must be a valid date format');
-    }
-  }
-
-  if (height === undefined || height === null || height === '') {
-    errors.push('Height is required');
-  } else {
-    const heightNum = parseFloat(height);
-    if (isNaN(heightNum) || heightNum < 0 || heightNum > 1000) {
-      errors.push('Height must be a number between 0 and 1000 cm');
-    }
-  }
-
-  if (!nutrients || typeof nutrients !== 'string' || nutrients.trim().length === 0) {
-    errors.push('Nutrients information is required');
-  } else if (nutrients.length > 500) {
-    errors.push('Nutrients description must be less than 500 characters');
-  }
-
-  if (notes && notes.length > 1000) {
-    errors.push('Notes must be less than 1000 characters');
-  }
-
-  return errors;
+// Magic-byte sniffers for the image formats the app accepts. Multer's
+// fileFilter only trusts the client-supplied mimetype, which a request can
+// lie about (probe P6, 2026-09-02: a file named evil.html sent as
+// mimetype: image/png was stored and served as-is). This is the real check:
+// it looks at the bytes actually written to disk and returns the extension
+// they justify, or null when none match.
+export function sniffImageExt(buf) {
+  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length >= 4 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'gif';
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  return null;
 }
 
+// Prefix a leading =, +, -, @, tab or carriage-return with a single quote so
+// spreadsheet apps display the cell as text instead of evaluating it as a
+// formula (probe P7, 2026-09-02: an exported nutrients value of
+// =HYPERLINK("http://evil","click") ran on open in Excel). Non-string values
+// (numbers, null) pass through untouched.
+// Windows can still hold a just-written upload open (multer's stream, an
+// antivirus scan) for a moment; unlinkSync then fails with EPERM/EBUSY. Retry
+// briefly, then log: the row is already gone, so this is never fatal. Seen
+// once in a full parallel test run (1 of ~6) and never alone, 2026-09-02;
+// again 1 of 4 full runs on 2026-09-03 with a 5-attempt / 300 ms budget,
+// and once more at 8 attempts / 720 ms (2 of ~10 full runs that day). The
+// budget is now 15 attempts (about 2.4 s worst case); it only ever blocks
+// on the path that is already discarding a rejected or deleted file.
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const UNLINK_ATTEMPTS = 15;
+function unlinkWithRetry(filePath, what) {
+  for (let attempt = 1; attempt <= UNLINK_ATTEMPTS; attempt += 1) {
+    try {
+      fs.unlinkSync(filePath);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return true;
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt === UNLINK_ATTEMPTS) {
+        console.error(`Failed to remove ${what}:`, error.message);
+        return false;
+      }
+      sleepMs(20 * attempt);
+    }
+  }
+  return false;
+}
+
+export function csvSafe(value) {
+  if (typeof value !== 'string') return value;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+// One CSV cell for a log's structured doses (MR-37): "Part A 2 ml/L; Part B
+// 1 ml/L", or '' when there are none.
+export function formatDosesCell(doses) {
+  if (!Array.isArray(doses) || doses.length === 0) return '';
+  return doses.map((d) => `${d.name} ${d.ml_per_l} ml/L`).join('; ');
+}
+
+// ---------------------------- CSV import (MR-55) ----------------------------
+
+// Minimal RFC 4180 reader: quoted fields, doubled quotes, CR/LF/CRLF rows.
+// Returns an array of rows (arrays of strings). A trailing empty line is
+// dropped. Written here rather than pulled in as a dependency because the
+// whole surface is 30 lines and the export side (json2csv) is write-only.
+export function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  let i = 0;
+  const src = String(text || '').replace(/^﻿/, '');
+  while (i < src.length) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"') {
+        if (src[i + 1] === '"') { field += '"'; i += 2; continue; }
+        quoted = false; i += 1; continue;
+      }
+      field += c; i += 1; continue;
+    }
+    if (c === '"') { quoted = true; i += 1; continue; }
+    if (c === ',') { row.push(field); field = ''; i += 1; continue; }
+    if (c === '\r' || c === '\n') {
+      row.push(field); field = '';
+      rows.push(row); row = [];
+      if (c === '\r' && src[i + 1] === '\n') i += 1;
+      i += 1; continue;
+    }
+    field += c; i += 1;
+  }
+  if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter((r) => !(r.length === 1 && r[0] === ''));
+}
+
+// Column names we understand (lower-cased, trimmed, spaces -> underscores)
+// mapped to the log field they fill. Unknown columns (id, plant_id,
+// created_at, anything foreign) are ignored.
+export const IMPORT_COLUMNS = {
+  plant: 'plant_name', plant_name: 'plant_name', name: 'plant_name',
+  date: 'date',
+  height: 'height', height_unit: 'height_unit', unit: 'height_unit',
+  growth_stage: 'growth_stage', stage: 'growth_stage',
+  ph: 'ph', ec: 'ec', ppm: 'ppm',
+  water_temp: 'water_temp', air_temp: 'air_temp', temp_unit: 'temp_unit',
+  humidity: 'humidity', light_hours: 'light_hours', reservoir_volume: 'reservoir_volume',
+  nutrients: 'nutrients', doses: 'doses', notes: 'notes',
+};
+export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+
+// "Part A 2 ml/L; Part B 1.5 ml/L" (our own export cell) -> doses array.
+function parseDosesCell(cell) {
+  if (!cell) return undefined;
+  const doses = [];
+  for (const part of String(cell).split(';')) {
+    const m = /^\s*(.+?)\s+([\d.]+)\s*ml\/L\s*$/i.exec(part);
+    if (m) doses.push({ name: m[1].trim(), ml_per_l: parseFloat(m[2]) });
+  }
+  return doses;
+}
+
+// Turn CSV text into candidate log bodies plus per-line errors. Every row is
+// run through validateLog; nothing here touches the store. A leading single
+// quote (our own csvSafe prefix) is stripped back off text cells. Height in
+// inches is converted to canonical cm. `line` is the 1-based line in the
+// file (the header is line 1).
+export function parseLogImport(text) {
+  const rows = parseCsv(text);
+  if (rows.length === 0) return { header: [], candidates: [], errors: [{ line: 1, messages: ['The file is empty'] }] };
+  const header = rows[0].map((h) => String(h).trim().toLowerCase().replace(/\s+/g, '_').replace(/^'/, ''));
+  const mapped = header.map((h) => IMPORT_COLUMNS[h] || null);
+  const known = mapped.filter(Boolean);
+  if (!known.includes('plant_name') || !known.includes('date') || !known.includes('height')) {
+    return { header, candidates: [], errors: [{ line: 1, messages: ['The header needs at least plant, date and height columns'] }] };
+  }
+  const unquote = (v) => (typeof v === 'string' && v.startsWith("'") ? v.slice(1) : v);
+  const candidates = [];
+  const errors = [];
+  rows.slice(1).forEach((cells, idx) => {
+    const line = idx + 2;
+    const body = {};
+    mapped.forEach((field, col) => {
+      if (!field) return;
+      const raw = unquote(cells[col] ?? '').trim();
+      if (raw === '') return;
+      body[field] = field === 'doses' ? parseDosesCell(raw) : raw;
+    });
+    if (body.height_unit === 'in' && body.height !== undefined) {
+      const h = parseFloat(body.height);
+      if (!Number.isNaN(h)) body.height = Math.round(h * 2.54 * 100) / 100;
+    }
+    delete body.height_unit;
+    const messages = validateLog(body, { requireDate: true });
+    if (messages.length > 0) errors.push({ line, messages });
+    else candidates.push({ line, body });
+  });
+  return { header, candidates, errors };
+}
+
+// Names a zip-backup upload entry may carry: a flat file directly under
+// uploads/, made of the characters finalizeUpload() ever produces plus the
+// legacy sanitized set. Anything else (a directory, '..', an absolute path,
+// a drive letter) is refused before any byte is written (MR-54).
+const ZIP_UPLOAD_ENTRY = /^uploads\/[A-Za-z0-9._-]{1,120}$/;
+export const ZIP_BACKUP_JSON = 'backup.json';
+export const ZIP_MAX_BYTES = 50 * 1024 * 1024;
+
+// Validate a zip backup's entries without writing anything. Returns
+// { envelope, images: [{ name, bytes }] } or throws an Error whose message
+// is safe to send back as a 400.
+export function readZipBackup(buffer) {
+  let zip;
+  try {
+    zip = new AdmZip(buffer);
+  } catch {
+    throw new Error('This does not look like a zip file.');
+  }
+  const entries = zip.getEntries();
+  const json = entries.find((e) => e.entryName === ZIP_BACKUP_JSON);
+  if (!json) throw new Error(`This zip has no ${ZIP_BACKUP_JSON}; it is not a Hydro backup.`);
+  let envelope;
+  try {
+    envelope = JSON.parse(json.getData().toString('utf8'));
+  } catch {
+    throw new Error(`${ZIP_BACKUP_JSON} inside the zip is not valid JSON.`);
+  }
+  if (!envelope || envelope._type !== BACKUP_TYPE || !envelope.data || typeof envelope.data !== 'object') {
+    throw new Error('This does not look like a Hydro backup file.');
+  }
+  const images = [];
+  for (const e of entries) {
+    if (e === json || e.isDirectory) continue;
+    if (!ZIP_UPLOAD_ENTRY.test(e.entryName)) {
+      throw new Error(`Refusing zip entry "${e.entryName}": only flat files under uploads/ are allowed.`);
+    }
+    const bytes = e.getData();
+    if (!sniffImageExt(bytes.subarray(0, 12))) {
+      throw new Error(`Refusing zip entry "${e.entryName}": not a PNG, JPEG, GIF or WebP image.`);
+    }
+    images.push({ name: path.posix.basename(e.entryName), bytes });
+  }
+  return { envelope, images };
+}
+
+// Re-exported for backward compatibility with existing importers/tests.
+export const emptyData = repo.emptyData;
+export { validateLog };
+
+// Origins the renderer can legitimately have. A packaged app loads the UI from
+// file://, which browsers report as the opaque origin "null"; the Vite dev
+// server is added by main.js in development only.
+export const DEFAULT_ALLOWED_ORIGINS = ['null', 'file://'];
+
 // Build the Express app. `dataFile` is the JSON store path; `uploadsDir` is
-// where images are written and served from. Both are created if missing.
-export function createServer({ dataFile, uploadsDir }) {
+// where images are written and served from. Both are created if missing, and
+// any older-schema data file is migrated up before the app serves a request.
+//
+// `token`: when set, every data route requires the header X-Hydro-Token to
+// equal it (401 otherwise). main.js mints one per launch and hands it to the
+// renderer through preload.js, so a web page open in the user's browser cannot
+// read or wipe the store even though it can reach 127.0.0.1 (probe P1,
+// 2026-09-02: CORS used to reflect ANY origin with credentials, with no auth).
+// GET / (health) and /uploads/* (images loaded by <img>, which cannot send
+// headers) stay open; upload filenames are random.
+// `allowedOrigins`: the only Origins that receive CORS headers.
+// `backupsDir`: where the once-a-day copies of the data file go (14 kept);
+// defaults to a backups/ folder beside the data file.
+export function createServer({ dataFile, uploadsDir, backupsDir = null, token = null, allowedOrigins = DEFAULT_ALLOWED_ORIGINS, logger = nullLogger }) {
+  backupsDir = backupsDir || path.join(path.dirname(dataFile), 'backups');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
+  let migration = { migrated: false };
   if (!fs.existsSync(dataFile)) {
-    fs.writeFileSync(dataFile, JSON.stringify(emptyData(), null, 2));
+    repo.save(dataFile, repo.emptyData());
+  } else {
+    // A migration failure (e.g. a read-only/full data dir) must not brick the
+    // app: log it and serve the existing data rather than aborting startup.
+    try {
+      migration = runMigration(dataFile);
+    } catch (error) {
+      logger.error('Data migration failed; serving existing data as-is:', { message: error.message });
+    }
   }
 
-  // Read data, tolerating older files that predate the `schedules` collection.
-  const readData = () => {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-      return { ...emptyData(), ...parsed };
-    } catch (error) {
-      console.error('Error reading data:', error);
-      return emptyData();
-    }
+  // Damaged-store state. When the data file exists but cannot be parsed, the
+  // server keeps running so the user can see WHAT happened and WHERE the
+  // salvaged bytes are, but every write is refused with 503: the one thing
+  // that must never happen is a save that replaces their data with an empty
+  // store (probe P3, 2026-09-02). Exposed as app.hydroState for the shell.
+  const state = { damaged: null };
+  const markDamaged = (err) => {
+    state.damaged = {
+      error: 'Data file is damaged and cannot be read. No changes will be saved until it is repaired or restored.',
+      dataFile: err.dataFile,
+      salvagePath: err.salvagePath,
+      detail: err.cause?.message || String(err.cause || ''),
+    };
+    return state.damaged;
   };
 
+  // A file from a NEWER schema parses fine but must not be served: normalize()
+  // would silently drop every field the newer version added (probe P4). It is
+  // left untouched on disk and reported through the same damaged state, with
+  // no salvage copy because the file itself is intact.
+  if (migration.tooNew) {
+    const tooNew = new SchemaTooNewError(migration.found);
+    state.damaged = {
+      error: tooNew.message,
+      dataFile,
+      salvagePath: null,
+      tooNew: true,
+      detail: `schemaVersion ${migration.found} > supported ${repo.SCHEMA_VERSION}`,
+    };
+  }
+
+  const refuse = () => new repo.DamagedDataFileError(dataFile, state.damaged.salvagePath, new Error(state.damaged.error));
+  const readData = () => {
+    if (state.damaged) throw refuse();
+    return repo.load(dataFile);
+  };
   const writeData = (data) => {
-    fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+    if (state.damaged) throw refuse();
+    repo.save(dataFile, data);
+    // The daily copy is the recovery path for a damaged store; it must never
+    // turn a successful save into a failure.
+    try { repo.dailyBackup(dataFile, backupsDir); } catch (error) { logger.error('Daily backup failed:', { message: error.message }); }
+  };
+  // Take today's copy at startup too, so a day with no edits still has one.
+  if (!state.damaged) {
+    try { repo.dailyBackup(dataFile, backupsDir); } catch (error) { logger.error('Daily backup failed:', { message: error.message }); }
+  }
+
+  // Probe once at startup so the shell can warn immediately; a file that goes
+  // bad later is caught per request by handle(). Skipped when the too-new
+  // check above has already set the state (readData() would just re-throw it).
+  if (!state.damaged) {
+    try {
+      readData();
+    } catch (error) {
+      if (error instanceof repo.DamagedDataFileError) markDamaged(error);
+      else throw error;
+    }
+  }
+
+  // A request may reference a plant by id; if so, that plant must exist.
+  // Returns true when an id was supplied but resolves to nothing.
+  const unknownPlantId = (data, body) => {
+    const pid = body.plant_id;
+    if (pid === undefined || pid === null || pid === '') return false;
+    return !repo.getPlant(data, parseInt(pid, 10));
   };
 
   const app = express();
+  app.hydroState = state;
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-  app.use(cors({ origin: true, credentials: true }));
+  // No wildcard, no credentials: only the renderer's own origin(s) get CORS
+  // headers. Requests with no Origin (same-origin, curl, tests) pass through
+  // untouched; the token check below is the actual guard.
+  app.use(cors({
+    origin: (origin, cb) => cb(null, !origin ? false : allowedOrigins.includes(origin)),
+    credentials: false,
+    allowedHeaders: ['Content-Type', 'X-Hydro-Token'],
+  }));
   app.use('/uploads', express.static(uploadsDir));
+
+  // Per-launch token: required on every route except health and static uploads.
+  if (token) {
+    app.use((req, res, next) => {
+      if (req.method === 'OPTIONS' || req.path === '/' || req.path.startsWith('/uploads/')) return next();
+      if (req.get('X-Hydro-Token') === token) return next();
+      res.status(401).json({ error: 'Unauthorized: this API only answers the Hydro Growth Tracker app' });
+    });
+  }
 
   // Image uploads: sanitized filenames, image-only, 5MB cap.
   const storage = multer.diskStorage({
@@ -110,197 +381,529 @@ export function createServer({ dataFile, uploadsDir }) {
     },
   });
 
+  // multer trusts the client-supplied mimetype (fileFilter above), which is
+  // exactly what a request can lie about. This is the real check: read the
+  // bytes multer just wrote, confirm they match a real image's magic number,
+  // and rename to a fresh random name so the multer temp name (which can
+  // still carry an attacker-chosen extension like .html) never reaches the
+  // stored URL. Returns the final filename, or null (having removed the
+  // file) when the bytes do not match any accepted format.
+  const finalizeUpload = (file) => {
+    const head = Buffer.alloc(12);
+    const fd = fs.openSync(file.path, 'r');
+    let bytesRead = 0;
+    try {
+      bytesRead = fs.readSync(fd, head, 0, 12, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const ext = sniffImageExt(head.subarray(0, bytesRead));
+    if (!ext) {
+      unlinkWithRetry(file.path, 'invalid upload');
+      return null;
+    }
+    const finalName = `${crypto.randomBytes(16).toString('hex')}.${ext}`;
+    fs.renameSync(file.path, path.join(uploadsDir, finalName));
+    return finalName;
+  };
+
+  // Best-effort removal of an uploaded image by its stored /uploads/... URL.
+  // path.basename strips any directory component so a crafted image_url can
+  // never escape uploadsDir; failures are logged, never fatal (the log/plant
+  // row is already gone by the time this runs).
+  const removeUploadedImage = (imageUrl) => {
+    if (!imageUrl) return;
+    const filePath = path.join(uploadsDir, path.basename(imageUrl));
+    unlinkWithRetry(filePath, 'uploaded image');
+  };
+
+  // Small wrapper so each handler gets fresh data and a uniform 500 on throw.
+  const handle = (fn) => (req, res) => {
+    try {
+      fn(req, res);
+    } catch (error) {
+      if (error instanceof repo.DamagedDataFileError) {
+        const d = state.damaged || markDamaged(error);
+        return res.status(503).json({ error: d.error, damaged: d });
+      }
+      logger.error(`Error handling ${req.method} ${req.path}`, { message: error.message, stack: error.stack });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  };
+
   app.get('/', (_req, res) => {
-    res.json({ status: 'Backend running', timestamp: new Date().toISOString() });
+    res.json({
+      status: state.damaged ? 'damaged' : 'Backend running',
+      damaged: state.damaged,
+      timestamp: new Date().toISOString(),
+    });
   });
+
+  /* ---------------------------- Plants ---------------------------- */
+
+  // GET /plants – all plants (active only unless ?archived=true), A→Z.
+  app.get('/plants', handle((req, res) => {
+    const data = readData();
+    const includeArchived = req.query.archived === 'true';
+    res.json(repo.listPlants(data, { includeArchived }));
+  }));
+
+  // GET /plants/:id – one plant.
+  app.get('/plants/:id', handle((req, res) => {
+    const data = readData();
+    const plant = repo.getPlant(data, parseInt(req.params.id, 10));
+    if (!plant) return res.status(404).json({ error: 'Plant not found' });
+    res.json(plant);
+  }));
+
+  // POST /plants – create a plant (name unique among active plants).
+  app.post('/plants', handle((req, res) => {
+    const errors = validatePlant(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    if (repo.findPlantByName(data, req.body.name, { activeOnly: true })) {
+      return res.status(409).json({ error: 'A plant with this name already exists' });
+    }
+    const plant = repo.createPlant(data, req.body);
+    writeData(data);
+    res.status(201).json(plant);
+  }));
+
+  // PUT /plants/:id – partial update; renaming cascades to logs & schedules.
+  // Un-archiving through this route is checked for a name clash exactly like
+  // POST /plants/:id/restore.
+  app.put('/plants/:id', handle((req, res) => {
+    const errors = validatePlant(req.body, { partial: true });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    const id = parseInt(req.params.id, 10);
+    const target = repo.getPlant(data, id);
+    if (!target) return res.status(404).json({ error: 'Plant not found' });
+    const nextName = req.body.name !== undefined ? String(req.body.name).trim() : target.name;
+    const willBeActive = req.body.archived !== undefined ? !req.body.archived : !target.archived;
+    if (willBeActive) {
+      const existing = repo.findPlantByName(data, nextName, { activeOnly: true });
+      if (existing && existing.id !== id) {
+        return res.status(409).json({ error: 'A plant with this name already exists' });
+      }
+    }
+    const plant = repo.updatePlant(data, id, req.body);
+    writeData(data);
+    res.json(plant);
+  }));
+
+  // POST /plants/:id/restore – un-archive; 409 if an active plant has the name.
+  app.post('/plants/:id/restore', handle((req, res) => {
+    const data = readData();
+    const result = repo.restorePlant(data, parseInt(req.params.id, 10));
+    if (!result) return res.status(404).json({ error: 'Plant not found' });
+    if (result.clash) {
+      return res.status(409).json({ error: `An active plant is already named "${result.clash.name}". Rename one of them first.` });
+    }
+    writeData(data);
+    res.json(result.plant);
+  }));
+
+  // POST /plants/:id/archive – soft delete (keeps logs).
+  app.post('/plants/:id/archive', handle((req, res) => {
+    const data = readData();
+    const plant = repo.archivePlant(data, parseInt(req.params.id, 10));
+    if (!plant) return res.status(404).json({ error: 'Plant not found' });
+    writeData(data);
+    res.json(plant);
+  }));
+
+  // DELETE /plants/:id – hard delete plant + cascade logs & schedules, and
+  // every image file those logs held.
+  app.delete('/plants/:id', handle((req, res) => {
+    const data = readData();
+    const result = repo.deletePlantCascade(data, parseInt(req.params.id, 10));
+    if (!result) return res.status(404).json({ error: 'Plant not found' });
+    writeData(data);
+    for (const imageUrl of result.imageUrls) removeUploadedImage(imageUrl);
+    res.json({
+      message: `Deleted plant "${result.plant.name}" and ${result.deletedLogs} logs`,
+      deletedLogs: result.deletedLogs,
+    });
+  }));
 
   /* ---------------------------- Logs ---------------------------- */
 
-  // GET /logs – all logs, newest first.
-  app.get('/logs', (_req, res) => {
-    try {
-      const data = readData();
-      const logs = [...data.logs].sort(
-        (a, b) => new Date(b.created_at) - new Date(a.created_at)
-      );
-      res.json(logs);
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-      res.status(500).json({ error: 'Failed to fetch logs' });
-    }
-  });
+  // GET /logs – all logs, newest first; optional ?plant_id= filter.
+  app.get('/logs', handle((req, res) => {
+    const data = readData();
+    res.json(repo.listLogs(data, { plant_id: req.query.plant_id }));
+  }));
 
-  // GET /logs/export – CSV download.
-  app.get('/logs/export', (_req, res) => {
-    try {
-      const data = readData();
-      const fields = ['id', 'plant_name', 'height', 'nutrients', 'notes', 'created_at'];
-      const parser = new Parser({ fields });
-      const csv = parser.parse(data.logs);
-      res.header('Content-Type', 'text/csv');
-      res.attachment(`hydro_logs_${Date.now()}.csv`);
-      res.send(csv);
-    } catch (error) {
-      console.error('Error exporting logs:', error);
-      res.status(500).json({ error: 'Failed to export logs' });
+  // GET /logs/export – CSV download (includes measurement columns).
+  app.get('/logs/export', handle((req, res) => {
+    const data = readData();
+    const fields = [
+      'id', 'plant_id', 'plant_name', 'date', 'height', 'height_unit', 'growth_stage',
+      'ph', 'ec', 'ppm', 'water_temp', 'air_temp', 'temp_unit', 'humidity',
+      'light_hours', 'reservoir_volume', 'nutrients', 'doses', 'notes', 'created_at',
+    ];
+    // Neutralise formula-injection cells (probe P7) before handing rows to
+    // json2csv, and prefix a UTF-8 BOM so Excel reads non-ASCII notes/plant
+    // names correctly instead of guessing an encoding. Structured doses are
+    // flattened to one text cell: "Part A 2 ml/L; Part B 1 ml/L".
+    const rows = data.logs.map((log) => {
+      const row = {};
+      for (const f of fields) row[f] = csvSafe(log[f]);
+      row.doses = csvSafe(formatDosesCell(log.doses));
+      return row;
+    });
+    const parser = new Parser({ fields });
+    const csv = parser.parse(rows);
+    res.header('Content-Type', 'text/csv; charset=utf-8');
+    res.attachment(`hydro_logs_${Date.now()}.csv`);
+    res.send('\uFEFF' + csv);
+  }));
+
+  // POST /logs/import – { csv, dryRun }. Parse and validate every row first
+  // (MR-55). dryRun (default true) reports counts, per-line errors and the
+  // plants that would be created and writes nothing. dryRun:false writes
+  // every row in ONE save, and only when there are no errors: a half-imported
+  // file is worse than a refused one.
+  app.post('/logs/import', handle((req, res) => {
+    const csv = req.body?.csv;
+    if (typeof csv !== 'string' || csv.trim() === '') return res.status(400).json({ error: 'Send the CSV text as { csv }' });
+    if (Buffer.byteLength(csv, 'utf8') > IMPORT_MAX_BYTES) {
+      return res.status(413).json({ error: `CSV is larger than ${IMPORT_MAX_BYTES / (1024 * 1024)} MB` });
     }
-  });
+    const dryRun = req.body.dryRun !== false;
+    const { candidates, errors } = parseLogImport(csv);
+    const data = readData();
+    const newPlants = [...new Set(candidates
+      .map((c) => String(c.body.plant_name).trim())
+      .filter((name) => !repo.findPlantByName(data, name, { activeOnly: true })))];
+    const summary = { rows: candidates.length + errors.length, valid: candidates.length, errors, newPlants };
+    if (dryRun) return res.json({ dryRun: true, ...summary });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: `Fix the ${errors.length} invalid row(s) before importing`, ...summary });
+    }
+    if (candidates.length === 0) return res.status(400).json({ error: 'Nothing to import', ...summary });
+    const plantsBefore = data.plants.length;
+    for (const c of candidates) repo.createLog(data, c.body);
+    writeData(data);
+    res.status(201).json({
+      dryRun: false, ...summary,
+      created: { logs: candidates.length, plants: data.plants.length - plantsBefore },
+    });
+  }));
 
   // POST /logs – create a log, with optional image upload.
-  app.post('/logs', upload.single('image'), (req, res) => {
-    try {
-      const errors = validateLog(req.body, { requireDate: true });
-      if (errors.length > 0) {
-        return res.status(400).json({ error: 'Validation failed', details: errors });
-      }
-
-      const { plant_name, date, height, nutrients, notes } = req.body;
-      const data = readData();
-
-      const newLog = {
-        id: data.nextId,
-        plant_name: plant_name.trim(),
-        date,
-        height: parseFloat(height),
-        nutrients: nutrients.trim(),
-        notes: notes?.trim() || '',
-        image_url: req.file ? `/uploads/${req.file.filename}` : null,
-        created_at: new Date().toISOString(),
-      };
-
-      data.logs.push(newLog);
-      data.nextId += 1;
-      writeData(data);
-      res.status(201).json(newLog);
-    } catch (error) {
-      console.error('Error adding log:', error);
-      res.status(500).json({ error: 'Failed to add log' });
+  app.post('/logs', upload.single('image'), handle((req, res) => {
+    let imageFilename = null;
+    if (req.file) {
+      imageFilename = finalizeUpload(req.file);
+      if (!imageFilename) return res.status(400).json({ error: 'Invalid image file' });
     }
-  });
-
-  // PUT /logs/:id – update a log (date and image are preserved).
-  app.put('/logs/:id', (req, res) => {
-    try {
-      const errors = validateLog(req.body, { requireDate: false });
-      if (errors.length > 0) {
-        return res.status(400).json({ error: 'Validation failed', details: errors });
-      }
-
-      const logId = parseInt(req.params.id, 10);
-      const data = readData();
-      const log = data.logs.find((l) => l.id === logId);
-
-      if (!log) {
-        return res.status(404).json({ error: 'Log not found' });
-      }
-
-      const { plant_name, height, nutrients, notes } = req.body;
-      log.plant_name = plant_name.trim();
-      log.height = parseFloat(height);
-      log.nutrients = nutrients.trim();
-      log.notes = notes?.trim() || '';
-      log.updated_at = new Date().toISOString();
-
-      writeData(data);
-      res.json(log);
-    } catch (error) {
-      console.error('Error updating log:', error);
-      res.status(500).json({ error: 'Failed to update log' });
+    const errors = validateLog(req.body, { requireDate: true });
+    if (errors.length > 0) {
+      if (imageFilename) removeUploadedImage(`/uploads/${imageFilename}`);
+      return res.status(400).json({ error: 'Validation failed', details: errors });
     }
-  });
-
-  // DELETE /logs/plant/:plantName – delete all logs for a plant.
-  app.delete('/logs/plant/:plantName', (req, res) => {
-    try {
-      const plantName = decodeURIComponent(req.params.plantName);
-      const data = readData();
-      const initialCount = data.logs.length;
-
-      data.logs = data.logs.filter((log) => log.plant_name !== plantName);
-      const deletedCount = initialCount - data.logs.length;
-
-      writeData(data);
-      res.json({
-        message: `Deleted ${deletedCount} logs for plant "${plantName}"`,
-        deletedCount,
-      });
-    } catch (error) {
-      console.error('Error deleting plant logs:', error);
-      res.status(500).json({ error: 'Failed to delete plant logs' });
+    const data = readData();
+    if (unknownPlantId(data, req.body)) {
+      if (imageFilename) removeUploadedImage(`/uploads/${imageFilename}`);
+      return res.status(404).json({ error: 'Plant not found' });
     }
-  });
+    const body = { ...req.body, image_url: imageFilename ? `/uploads/${imageFilename}` : null };
+    const log = repo.createLog(data, body);
+    writeData(data);
+    res.status(201).json(log);
+  }));
 
-  // DELETE /logs/:id – delete a single log.
-  app.delete('/logs/:id', (req, res) => {
-    try {
-      const logId = parseInt(req.params.id, 10);
-      const data = readData();
-      const logIndex = data.logs.findIndex((log) => log.id === logId);
-
-      if (logIndex === -1) {
-        return res.status(404).json({ error: 'Log not found' });
-      }
-
-      const [deletedLog] = data.logs.splice(logIndex, 1);
-      writeData(data);
-      res.json({ message: `Successfully deleted log with ID: ${logId}`, deletedLog });
-    } catch (error) {
-      console.error('Error deleting log:', error);
-      res.status(500).json({ error: 'Failed to delete log' });
+  // PUT /logs/:id – update a log. The date is preserved unless sent; the
+  // image is preserved unless a new one arrives as multipart `image` (MR-37),
+  // in which case the bytes are sniffed exactly like POST and the previous
+  // file is removed once the new URL is stored. multer passes a JSON body
+  // straight through, so the plain edit path is unchanged.
+  app.put('/logs/:id', upload.single('image'), handle((req, res) => {
+    let imageFilename = null;
+    if (req.file) {
+      imageFilename = finalizeUpload(req.file);
+      if (!imageFilename) return res.status(400).json({ error: 'Invalid image file' });
     }
-  });
+    const discardNew = () => { if (imageFilename) removeUploadedImage(`/uploads/${imageFilename}`); };
+    const errors = validateLog(req.body, { requireDate: false });
+    if (errors.length > 0) {
+      discardNew();
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    if (unknownPlantId(data, req.body)) { discardNew(); return res.status(404).json({ error: 'Plant not found' }); }
+    const existing = repo.getLog(data, parseInt(req.params.id, 10));
+    if (!existing) { discardNew(); return res.status(404).json({ error: 'Log not found' }); }
+    const previousImage = existing.image_url;
+    const body = imageFilename ? { ...req.body, image_url: `/uploads/${imageFilename}` } : req.body;
+    const log = repo.updateLog(data, existing.id, body);
+    writeData(data);
+    if (imageFilename && previousImage && previousImage !== log.image_url) removeUploadedImage(previousImage);
+    res.json(log);
+  }));
+
+  // DELETE /logs/:id – delete a single log, and its image file if it had one.
+  app.delete('/logs/:id', handle((req, res) => {
+    const data = readData();
+    const deleted = repo.deleteLog(data, parseInt(req.params.id, 10));
+    if (!deleted) return res.status(404).json({ error: 'Log not found' });
+    writeData(data);
+    removeUploadedImage(deleted.image_url);
+    res.json({ message: `Successfully deleted log with ID: ${deleted.id}`, deletedLog: deleted });
+  }));
 
   /* -------------------------- Feeding --------------------------- */
 
   // GET /feeding – all saved feeding schedules.
-  app.get('/feeding', (_req, res) => {
-    try {
-      const data = readData();
-      res.json(data.schedules);
-    } catch (error) {
-      console.error('Error fetching feeding schedules:', error);
-      res.status(500).json({ error: 'Failed to fetch feeding schedules' });
-    }
-  });
+  app.get('/feeding', handle((_req, res) => {
+    const data = readData();
+    res.json(repo.listSchedules(data));
+  }));
 
   // POST /feeding – create a feeding schedule.
-  app.post('/feeding', (req, res) => {
-    try {
-      const { plant_name, nutrient_type, ec_level, frequency, notes } = req.body;
-
-      if (!plant_name || !nutrient_type) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: ['Plant name and nutrient type are required'],
-        });
-      }
-
-      const data = readData();
-      const newSchedule = {
-        id: data.nextScheduleId,
-        plant_name,
-        nutrient_type,
-        ec_level: ec_level || '',
-        frequency: frequency || 'daily',
-        notes: notes || '',
-        last_fed: null,
-        created_at: new Date().toISOString(),
-      };
-
-      data.schedules.push(newSchedule);
-      data.nextScheduleId += 1;
-      writeData(data);
-      res.status(201).json(newSchedule);
-    } catch (error) {
-      console.error('Error adding feeding schedule:', error);
-      res.status(500).json({ error: 'Failed to add feeding schedule' });
+  app.post('/feeding', handle((req, res) => {
+    const errors = validateSchedule(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
     }
+    const data = readData();
+    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
+    const schedule = repo.createSchedule(data, req.body);
+    writeData(data);
+    res.status(201).json(schedule);
+  }));
+
+  // PUT /feeding/:id – edit a feeding schedule.
+  app.put('/feeding/:id', handle((req, res) => {
+    const errors = validateSchedule(req.body, { partial: true });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
+    const schedule = repo.updateSchedule(data, parseInt(req.params.id, 10), req.body);
+    if (!schedule) return res.status(404).json({ error: 'Feeding schedule not found' });
+    writeData(data);
+    res.json(schedule);
+  }));
+
+  // POST /feeding/:id/fed – mark a schedule as fed now (drives reminders).
+  app.post('/feeding/:id/fed', handle((req, res) => {
+    const data = readData();
+    const schedule = repo.markFed(data, parseInt(req.params.id, 10));
+    if (!schedule) return res.status(404).json({ error: 'Feeding schedule not found' });
+    writeData(data);
+    res.json(schedule);
+  }));
+
+  // DELETE /feeding/:id – delete a feeding schedule.
+  app.delete('/feeding/:id', handle((req, res) => {
+    const data = readData();
+    const deleted = repo.deleteSchedule(data, parseInt(req.params.id, 10));
+    if (!deleted) return res.status(404).json({ error: 'Feeding schedule not found' });
+    writeData(data);
+    res.json({ message: `Deleted feeding schedule ${deleted.id}`, deleted });
+  }));
+
+  /* ----------------------- Reservoir events ---------------------- */
+
+  // GET /reservoir – water changes and top-offs, newest first; ?plant_id=.
+  app.get('/reservoir', handle((req, res) => {
+    const data = readData();
+    res.json(repo.listReservoirEvents(data, { plant_id: req.query.plant_id }));
+  }));
+
+  // POST /reservoir – record a change or top-off for a plant (by plant_id).
+  app.post('/reservoir', handle((req, res) => {
+    const errors = validateReservoirEvent(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    const event = repo.createReservoirEvent(data, req.body);
+    if (!event) return res.status(404).json({ error: 'Plant not found' });
+    writeData(data);
+    res.status(201).json(event);
+  }));
+
+  // PUT /reservoir/:id – partial update.
+  app.put('/reservoir/:id', handle((req, res) => {
+    const errors = validateReservoirEvent(req.body, { partial: true });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
+    const event = repo.updateReservoirEvent(data, parseInt(req.params.id, 10), req.body);
+    if (!event) return res.status(404).json({ error: 'Reservoir event not found' });
+    writeData(data);
+    res.json(event);
+  }));
+
+  // DELETE /reservoir/:id
+  app.delete('/reservoir/:id', handle((req, res) => {
+    const data = readData();
+    const deleted = repo.deleteReservoirEvent(data, parseInt(req.params.id, 10));
+    if (!deleted) return res.status(404).json({ error: 'Reservoir event not found' });
+    writeData(data);
+    res.json({ message: `Deleted reservoir event ${deleted.id}`, deleted });
+  }));
+
+  /* -------------------------- Settings -------------------------- */
+
+  // GET /settings – app settings (units, ppm scale, default species).
+  app.get('/settings', handle((_req, res) => {
+    const data = readData();
+    res.json(repo.getSettings(data));
+  }));
+
+  // PUT /settings – merge a settings patch (enums clamped; the nutrient
+  // price list is validated, MR-53).
+  app.put('/settings', handle((req, res) => {
+    if (req.body && 'nutrient_prices' in req.body) {
+      const err = repo.validateNutrientPrices(req.body.nutrient_prices);
+      if (err) return res.status(400).json({ error: 'Validation failed', details: [err] });
+    }
+    const data = readData();
+    const settings = repo.updateSettings(data, req.body);
+    writeData(data);
+    res.json(settings);
+  }));
+
+  /* -------------------------- Backup ---------------------------- */
+
+  // GET /backup – download the entire data store (plants, logs, schedules,
+  // settings) as a single JSON file for safe-keeping or transfer. Photos live
+  // as separate files under uploads/ and are NOT included in this snapshot.
+  app.get('/backup', handle((_req, res) => {
+    const payload = backupEnvelope(readData());
+    res.header('Content-Type', 'application/json');
+    res.attachment(`hydro_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    res.send(JSON.stringify(payload, null, 2));
+  }));
+
+  // POST /backup/restore – REPLACE the entire store with an uploaded backup.
+  // Destructive by design. Accepts our own envelope or a bare data object, and
+  // upgrades an older-schema backup on the way in. Ids are rebuilt so a restore
+  // can never collide with future inserts.
+  app.post('/backup/restore', handle((req, res) => {
+    const body = req.body || {};
+    const raw = body._type === BACKUP_TYPE ? body.data : body;
+    if (!raw || typeof raw !== 'object' || (!Array.isArray(raw.plants) && !Array.isArray(raw.logs))) {
+      return res.status(400).json({ error: 'This does not look like a Hydro backup file.' });
+    }
+    let migrated;
+    try {
+      migrated = migrateData(raw);
+    } catch (error) {
+      if (error instanceof SchemaTooNewError) {
+        return res.status(400).json({ error: `This backup ${error.message.slice('This data '.length)}` });
+      }
+      throw error;
+    }
+    const data = repo.prepareImport(migrated.data);
+    // Destructive by design, so the current store is snapshotted first
+    // (hydro-data.pre-restore-<ts>.json, newest 5 kept).
+    if (state.damaged) throw refuse();
+    const snapshotPath = repo.snapshot(dataFile, 'pre-restore', 5);
+    writeData(data);
+    res.json({
+      message: 'Backup restored',
+      counts: { plants: data.plants.length, logs: data.logs.length, schedules: data.schedules.length },
+      previousStoreSavedAs: snapshotPath,
+    });
+  }));
+
+  /* ------------------------ Backup with photos ------------------------ */
+
+  // The JSON envelope GET /backup sends, built once here so the zip carries
+  // byte-identical content.
+  const backupEnvelope = (data) => ({
+    _type: BACKUP_TYPE,
+    _version: 1,
+    exportedAt: new Date().toISOString(),
+    data,
   });
+
+  // GET /backup/zip – the same envelope as backup.json plus uploads/<file>
+  // for every image a log references (missing files are skipped, not fatal:
+  // the JSON is still the complete store).
+  app.get('/backup/zip', handle((_req, res) => {
+    const data = readData();
+    const zip = new AdmZip();
+    zip.addFile(ZIP_BACKUP_JSON, Buffer.from(JSON.stringify(backupEnvelope(data), null, 2), 'utf8'));
+    const seen = new Set();
+    for (const log of data.logs) {
+      if (!log.image_url) continue;
+      const name = path.basename(log.image_url);
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const filePath = path.join(uploadsDir, name);
+      if (fs.existsSync(filePath)) zip.addFile(`uploads/${name}`, fs.readFileSync(filePath));
+    }
+    res.header('Content-Type', 'application/zip');
+    res.attachment(`hydro_backup_${new Date().toISOString().slice(0, 10)}.zip`);
+    res.send(zip.toBuffer());
+  }));
+
+  // POST /backup/restore/zip – multipart field `archive`. Every entry is
+  // validated (envelope shape, flat upload names, real image bytes) BEFORE
+  // the store is touched; then the same migrate / prepareImport / snapshot
+  // path as the JSON restore, and the images are written after the save.
+  // Existing upload files are left alone (an orphan is harmless; a deleted
+  // photo is not).
+  const zipUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: ZIP_MAX_BYTES, files: 1 } });
+  app.post('/backup/restore/zip', zipUpload.single('archive'), handle((req, res) => {
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'No zip file was uploaded.' });
+    let parsed;
+    try {
+      parsed = readZipBackup(req.file.buffer);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+    const raw = parsed.envelope.data;
+    if (!Array.isArray(raw.plants) && !Array.isArray(raw.logs)) {
+      return res.status(400).json({ error: 'This does not look like a Hydro backup file.' });
+    }
+    let migrated;
+    try {
+      migrated = migrateData(raw);
+    } catch (error) {
+      if (error instanceof SchemaTooNewError) {
+        return res.status(400).json({ error: `This backup ${error.message.slice('This data '.length)}` });
+      }
+      throw error;
+    }
+    const data = repo.prepareImport(migrated.data);
+    if (state.damaged) throw refuse();
+    const snapshotPath = repo.snapshot(dataFile, 'pre-restore', 5);
+    writeData(data);
+    let photos = 0;
+    for (const img of parsed.images) {
+      try {
+        fs.writeFileSync(path.join(uploadsDir, img.name), img.bytes);
+        photos += 1;
+      } catch (error) {
+        logger.error('Failed to write a restored photo:', { name: img.name, message: error.message });
+      }
+    }
+    res.json({
+      message: 'Backup restored',
+      counts: { plants: data.plants.length, logs: data.logs.length, schedules: data.schedules.length, photos },
+      previousStoreSavedAs: snapshotPath,
+    });
+  }));
 
   // Multer / upload errors land here as JSON instead of an HTML stack trace.
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
-    console.error('Backend error:', err.message);
+    logger.error('Backend error:', { message: err.message });
     res.status(400).json({ error: err.message || 'Something went wrong' });
   });
 
@@ -308,12 +911,18 @@ export function createServer({ dataFile, uploadsDir }) {
 }
 
 // Convenience helper used by the Electron main process.
-export function startServer({ dataFile, uploadsDir, port = 5000 }) {
-  const app = createServer({ dataFile, uploadsDir });
+// Start the backend on the loopback interface only. `port` defaults to 0 (the
+// OS picks a free one: a fixed 5000 collided with macOS AirPlay). Resolves to
+// { httpServer, state, port, apiBase }; `state.damaged` is set when the data
+// file could not be read, so the shell can tell the user before they touch
+// anything.
+export function startServer({ dataFile, uploadsDir, backupsDir = null, port = 0, host = '127.0.0.1', token = null, allowedOrigins, logger = nullLogger }) {
+  const app = createServer({ dataFile, uploadsDir, backupsDir, token, allowedOrigins, logger });
   return new Promise((resolve, reject) => {
-    const httpServer = app.listen(port, () => {
-      console.log(`Embedded backend running on port ${port} (JSON storage)`);
-      resolve(httpServer);
+    const httpServer = app.listen(port, host, () => {
+      const actual = httpServer.address().port;
+      logger.info(`Embedded backend running on http://${host}:${actual} (JSON storage)`);
+      resolve({ httpServer, state: app.hydroState, port: actual, apiBase: `http://${host}:${actual}` });
     });
     httpServer.on('error', reject);
   });

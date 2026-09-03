@@ -1,26 +1,29 @@
 {
   "name": "hydro-growth-tracker",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "A cross-platform Electron desktop app for tracking hydroponic plant growth.",
   "author": "Suspicious-Lobster",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "main": "main.js",
   "scripts": {
-    "frontend:dev": "cd frontend && vite",
-    "build:frontend": "cd frontend && vite build",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
     "electron:start": "cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=1 NODE_ENV=development electron .",
     "dev": "concurrently --names \"frontend,electron\" --prefix-colors \"cyan,green\" -k \"npm run frontend:dev\" \"wait-on http://localhost:5173 && npm run electron:start\"",
     "start": "npm run dev",
     "start:frontend": "npm run frontend:dev",
     "start:dev": "npm run dev",
-    "pre-build": "node scripts/pre-build.js",
-    "dist": "npm run pre-build && npm run build:frontend && electron-builder",
+    "dist": "npm run build:frontend && electron-builder",
     "health": "node scripts/health-check.js",
-    "test:server": "node test-server.mjs",
-    "test:e2e": "node test-e2e.cjs",
-    "test": "npm run test:server",
-    "package": "npm run test:e2e && package.bat"
+    "make-icons": "node scripts/make-icons.mjs",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build:frontend && playwright test",
+    "test:e2e:only": "playwright test"
   },
   "build": {
     "appId": "com.hydrotracker.hydro-growth-tracker",
@@ -32,7 +35,11 @@
     "files": [
       "main.js",
       "server.js",
+      "validation.js",
+      "db/**/*",
       "preload.js",
+      "lifecycle.js",
+      "logger.js",
       "frontend/dist/**/*",
       "node_modules/**/*",
       "package.json"
@@ -44,7 +51,11 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "icon": "assets/icons/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "publisherName": "Hydro Growth Tracker"
     },
     "nsis": {
@@ -52,7 +63,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Hydro Growth Tracker Pro",
+      "shortcutName": "Hydro Growth Tracker",
       "runAfterFinish": true,
       "menuCategory": "Productivity"
     },
@@ -60,7 +71,7 @@
       "artifactName": "${productName}-${version}-portable.${ext}"
     },
     "mac": {
-      "icon": "assets/icon.svg",
+      "icon": "assets/icons/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -73,7 +84,7 @@
       ]
     },
     "linux": {
-      "icon": "assets/icon.svg",
+      "icon": "assets/icons/icon.png",
       "category": "Office",
       "target": [
         {
@@ -91,7 +102,7 @@
       ]
     },
     "dmg": {
-      "icon": "assets/icon.svg",
+      "icon": "assets/icons/icon.icns",
       "iconSize": 100,
       "contents": [
         {
@@ -115,16 +126,24 @@
     }
   },
   "dependencies": {
+    "adm-zip": "^0.5.18",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "json2csv": "^5.0.7",
     "multer": "^2.0.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
+    "@rolldown/binding-win32-x64-msvc": "^1.2.7",
+    "@vitest/coverage-v8": "^4.1.11",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^29.0.0",
-    "electron-builder": "^25.0.0",
+    "electron": "^44.1.1",
+    "electron-builder": "^25.1.8",
+    "png2icons": "^2.0.1",
+    "sharp": "^0.35.4",
+    "vitest": "^4.1.11",
     "wait-on": "^7.2.0"
   }
 }

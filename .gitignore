@@ -46,3 +46,12 @@ build-resources/node.exe
 # IDE files
 .vscode/
 .idea/
+
+# Python tool caches
+__pycache__/
+
+# Test coverage output
+coverage/
+
+# Playwright traces
+e2e/.results/
