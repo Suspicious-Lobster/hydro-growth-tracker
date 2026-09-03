@@ -2,9 +2,8 @@
 // the plant's logs, reservoir events and the settings' price list.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
-import { ToastProvider } from '../../contexts/ToastContext';
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import CostCard from '../../components/CostCard';
 import PlantDetail from '../../components/PlantDetail';
 
@@ -27,17 +26,8 @@ vi.mock('../../contexts/AppDataContext', () => ({
   }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 describe('CostCard (MR-53)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     settings = {
       units: { length: 'cm', volume: 'liters', temp: 'C' },
       nutrient_prices: [{ name: 'Part A', price_per_liter: 30 }],
@@ -45,7 +35,7 @@ describe('CostCard (MR-53)', () => {
   });
 
   it('shows water used, the priced product line, the total and the unpriced note', () => {
-    render(<ThemeProvider><CostCard plant={plant} /></ThemeProvider>);
+    renderWithProviders(<CostCard plant={plant} />);
     const card = screen.getByTestId('cost-card');
     expect(card.textContent).toContain('Water used');
     expect(card.textContent).toContain('25'); // 20 L change + 5 L top-off
@@ -58,20 +48,13 @@ describe('CostCard (MR-53)', () => {
   // MR-59: the card is actually mounted in the plant view (a component that
   // exists but nothing renders is not a feature, CODING-PRACTICES 5.0).
   it('PlantDetail renders the cost card', () => {
-    globalThis.ResizeObserver = globalThis.ResizeObserver || class { observe() {} unobserve() {} disconnect() {} };
-    render(
-      <ThemeProvider>
-        <ToastProvider>
-          <PlantDetail plant={plant} onBack={() => {}} />
-        </ToastProvider>
-      </ThemeProvider>
-    );
+    renderWithProviders(<PlantDetail plant={plant} onBack={() => {}} />);
     expect(screen.getByTestId('cost-card').textContent).toContain('Water used');
   });
 
   it('with no doses it explains what to log instead of showing a table', () => {
     logs.length = 0;
-    render(<ThemeProvider><CostCard plant={plant} /></ThemeProvider>);
+    renderWithProviders(<CostCard plant={plant} />);
     expect(screen.getByTestId('cost-card').textContent).toContain('Log doses on your entries');
     logs.push({ id: 1, plant_id: 1, date: '2026-06-02', height: 10, doses: [{ name: 'Part A', ml_per_l: 2 }, { name: 'Bloom', ml_per_l: 1 }] });
   });

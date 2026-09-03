@@ -1,10 +1,10 @@
 // MR-43: LogViewer gains a filter toolbar; typing into the search box hides
 // non-matching logs and updates the "Showing N of M" header count.
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import LogViewer from '../../components/LogViewer';
 
 const logs = [
@@ -48,27 +48,11 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderViewer() {
-  return render(
-    <ThemeProvider>
-      <LogViewer />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<LogViewer />);
 }
 
 describe('LogViewer filtering (MR-43)', () => {
-  beforeEach(() => {
-    stubMatchMedia();
-  });
-
   it('shows every log and the total count with no filter applied', () => {
     renderViewer();
     expect(screen.getByText('Total logs: 3')).toBeInTheDocument();

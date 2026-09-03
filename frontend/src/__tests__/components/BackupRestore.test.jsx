@@ -4,9 +4,9 @@
 // explicit "Replace all data" confirmation.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import api from '../../api/api';
 import BackupRestore from '../../components/BackupRestore';
 
@@ -36,14 +36,6 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: toastSuccess, error: toastError, info: vi.fn() }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 const ENVELOPE = {
   _type: 'hydro-growth-tracker-backup',
   data: {
@@ -63,11 +55,7 @@ function makeBackupFile() {
 }
 
 function renderPanel() {
-  return render(
-    <ThemeProvider>
-      <BackupRestore />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<BackupRestore />);
 }
 
 async function pickFile() {
@@ -79,7 +67,6 @@ async function pickFile() {
 
 describe('BackupRestore (MR-25)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     api.get.mockReset();
     api.post.mockReset();
     downloadBlob.mockClear();
@@ -131,7 +118,6 @@ describe('BackupRestore (MR-25)', () => {
 // stages the file, then posts it as multipart only after confirmation.
 describe('BackupRestore zip (MR-54)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     api.get.mockReset();
     api.post.mockReset();
     downloadBlob.mockClear();
@@ -180,7 +166,6 @@ describe('BackupRestore zip (MR-54)', () => {
 // and only posts dryRun:false after confirmation; errors disable the commit.
 describe('BackupRestore CSV import (MR-55)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     api.post.mockReset();
     toastSuccess.mockClear();
     refresh.mockClear();

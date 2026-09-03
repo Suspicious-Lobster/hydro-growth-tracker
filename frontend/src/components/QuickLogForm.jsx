@@ -8,19 +8,6 @@ import { toCm, lengthUnitLabel } from '../utils/format';
 import { todayLocalISO } from '../utils/dates';
 import { validateLogByField } from '@shared/validation';
 
-// Dashboard.test.jsx renders PlantCards without a ToastProvider, so this
-// component must not crash when useToast() is called outside a provider (it
-// throws by design — see ToastContext.jsx). Fall back to no-op handlers; the
-// hook itself (useContext) still runs unconditionally every render, so this
-// stays a valid hook call.
-const useOptionalToast = () => {
-  try {
-    return useToast();
-  } catch {
-    return { success: () => {}, error: () => {} };
-  }
-};
-
 const numOrUndef = (v) => (v === '' || v === null || v === undefined ? undefined : parseFloat(v));
 
 // One-row fast entry for the three numbers a grower checks most often: plant,
@@ -29,7 +16,7 @@ const numOrUndef = (v) => (v === '' || v === null || v === undefined ? undefined
 const QuickLogForm = () => {
   const { colors } = useTheme();
   const { plants, settings, createLog } = useAppData();
-  const toast = useOptionalToast();
+  const toast = useToast();
 
   const [plantId, setPlantId] = useState(plants[0]?.id ?? '');
   const [height, setHeight] = useState('');

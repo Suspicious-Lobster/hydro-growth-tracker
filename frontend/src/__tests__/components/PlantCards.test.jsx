@@ -5,9 +5,9 @@
 // (falls back to the generic profile) — and asserts the 'generic guidance'
 // hint appears only for the one lacking its own profile.
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { describe, it, expect, vi } from 'vitest';
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import Dashboard from '../../components/PlantCards';
 
 const plants = [
@@ -24,26 +24,10 @@ vi.mock('../../contexts/AppDataContext', () => ({
 }));
 
 function renderDashboard() {
-  return render(
-    <ThemeProvider>
-      <Dashboard onSelectPlant={() => {}} />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<Dashboard onSelectPlant={() => {}} />);
 }
 
 describe('PlantCards Dashboard - generic guidance hint', () => {
-  beforeEach(() => {
-    window.matchMedia = window.matchMedia || function () {
-      return { matches: false, addEventListener() {}, removeEventListener() {} };
-    };
-    // jsdom lacks matchMedia; stub it before ThemeProvider reads it.
-    window.matchMedia = vi.fn().mockImplementation(() => ({
-      matches: false,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }));
-  });
-
   it('shows generic guidance for a species with no authored profile', () => {
     renderDashboard();
     const mysteryCard = screen.getByRole('heading', { name: 'Mystery Plant' }).closest('button');

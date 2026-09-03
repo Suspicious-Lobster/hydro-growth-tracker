@@ -3,17 +3,10 @@
 // close, and still close on Escape.
 import React, { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import Modal from '../../components/ui/Modal';
-
-// jsdom lacks matchMedia; stub it before ThemeProvider reads it.
-window.matchMedia = vi.fn().mockImplementation(() => ({
-  matches: false,
-  addEventListener: () => {},
-  removeEventListener: () => {},
-}));
 
 // Harness: an "opener" button outside the modal (to prove focus returns to it),
 // plus a Modal containing three focusable buttons so the trap has something
@@ -35,10 +28,8 @@ const Harness = ({ onClose }) => {
   );
 };
 
-const renderHarness = (onClose) => render(
-  <ThemeProvider>
-    <Harness onClose={onClose} />
-  </ThemeProvider>,
+const renderHarness = (onClose) => renderWithProviders(
+  <Harness onClose={onClose} />,
 );
 
 describe('Modal accessibility', () => {
@@ -90,12 +81,10 @@ describe('Modal accessibility', () => {
     opener.focus();
     expect(document.activeElement).toBe(opener);
 
-    const { unmount } = render(
-      <ThemeProvider>
-        <Modal title="Test Modal" onClose={() => {}}>
-          <button>Only</button>
-        </Modal>
-      </ThemeProvider>,
+    const { unmount } = renderWithProviders(
+      <Modal title="Test Modal" onClose={() => {}}>
+        <button>Only</button>
+      </Modal>,
     );
     expect(document.activeElement).not.toBe(opener);
 

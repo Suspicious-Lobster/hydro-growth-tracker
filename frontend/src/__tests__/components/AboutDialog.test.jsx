@@ -6,34 +6,20 @@ import React from 'react';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { describe, it, expect, afterEach } from 'vitest';
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import AboutDialog from '../../components/AboutDialog';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(__dirname, '../../..');
 
-function stubMatchMedia() {
-  window.matchMedia = window.matchMedia || function () {
-    return { matches: false, addEventListener() {}, removeEventListener() {} };
-  };
-}
-
 function renderAbout() {
-  return render(
-    <ThemeProvider>
-      <AboutDialog onClose={() => {}} />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<AboutDialog onClose={() => {}} />);
 }
 
 describe('AboutDialog', () => {
   const originalHydro = window.hydro;
-
-  beforeEach(() => {
-    stubMatchMedia();
-  });
 
   afterEach(() => {
     window.hydro = originalHydro;

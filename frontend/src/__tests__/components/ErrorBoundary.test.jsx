@@ -4,8 +4,8 @@
 // version onto the clipboard.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { screen, fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import ErrorBoundary from '../../components/ErrorBoundary';
 
 function Bomb() {
@@ -13,23 +13,15 @@ function Bomb() {
 }
 
 function renderBoundary() {
-  return render(
-    <ThemeProvider>
-      <ErrorBoundary>
-        <Bomb />
-      </ErrorBoundary>
-    </ThemeProvider>
+  return renderWithProviders(
+    <ErrorBoundary>
+      <Bomb />
+    </ErrorBoundary>
   );
 }
 
 describe('ErrorBoundary - Copy details', () => {
   beforeEach(() => {
-    // jsdom lacks matchMedia; stub it before ThemeProvider reads it.
-    window.matchMedia = vi.fn().mockImplementation(() => ({
-      matches: false,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }));
     // React logs the thrown render error to console.error; that's expected
     // noise for this test, not a failure signal.
     vi.spyOn(console, 'error').mockImplementation(() => {});

@@ -3,9 +3,9 @@
 // through updateSettings and re-renders the length select as 'in'.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import SettingsPanel from '../../components/SettingsPanel';
 
 const settings = {
@@ -50,25 +50,12 @@ vi.mock('../../api/api', () => ({
   apiErrorMessage: (err, fallback) => err?.message || fallback,
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderPanel() {
-  return render(
-    <ThemeProvider>
-      <SettingsPanel />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<SettingsPanel />);
 }
 
 describe('SettingsPanel (MR-25)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     updateSettings.mockClear();
     toastSuccess.mockClear();
   });

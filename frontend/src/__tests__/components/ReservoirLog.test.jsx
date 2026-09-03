@@ -2,9 +2,9 @@
 // lets a user log new change/top-off events in the display volume unit.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import ReservoirLog from '../../components/ReservoirLog';
 
 const plant = { id: 1, name: 'Basil' };
@@ -29,25 +29,12 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: toastSuccess, error: toastError, info: vi.fn() }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderLog(now) {
-  return render(
-    <ThemeProvider>
-      <ReservoirLog plant={plant} now={now} />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<ReservoirLog plant={plant} now={now} />);
 }
 
 describe('ReservoirLog (MR-46)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     reservoirEvents = [];
     settings = { units: { length: 'cm', volume: 'gallons', temp: 'C' } };
     createReservoirEvent.mockClear();

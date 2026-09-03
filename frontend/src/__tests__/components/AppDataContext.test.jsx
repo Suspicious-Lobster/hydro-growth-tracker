@@ -7,8 +7,9 @@
 // harness that mirrors App.jsx's `{loading ? <Spinner/> : <View/>}` branch.
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderWithProviders } from '../../test-utils';
 import { AppDataProvider, useAppData } from '../../contexts/AppDataContext';
 import api from '../../api/api';
 
@@ -73,7 +74,7 @@ function Harness() {
 }
 
 function renderHarness() {
-  return render(
+  return renderWithProviders(
     <AppDataProvider>
       <Harness />
     </AppDataProvider>
@@ -189,7 +190,7 @@ describe('AppDataContext reservoir events (MR-46)', () => {
   }
 
   function renderReservoirProbe() {
-    return render(
+    return renderWithProviders(
       <AppDataProvider>
         <ReservoirProbe />
       </AppDataProvider>

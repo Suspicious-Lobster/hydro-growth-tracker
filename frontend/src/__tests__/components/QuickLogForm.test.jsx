@@ -4,9 +4,9 @@
 // createLog is ever called.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import QuickLogForm from '../../components/QuickLogForm';
 
 const plants = [
@@ -30,25 +30,12 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: toastSuccess, error: toastError, info: vi.fn() }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderForm() {
-  return render(
-    <ThemeProvider>
-      <QuickLogForm />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<QuickLogForm />);
 }
 
 describe('QuickLogForm (MR-47)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     settings = { units: { length: 'in', temp: 'C', volume: 'liters' } };
     createLog.mockClear();
     toastSuccess.mockClear();

@@ -3,9 +3,9 @@
 // 7.5 is well outside it and must surface an alert, while pH 6.0 is within
 // range and must not.
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { describe, it, expect, vi } from 'vitest';
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import Dashboard from '../../components/PlantCards';
 
 const plants = [
@@ -26,27 +26,11 @@ vi.mock('../../contexts/AppDataContext', () => ({
   }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderDashboard() {
-  return render(
-    <ThemeProvider>
-      <Dashboard onSelectPlant={() => {}} />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<Dashboard onSelectPlant={() => {}} />);
 }
 
 describe('Dashboard alerts (MR-25)', () => {
-  beforeEach(() => {
-    stubMatchMedia();
-  });
-
   it('shows an out-of-range pH alert for a tomato logged at pH 7.5', () => {
     renderDashboard();
     const card = screen.getByRole('heading', { name: 'High pH Tomato' }).closest('button');

@@ -1,19 +1,10 @@
 // MR-51: a scrubbable timeline of a plant's logged photos.
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { fireEvent } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { describe, it, expect } from 'vitest';
+import { screen, fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import PhotoTimeline from '../../components/PhotoTimeline';
 import { formatDate } from '../../utils/format';
-
-beforeEach(() => {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-});
 
 const threePhotoLogs = [
   { id: 1, plant_name: 'Tomato', date: '2026-01-01', height: 5, image_url: '/uploads/a.jpg' },
@@ -26,11 +17,7 @@ const onePhotoLog = [
 ];
 
 function renderTimeline(logs) {
-  return render(
-    <ThemeProvider>
-      <PhotoTimeline logs={logs} lengthUnit="cm" />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<PhotoTimeline logs={logs} lengthUnit="cm" />);
 }
 
 describe('PhotoTimeline (MR-51)', () => {
@@ -48,7 +35,10 @@ describe('PhotoTimeline (MR-51)', () => {
   });
 
   it('returns null with only one photo', () => {
-    const { container } = renderTimeline(onePhotoLog);
-    expect(container.firstChild).toBeNull();
+    // renderWithProviders' real ToastProvider always mounts its (empty) toast
+    // list div, so the container's firstChild is no longer null; assert the
+    // component's own content (the timeline slider) is absent instead.
+    renderTimeline(onePhotoLog);
+    expect(screen.queryByLabelText('Photo timeline')).not.toBeInTheDocument();
   });
 });

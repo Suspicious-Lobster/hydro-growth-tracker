@@ -3,9 +3,9 @@
 // payload (10in -> 25.4cm) and the localStorage draft round-trip.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import AddLogForm from '../../components/AddLogForm';
 
 const plants = [{ id: 1, name: 'Tomato', species: 'tomato' }];
@@ -26,25 +26,12 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: toastSuccess, error: toastError, info: vi.fn() }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderForm() {
-  return render(
-    <ThemeProvider>
-      <AddLogForm />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<AddLogForm />);
 }
 
 describe('AddLogForm (MR-25)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     localStorage.clear();
     settings = { units: { length: 'in', temp: 'C', volume: 'liters' } };
     createLog.mockClear();

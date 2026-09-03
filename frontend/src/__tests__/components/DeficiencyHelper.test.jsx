@@ -1,22 +1,13 @@
 // MR-40: DeficiencyHelper lets you tick symptoms and shows ranked results.
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import DeficiencyHelper from '../../components/DeficiencyHelper';
 
-// jsdom lacks matchMedia; stub it before ThemeProvider reads it.
-window.matchMedia = vi.fn().mockImplementation(() => ({
-  matches: false,
-  addEventListener: () => {},
-  removeEventListener: () => {},
-}));
-
-const renderHelper = (onClose = () => {}) => render(
-  <ThemeProvider>
-    <DeficiencyHelper onClose={onClose} />
-  </ThemeProvider>,
+const renderHelper = (onClose = () => {}) => renderWithProviders(
+  <DeficiencyHelper onClose={onClose} />,
 );
 
 describe('DeficiencyHelper', () => {

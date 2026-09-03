@@ -2,9 +2,9 @@
 // flows were previously unverified except by hand.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import api from '../../api/api';
 import PlantManager from '../../components/PlantManager';
 
@@ -45,25 +45,12 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: toastSuccess, error: toastError, info: vi.fn() }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderManager() {
-  return render(
-    <ThemeProvider>
-      <PlantManager onSelectPlant={() => {}} />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<PlantManager onSelectPlant={() => {}} />);
 }
 
 describe('PlantManager (MR-25)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     api.get.mockReset();
     api.post.mockReset();
     createPlant.mockClear();

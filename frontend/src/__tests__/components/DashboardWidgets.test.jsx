@@ -2,9 +2,9 @@
 // harvest countdown), built from existing pure helpers. `now` is injected so
 // the overdue-feeding scenario is pinned instead of racing the real clock.
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { describe, it, expect, vi } from 'vitest';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import Dashboard from '../../components/PlantCards';
 import { feedingStatus } from '../../utils/feeding';
 
@@ -39,27 +39,11 @@ vi.mock('../../contexts/AppDataContext', () => ({
   useAppData: () => appData,
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderDashboard() {
-  return render(
-    <ThemeProvider>
-      <Dashboard onSelectPlant={() => {}} now={now} />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<Dashboard onSelectPlant={() => {}} now={now} />);
 }
 
 describe('DashboardWidgets (MR-42)', () => {
-  beforeEach(() => {
-    stubMatchMedia();
-  });
-
   it('precondition: the schedule is actually overdue at `now`', () => {
     // CODING-PRACTICES 1.3: assert the fixture produces the condition the
     // test claims to exercise, not just the UI outcome.

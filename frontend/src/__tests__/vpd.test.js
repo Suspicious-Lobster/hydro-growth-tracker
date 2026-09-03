@@ -1,10 +1,8 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 import { vpdKpa, vpdBand } from '../utils/vpd';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
-import { ThemeProvider } from '../contexts/ThemeContext';
-import { ToastProvider } from '../contexts/ToastContext';
+import { renderWithProviders } from '../test-utils';
 import PlantDetail from '../components/PlantDetail';
 
 describe('vpdKpa', () => {
@@ -94,30 +92,11 @@ vi.mock('../contexts/AppDataContext', () => ({
 }));
 
 describe('PlantDetail chart caption - VPD (MR-38)', () => {
-  beforeEach(() => {
-    window.matchMedia = vi.fn().mockImplementation(() => ({
-      matches: false,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }));
-    // jsdom has no ResizeObserver; recharts' ResponsiveContainer needs one to
-    // mount at all. Not needed by any other test file since this is the only
-    // one that renders a chart component directly.
-    globalThis.ResizeObserver = globalThis.ResizeObserver || class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  });
-
   it('lists VPD alongside Growth/pH/EC once logs carry air_temp + humidity', () => {
-    const { container } = render(
-      React.createElement(
-        ThemeProvider,
-        null,
-        // PlantDetail hosts ReservoirLog (MR-46), which toasts.
-        React.createElement(ToastProvider, null, React.createElement(PlantDetail, { plant, onBack: () => {} }))
-      )
+    // PlantDetail hosts ReservoirLog (MR-46), which toasts; renderWithProviders
+    // supplies the real ToastProvider.
+    const { container } = renderWithProviders(
+      React.createElement(PlantDetail, { plant, onBack: () => {} })
     );
     const chartWrapper = container.querySelector('[aria-label^="Growth"]');
     expect(chartWrapper).not.toBeNull();

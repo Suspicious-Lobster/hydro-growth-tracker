@@ -4,9 +4,9 @@
 // in-app ConfirmDialog instead of the blocking, unstyled window.confirm.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import LogViewer from '../../components/LogViewer';
 
 const log = {
@@ -56,25 +56,12 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: toastSuccess, error: toastError, info: vi.fn() }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 function renderViewer() {
-  return render(
-    <ThemeProvider>
-      <LogViewer />
-    </ThemeProvider>
-  );
+  return renderWithProviders(<LogViewer />);
 }
 
 describe('LogViewer editing (MR-12)', () => {
   beforeEach(() => {
-    stubMatchMedia();
     settings = { units: { length: 'cm', temp: 'C', volume: 'liters' } };
     updateLog.mockClear();
     deleteLog.mockClear();

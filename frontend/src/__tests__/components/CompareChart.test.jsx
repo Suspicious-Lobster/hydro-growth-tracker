@@ -4,10 +4,10 @@
 // compareSeries.test.js for the same precondition asserted at the pure-fn
 // level), both with day 0 and day 7 logs.
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { renderWithProviders } from '../../test-utils';
 import CompareChart from '../../components/CompareChart';
 
 const plantA = { id: 1, name: 'Alpha Plant' };
@@ -26,37 +26,19 @@ const logsById = {
 
 const getPlantLogs = (plant) => logsById[plant.id] || [];
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-  // jsdom has no ResizeObserver; recharts' ResponsiveContainer needs one to
-  // mount at all (see vpd.test.js for the same stub).
-  globalThis.ResizeObserver = globalThis.ResizeObserver || class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
-}
-
 function renderChart(plants) {
-  return render(
-    <ThemeProvider>
-      <CompareChart plants={plants} getPlantLogs={getPlantLogs} lengthUnit="cm" />
-    </ThemeProvider>
+  return renderWithProviders(
+    <CompareChart plants={plants} getPlantLogs={getPlantLogs} lengthUnit="cm" />
   );
 }
 
 describe('CompareChart (MR-50)', () => {
-  beforeEach(() => {
-    stubMatchMedia();
-  });
-
   it('does not render with one plant', () => {
-    const { container } = renderChart([plantA]);
-    expect(container).toBeEmptyDOMElement();
+    // renderWithProviders' real ToastProvider always mounts its (empty) toast
+    // list div, so the container itself is no longer empty; assert the
+    // component's own content (the "Compare plants" toggle) is absent instead.
+    renderChart([plantA]);
+    expect(screen.queryByRole('button', { name: /compare plants/i })).not.toBeInTheDocument();
   });
 
   it('precondition: plant A and plant B start in different months', () => {
@@ -84,10 +66,8 @@ describe('CompareChart (MR-50)', () => {
     const plants = Array.from({ length: 7 }, (_, i) => ({ id: i + 1, name: `Plant ${i + 1}` }));
     const emptyLogs = () => [];
     const user = userEvent.setup();
-    render(
-      <ThemeProvider>
-        <CompareChart plants={plants} getPlantLogs={emptyLogs} lengthUnit="cm" />
-      </ThemeProvider>
+    renderWithProviders(
+      <CompareChart plants={plants} getPlantLogs={emptyLogs} lengthUnit="cm" />
     );
 
     await user.click(screen.getByRole('button', { name: /compare plants/i }));

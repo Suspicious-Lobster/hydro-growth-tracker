@@ -1,9 +1,7 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 import { idealHeightAt, idealSeries } from '../utils/idealCurve';
-import { ThemeProvider } from '../contexts/ThemeContext';
-import { ToastProvider } from '../contexts/ToastContext';
+import { renderWithProviders } from '../test-utils';
 import PlantDetail from '../components/PlantDetail';
 
 describe('idealHeightAt', () => {
@@ -92,26 +90,9 @@ vi.mock('../contexts/AppDataContext', () => ({
 }));
 
 describe('PlantDetail chart caption - Ideal (MR-48)', () => {
-  beforeEach(() => {
-    window.matchMedia = vi.fn().mockImplementation(() => ({
-      matches: false,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }));
-    globalThis.ResizeObserver = globalThis.ResizeObserver || class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  });
-
   it('shows the Ideal legend text when the plant has a start_date', () => {
-    const { container } = render(
-      React.createElement(
-        ThemeProvider,
-        null,
-        React.createElement(ToastProvider, null, React.createElement(PlantDetail, { plant: plantWithStart, onBack: () => {} }))
-      )
+    const { container } = renderWithProviders(
+      React.createElement(PlantDetail, { plant: plantWithStart, onBack: () => {} })
     );
     const chartWrapper = container.querySelector('[aria-label^="Growth"]');
     expect(chartWrapper).not.toBeNull();
@@ -119,12 +100,8 @@ describe('PlantDetail chart caption - Ideal (MR-48)', () => {
   });
 
   it('does not show the Ideal legend text without a start_date', () => {
-    const { container } = render(
-      React.createElement(
-        ThemeProvider,
-        null,
-        React.createElement(ToastProvider, null, React.createElement(PlantDetail, { plant: plantWithoutStart, onBack: () => {} }))
-      )
+    const { container } = renderWithProviders(
+      React.createElement(PlantDetail, { plant: plantWithoutStart, onBack: () => {} })
     );
     const chartWrapper = container.querySelector('[aria-label^="Growth"]');
     expect(chartWrapper).not.toBeNull();

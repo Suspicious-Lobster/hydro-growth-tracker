@@ -3,10 +3,9 @@
 // displayed date from log.date, falling back to log.created_at only when the
 // user never supplied one.
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
-import { ToastProvider } from '../../contexts/ToastContext';
+import { describe, it, expect, vi } from 'vitest';
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import LogViewer from '../../components/LogViewer';
 import PlantDetail from '../../components/PlantDetail';
 
@@ -59,39 +58,15 @@ vi.mock('../../contexts/AppDataContext', () => ({
   }),
 }));
 
-function stubMatchMedia() {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 describe('log date ordering/display (MR-10)', () => {
-  beforeEach(() => {
-    stubMatchMedia();
-  });
-
   it('LogViewer renders the entered date (2020), not the insert date', () => {
-    const { container } = render(
-      <ThemeProvider>
-        <ToastProvider>
-          <LogViewer />
-        </ToastProvider>
-      </ThemeProvider>
-    );
+    const { container } = renderWithProviders(<LogViewer />);
     expect(container.textContent).toContain('2020');
   });
 
   it("PlantDetail's history table shows the entered date (2020) for the same log", () => {
     // PlantDetail hosts ReservoirLog (MR-46), which toasts, so it needs the provider.
-    render(
-      <ThemeProvider>
-        <ToastProvider>
-          <PlantDetail plant={plant} onBack={() => {}} />
-        </ToastProvider>
-      </ThemeProvider>
-    );
+    renderWithProviders(<PlantDetail plant={plant} onBack={() => {}} />);
     expect(screen.getByText('Measurement history').closest('div').textContent).toContain('2020');
   });
 });

@@ -1,22 +1,13 @@
 // MR-45: Achievements shows a grid of all badges, earned ones lit.
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { ThemeProvider } from '../../contexts/ThemeContext';
+import { describe, it, expect } from 'vitest';
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import Achievements from '../../components/Achievements';
 import { BADGES } from '../../utils/achievements';
 
-// jsdom lacks matchMedia; stub it before ThemeProvider reads it.
-window.matchMedia = vi.fn().mockImplementation(() => ({
-  matches: false,
-  addEventListener: () => {},
-  removeEventListener: () => {},
-}));
-
-const renderBadges = (earnedIds = [], onClose = () => {}) => render(
-  <ThemeProvider>
-    <Achievements earnedIds={earnedIds} onClose={onClose} />
-  </ThemeProvider>,
+const renderBadges = (earnedIds = [], onClose = () => {}) => renderWithProviders(
+  <Achievements earnedIds={earnedIds} onClose={onClose} />,
 );
 
 describe('Achievements', () => {
