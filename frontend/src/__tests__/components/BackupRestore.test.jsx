@@ -126,3 +126,52 @@ describe('BackupRestore (MR-25)', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 });
+
+// MR-54: the zip variant carries photos. Download hits /backup/zip; restore
+// stages the file, then posts it as multipart only after confirmation.
+describe('BackupRestore zip (MR-54)', () => {
+  beforeEach(() => {
+    stubMatchMedia();
+    api.get.mockReset();
+    api.post.mockReset();
+    downloadBlob.mockClear();
+    toastSuccess.mockClear();
+  });
+
+  it("'Download backup with photos' fetches /backup/zip and saves a .zip", async () => {
+    api.get.mockResolvedValue({ data: new Blob(['PK']) });
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /download backup with photos/i }));
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/backup/zip', { responseType: 'blob' }));
+    expect(downloadBlob).toHaveBeenCalledTimes(1);
+    expect(downloadBlob.mock.calls[0][0]).toMatch(/^hydro_backup_\d{4}-\d{2}-\d{2}\.zip$/);
+  });
+
+  it('picking a zip stages it without posting; confirming posts multipart to /backup/restore/zip', async () => {
+    api.post.mockResolvedValue({ data: { counts: { plants: 1, logs: 2, schedules: 0, photos: 1 } } });
+    const user = userEvent.setup();
+    renderPanel();
+
+    const input = screen.getByTestId('zip-input');
+    const file = new File(['PK'], 'photos.zip', { type: 'application/zip' });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    fireEvent.change(input);
+
+    expect(await screen.findByText(/checks every file in the zip/)).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /replace all data/i }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    const [url, body] = api.post.mock.calls[0];
+    expect(url).toBe('/backup/restore/zip');
+    expect(body).toBeInstanceOf(FormData);
+    expect(body.get('archive')).toBeInstanceOf(File);
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith('Restored 1 plants, 2 logs, 0 schedules, 1 photos')
+    );
+  });
+});

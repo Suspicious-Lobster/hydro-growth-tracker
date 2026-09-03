@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Download, Upload, AlertTriangle } from 'lucide-react';
+import { Download, Upload, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import { useToast } from '../contexts/ToastContext';
@@ -17,29 +17,48 @@ const summarize = (parsed) => {
   return { plants: len(raw?.plants), logs: len(raw?.logs), schedules: len(raw?.schedules) };
 };
 
+const todayStamp = () => new Date().toISOString().slice(0, 10);
+
 // Back up the full data store to a JSON file, or restore (replace) it from one.
-// Restore is destructive, so it goes through an explicit confirmation modal.
+// The zip variant (MR-54) bundles the same JSON plus the photo files under
+// uploads/. Restore is destructive, so both go through an explicit
+// confirmation modal.
 const BackupRestore = () => {
   const { colors } = useTheme();
   const { refresh } = useAppData();
   const toast = useToast();
 
   const fileRef = useRef(null);
+  const zipRef = useRef(null);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
   const [restoring, setRestoring] = useState(false);
-  const [pending, setPending] = useState(null); // { parsed, counts, filename }
+  // { kind: 'json', parsed, counts, filename } | { kind: 'zip', file, filename }
+  const [pending, setPending] = useState(null);
 
   const handleDownload = async () => {
     setDownloading(true);
     try {
       const res = await api.get('/backup', { responseType: 'blob' });
-      downloadBlob(`hydro_backup_${new Date().toISOString().slice(0, 10)}.json`,
-        new Blob([res.data], { type: 'application/json' }));
+      downloadBlob(`hydro_backup_${todayStamp()}.json`, new Blob([res.data], { type: 'application/json' }));
       toast.success('Backup downloaded');
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to create backup'));
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleDownloadZip = async () => {
+    setDownloadingZip(true);
+    try {
+      const res = await api.get('/backup/zip', { responseType: 'blob' });
+      downloadBlob(`hydro_backup_${todayStamp()}.zip`, new Blob([res.data], { type: 'application/zip' }));
+      toast.success('Backup with photos downloaded');
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'Failed to create backup'));
+    } finally {
+      setDownloadingZip(false);
     }
   };
 
@@ -51,20 +70,36 @@ const BackupRestore = () => {
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      setPending({ parsed, counts: summarize(parsed), filename: file.name });
+      setPending({ kind: 'json', parsed, counts: summarize(parsed), filename: file.name });
     } catch {
       toast.error('That file is not valid JSON.');
     }
   };
 
+  // A zip cannot be inspected in the renderer; the server validates every
+  // entry before it replaces anything, so staging just names the file.
+  const handleZipFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setPending({ kind: 'zip', file, filename: file.name });
+  };
+
   const confirmRestore = async () => {
     setRestoring(true);
     try {
-      const res = await api.post('/backup/restore', pending.parsed);
+      let res;
+      if (pending.kind === 'zip') {
+        const fd = new FormData();
+        fd.append('archive', pending.file, pending.filename);
+        res = await api.post('/backup/restore/zip', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      } else {
+        res = await api.post('/backup/restore', pending.parsed);
+      }
       await refresh();
       const c = res.data?.counts;
       toast.success(c
-        ? `Restored ${c.plants} plants, ${c.logs} logs, ${c.schedules} schedules`
+        ? `Restored ${c.plants} plants, ${c.logs} logs, ${c.schedules} schedules${c.photos != null ? `, ${c.photos} photos` : ''}`
         : 'Backup restored');
       setPending(null);
     } catch (err) {
@@ -82,7 +117,7 @@ const BackupRestore = () => {
         <h2 className={`text-2xl font-bold ${colors.primary}`}>💾 Backup &amp; Restore</h2>
         <p className={colors.textMuted}>
           Save all your plants, logs, feeding schedules, and settings to a file, or restore them from one.
-          Photos aren&apos;t included in the backup file.
+          The JSON backup is data only; the zip backup also includes your photos.
         </p>
       </div>
 
@@ -90,8 +125,14 @@ const BackupRestore = () => {
         <button onClick={handleDownload} disabled={downloading} className={btn}>
           <Download size={16} /> {downloading ? 'Preparing…' : 'Download backup'}
         </button>
+        <button onClick={handleDownloadZip} disabled={downloadingZip} className={btn}>
+          <ImageIcon size={16} /> {downloadingZip ? 'Preparing…' : 'Download backup with photos'}
+        </button>
         <button onClick={() => fileRef.current?.click()} className={btn}>
           <Upload size={16} /> Restore from backup…
+        </button>
+        <button onClick={() => zipRef.current?.click()} className={btn}>
+          <Upload size={16} /> Restore from zip…
         </button>
         <input
           ref={fileRef}
@@ -100,6 +141,15 @@ const BackupRestore = () => {
           onChange={handleFile}
           className="hidden"
           aria-hidden="true"
+        />
+        <input
+          ref={zipRef}
+          type="file"
+          accept="application/zip,.zip"
+          onChange={handleZipFile}
+          className="hidden"
+          aria-hidden="true"
+          data-testid="zip-input"
         />
       </div>
 
@@ -115,8 +165,9 @@ const BackupRestore = () => {
               </p>
             </div>
             <div className={`text-sm ${colors.textMuted}`}>
-              The backup contains {pending.counts.plants} plants, {pending.counts.logs} logs, and{' '}
-              {pending.counts.schedules} feeding schedules.
+              {pending.kind === 'zip'
+                ? 'The app checks every file in the zip before anything is replaced; photos in the zip are added to your library.'
+                : `The backup contains ${pending.counts.plants} plants, ${pending.counts.logs} logs, and ${pending.counts.schedules} feeding schedules.`}
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setPending(null)} disabled={restoring} className={btn}>

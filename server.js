@@ -13,6 +13,7 @@ import { Parser } from 'json2csv';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import AdmZip from 'adm-zip';
 
 import * as repo from './db/repository.js';
 import { runMigration, migrateData, SchemaTooNewError } from './db/migrate.js';
@@ -77,6 +78,51 @@ export function csvSafe(value) {
 export function formatDosesCell(doses) {
   if (!Array.isArray(doses) || doses.length === 0) return '';
   return doses.map((d) => `${d.name} ${d.ml_per_l} ml/L`).join('; ');
+}
+
+// Names a zip-backup upload entry may carry: a flat file directly under
+// uploads/, made of the characters finalizeUpload() ever produces plus the
+// legacy sanitized set. Anything else (a directory, '..', an absolute path,
+// a drive letter) is refused before any byte is written (MR-54).
+const ZIP_UPLOAD_ENTRY = /^uploads\/[A-Za-z0-9._-]{1,120}$/;
+export const ZIP_BACKUP_JSON = 'backup.json';
+export const ZIP_MAX_BYTES = 50 * 1024 * 1024;
+
+// Validate a zip backup's entries without writing anything. Returns
+// { envelope, images: [{ name, bytes }] } or throws an Error whose message
+// is safe to send back as a 400.
+export function readZipBackup(buffer) {
+  let zip;
+  try {
+    zip = new AdmZip(buffer);
+  } catch {
+    throw new Error('This does not look like a zip file.');
+  }
+  const entries = zip.getEntries();
+  const json = entries.find((e) => e.entryName === ZIP_BACKUP_JSON);
+  if (!json) throw new Error(`This zip has no ${ZIP_BACKUP_JSON}; it is not a Hydro backup.`);
+  let envelope;
+  try {
+    envelope = JSON.parse(json.getData().toString('utf8'));
+  } catch {
+    throw new Error(`${ZIP_BACKUP_JSON} inside the zip is not valid JSON.`);
+  }
+  if (!envelope || envelope._type !== BACKUP_TYPE || !envelope.data || typeof envelope.data !== 'object') {
+    throw new Error('This does not look like a Hydro backup file.');
+  }
+  const images = [];
+  for (const e of entries) {
+    if (e === json || e.isDirectory) continue;
+    if (!ZIP_UPLOAD_ENTRY.test(e.entryName)) {
+      throw new Error(`Refusing zip entry "${e.entryName}": only flat files under uploads/ are allowed.`);
+    }
+    const bytes = e.getData();
+    if (!sniffImageExt(bytes.subarray(0, 12))) {
+      throw new Error(`Refusing zip entry "${e.entryName}": not a PNG, JPEG, GIF or WebP image.`);
+    }
+    images.push({ name: path.posix.basename(e.entryName), bytes });
+  }
+  return { envelope, images };
 }
 
 // Re-exported for backward compatibility with existing importers/tests.
@@ -597,12 +643,7 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
   // settings) as a single JSON file for safe-keeping or transfer. Photos live
   // as separate files under uploads/ and are NOT included in this snapshot.
   app.get('/backup', handle((_req, res) => {
-    const payload = {
-      _type: BACKUP_TYPE,
-      _version: 1,
-      exportedAt: new Date().toISOString(),
-      data: readData(),
-    };
+    const payload = backupEnvelope(readData());
     res.header('Content-Type', 'application/json');
     res.attachment(`hydro_backup_${new Date().toISOString().slice(0, 10)}.json`);
     res.send(JSON.stringify(payload, null, 2));
@@ -636,6 +677,86 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     res.json({
       message: 'Backup restored',
       counts: { plants: data.plants.length, logs: data.logs.length, schedules: data.schedules.length },
+      previousStoreSavedAs: snapshotPath,
+    });
+  }));
+
+  /* ------------------------ Backup with photos ------------------------ */
+
+  // The JSON envelope GET /backup sends, built once here so the zip carries
+  // byte-identical content.
+  const backupEnvelope = (data) => ({
+    _type: BACKUP_TYPE,
+    _version: 1,
+    exportedAt: new Date().toISOString(),
+    data,
+  });
+
+  // GET /backup/zip – the same envelope as backup.json plus uploads/<file>
+  // for every image a log references (missing files are skipped, not fatal:
+  // the JSON is still the complete store).
+  app.get('/backup/zip', handle((_req, res) => {
+    const data = readData();
+    const zip = new AdmZip();
+    zip.addFile(ZIP_BACKUP_JSON, Buffer.from(JSON.stringify(backupEnvelope(data), null, 2), 'utf8'));
+    const seen = new Set();
+    for (const log of data.logs) {
+      if (!log.image_url) continue;
+      const name = path.basename(log.image_url);
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const filePath = path.join(uploadsDir, name);
+      if (fs.existsSync(filePath)) zip.addFile(`uploads/${name}`, fs.readFileSync(filePath));
+    }
+    res.header('Content-Type', 'application/zip');
+    res.attachment(`hydro_backup_${new Date().toISOString().slice(0, 10)}.zip`);
+    res.send(zip.toBuffer());
+  }));
+
+  // POST /backup/restore/zip – multipart field `archive`. Every entry is
+  // validated (envelope shape, flat upload names, real image bytes) BEFORE
+  // the store is touched; then the same migrate / prepareImport / snapshot
+  // path as the JSON restore, and the images are written after the save.
+  // Existing upload files are left alone (an orphan is harmless; a deleted
+  // photo is not).
+  const zipUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: ZIP_MAX_BYTES, files: 1 } });
+  app.post('/backup/restore/zip', zipUpload.single('archive'), handle((req, res) => {
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'No zip file was uploaded.' });
+    let parsed;
+    try {
+      parsed = readZipBackup(req.file.buffer);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+    const raw = parsed.envelope.data;
+    if (!Array.isArray(raw.plants) && !Array.isArray(raw.logs)) {
+      return res.status(400).json({ error: 'This does not look like a Hydro backup file.' });
+    }
+    let migrated;
+    try {
+      migrated = migrateData(raw);
+    } catch (error) {
+      if (error instanceof SchemaTooNewError) {
+        return res.status(400).json({ error: `This backup ${error.message.slice('This data '.length)}` });
+      }
+      throw error;
+    }
+    const data = repo.prepareImport(migrated.data);
+    if (state.damaged) throw refuse();
+    const snapshotPath = repo.snapshot(dataFile, 'pre-restore', 5);
+    writeData(data);
+    let photos = 0;
+    for (const img of parsed.images) {
+      try {
+        fs.writeFileSync(path.join(uploadsDir, img.name), img.bytes);
+        photos += 1;
+      } catch (error) {
+        logger.error('Failed to write a restored photo:', { name: img.name, message: error.message });
+      }
+    }
+    res.json({
+      message: 'Backup restored',
+      counts: { plants: data.plants.length, logs: data.logs.length, schedules: data.schedules.length, photos },
       previousStoreSavedAs: snapshotPath,
     });
   }));
