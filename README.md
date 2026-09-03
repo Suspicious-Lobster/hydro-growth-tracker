@@ -65,6 +65,11 @@ nutrient mixes — all stored locally, fully offline.
 - **Zip backup & CSV import** — download a backup that includes your photos,
   restore from that zip, and import logs from a CSV file with a dry-run
   preview.
+- **Bud, the on-screen assistant** — wanders over to whatever you're filling
+  in or an out-of-range alert (toggle "Bud wanders the screen" in Settings to
+  keep him put), reacts to your readings and saves with nods, winces, cheers,
+  and sulks, answers typed questions about your own data, and speaks in a
+  Towelie (spacey) or Clean voice, your choice in Settings.
 
 ## 🔒 Privacy and your data
 
@@ -189,6 +194,7 @@ npm run health       # Print a quick environment/health check
 npm run make-icons   # Regenerate app icons from assets/icon.svg
 npm test             # Backend integration tests (with coverage)
 npm run test:e2e     # End-to-end: builds the frontend, launches the real app with Playwright
+node tools/bud_capture.mjs --out <dir>  # Dev tool: contact sheets of every Bud cue, for reviewing his body language
 
 # Frontend unit tests (pure logic)
 cd frontend && npm run test:unit

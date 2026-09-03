@@ -1,6 +1,6 @@
 {
   "name": "hydro-growth-tracker",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A cross-platform Electron desktop app for tracking hydroponic plant growth.",
   "author": "Suspicious-Lobster",
   "license": "MIT",
