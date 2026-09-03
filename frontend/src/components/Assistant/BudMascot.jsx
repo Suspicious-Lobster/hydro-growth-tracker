@@ -4,6 +4,7 @@ import { useAppData } from '../../contexts/AppDataContext';
 import { useAssistant } from '../../contexts/AssistantContext';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useDraggable } from '../../hooks/useDraggable';
+import { useBudWander } from '../../hooks/useBudWander';
 import { latestLog } from '../../utils/stats';
 import { inferStage } from '../../data/recommendations';
 import { measurementAlerts } from '../../utils/ranges';
@@ -74,7 +75,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const {
     effectsEnabled, muted, soundEnabled, position, minimized,
     dismissedTipIds, lastShownAt, setPosition, setMinimized, markShown, dismissTip,
-    tourStep, tourDone, startTour, setTourStep, endTour, voice,
+    tourStep, tourDone, startTour, setTourStep, endTour, voice, wanderEnabled,
   } = useAssistant();
   const reduced = useReducedMotion();
   const animate = effectsEnabled && !reduced;
@@ -196,10 +197,52 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
     reservoirAgeDays,
   });
 
+  // MR-65: `wanderFollowRef` breaks the circular dependency between
+  // useDraggable (needs `dragging` before `blocked` can be computed) and
+  // useBudWander (needs `blocked` before it can produce the position
+  // useDraggable should follow): each render passes useDraggable the wander
+  // position *from the previous render* as `follow`. At animation frame
+  // rates the one-render lag is imperceptible, and useDraggable ignores
+  // `follow` entirely while an actual drag is in progress either way.
+  const wanderFollowRef = useRef(null);
   const { position: pos, handleProps, dragging, wasDragged } = useDraggable(position, {
     size: { w: SIZE, h: SIZE },
     onCommit: setPosition,
+    follow: wanderFollowRef.current,
   });
+
+  // Never wander while the user is holding him, he's minimized, a bubble
+  // (tip or ask-menu) is open, the tour is running, or the user turned
+  // wandering off in Settings.
+  const wanderBlocked = dragging || minimized || open || tourActive || !wanderEnabled;
+  const wander = useBudWander({
+    home: position,
+    size: { w: SIZE, h: SIZE },
+    blocked: wanderBlocked,
+    onCue: fireCue,
+  });
+  wanderFollowRef.current = wanderBlocked ? null : wander.position;
+
+  // Bud walks near the field the user just focused (MR-65). The '*' bus
+  // subscription above already fires the 'peek' cue for this same event —
+  // this is a second, dedicated subscription that also moves him.
+  useBudEvent(BUD_EVENTS.FORM_FOCUS, useCallback(() => {
+    const el = document.activeElement;
+    if (el && el !== document.body) wander.goTo(el.getBoundingClientRect());
+  }, [wander]));
+
+  // Walks over and points at the out-of-range alerts once per plant, the
+  // first time its view opens with something actually wrong — not on every
+  // re-render, and not again for the same plant.
+  const pointedPlantIdRef = useRef(null);
+  useEffect(() => {
+    const id = selectedPlant?.id ?? null;
+    if (id == null || pointedPlantIdRef.current === id) return;
+    pointedPlantIdRef.current = id;
+    if (alerts.length === 0) return;
+    const el = document.querySelector('[data-bud-anchor="alert"]');
+    if (el) wander.goTo(el.getBoundingClientRect(), { point: true });
+  }, [selectedPlant?.id, alerts.length, wander]);
 
   // A soft pop whenever the speech bubble appears (no-op unless sound is enabled).
   useEffect(() => { if (open) pop(); }, [open]);

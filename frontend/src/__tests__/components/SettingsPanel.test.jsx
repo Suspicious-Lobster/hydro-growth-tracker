@@ -20,16 +20,19 @@ vi.mock('../../contexts/AppDataContext', () => ({
 }));
 
 const setVoice = vi.fn();
+const setWanderEnabled = vi.fn();
 vi.mock('../../contexts/AssistantContext', () => ({
   useAssistant: () => ({
     effectsEnabled: true,
     muted: false,
     soundEnabled: true,
     voice: 'towelie',
+    wanderEnabled: true,
     toggleEffects: vi.fn(),
     setMuted: vi.fn(),
     setSoundEnabled: vi.fn(),
     setVoice,
+    setWanderEnabled,
     resetDismissed: vi.fn(),
     startTour: vi.fn(),
   }),
@@ -62,6 +65,7 @@ describe('SettingsPanel (MR-25)', () => {
     updateSettings.mockClear();
     toastSuccess.mockClear();
     setVoice.mockClear();
+    setWanderEnabled.mockClear();
   });
 
   // MR-67: the voice select lives under Fun & Effects, saved instantly (no
@@ -73,6 +77,16 @@ describe('SettingsPanel (MR-25)', () => {
     await user.selectOptions(screen.getByLabelText("Bud's voice"), 'clean');
 
     expect(setVoice).toHaveBeenCalledWith('clean');
+  });
+
+  // MR-65: 'Stay put' — toggling wandering off from Fun & Effects.
+  it("toggling 'Bud wanders the screen' calls setWanderEnabled(false)", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole('switch', { name: 'Bud wanders the screen' }));
+
+    expect(setWanderEnabled).toHaveBeenCalledWith(false);
   });
 
   it('saves the length unit change and re-renders it', async () => {

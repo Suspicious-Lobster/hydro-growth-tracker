@@ -25,6 +25,7 @@ const KEYS = {
   tourDone: 'bud.tourDone',
   remindersEnabled: 'bud.remindersEnabled',
   voice: 'bud.voice',
+  wanderEnabled: 'bud.wanderEnabled',
 };
 
 // MR-67: Bud's personality. 'towelie' (default) or 'clean'; anything else
@@ -68,6 +69,9 @@ export const AssistantProvider = ({ children }) => {
     const v = read(KEYS.voice, 'towelie');
     return VALID_VOICES.includes(v) ? v : 'towelie';
   });
+  // MR-65: whether Bud walks over to what you're looking at (alerts, the
+  // focused form field) or stays put in his corner. Default on.
+  const [wanderEnabled, setWanderEnabledState] = useState(() => read(KEYS.wanderEnabled, true));
 
   useEffect(() => write(KEYS.effects, effectsEnabled), [effectsEnabled]);
   useEffect(() => write(KEYS.muted, muted), [muted]);
@@ -80,6 +84,7 @@ export const AssistantProvider = ({ children }) => {
   useEffect(() => write(KEYS.tourDone, tourDone), [tourDone]);
   useEffect(() => write(KEYS.remindersEnabled, remindersEnabled), [remindersEnabled]);
   useEffect(() => write(KEYS.voice, voice), [voice]);
+  useEffect(() => write(KEYS.wanderEnabled, wanderEnabled), [wanderEnabled]);
 
   const toggleEffects = useCallback(() => setEffectsEnabled((v) => !v), []);
   const setMuted = useCallback((v) => setMutedState(Boolean(v)), []);
@@ -88,6 +93,7 @@ export const AssistantProvider = ({ children }) => {
   const setMinimized = useCallback((v) => setMinimizedState(Boolean(v)), []);
   const setRemindersEnabled = useCallback((v) => setRemindersEnabledState(Boolean(v)), []);
   const setVoice = useCallback((v) => setVoiceState(VALID_VOICES.includes(v) ? v : 'towelie'), []);
+  const setWanderEnabled = useCallback((v) => setWanderEnabledState(Boolean(v)), []);
   const markShown = useCallback((now) => setLastShownAtState(now), []);
   const dismissTip = useCallback((id) => {
     setDismissedTipIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
@@ -100,13 +106,13 @@ export const AssistantProvider = ({ children }) => {
 
   const value = useMemo(() => ({
     effectsEnabled, muted, soundEnabled, position, minimized, dismissedTipIds, lastShownAt,
-    tourStep, tourDone, remindersEnabled, voice,
+    tourStep, tourDone, remindersEnabled, voice, wanderEnabled,
     toggleEffects, setMuted, setSoundEnabled, setPosition, setMinimized, markShown, dismissTip, resetDismissed,
-    startTour, setTourStep, endTour, setRemindersEnabled, setVoice,
+    startTour, setTourStep, endTour, setRemindersEnabled, setVoice, setWanderEnabled,
   }), [effectsEnabled, muted, soundEnabled, position, minimized, dismissedTipIds, lastShownAt,
-    tourStep, tourDone, remindersEnabled, voice,
+    tourStep, tourDone, remindersEnabled, voice, wanderEnabled,
     toggleEffects, setMuted, setSoundEnabled, setPosition, setMinimized, markShown, dismissTip, resetDismissed,
-    startTour, setTourStep, endTour, setRemindersEnabled, setVoice]);
+    startTour, setTourStep, endTour, setRemindersEnabled, setVoice, setWanderEnabled]);
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
 };

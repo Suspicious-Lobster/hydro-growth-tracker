@@ -11,11 +11,17 @@ const DRAG_THRESHOLD = 5; // px of movement before it counts as a drag, not a cl
 //   const { position, handleProps, dragging, wasDragged } = useDraggable(initial, { size, onCommit });
 //
 // `wasDragged()` lets a click handler ignore the click that ends a drag.
-export function useDraggable(initial, { size = { w: 72, h: 72 }, onCommit } = {}) {
+//
+// `follow` (MR-65) lets a caller (BudMascot, wandering) render the element at
+// a position this hook didn't produce — e.g. mid-walk — without going
+// through onCommit: pass the position to show while not dragging. It's read
+// only while a drag isn't in progress, so it can never fight the user's hand.
+export function useDraggable(initial, { size = { w: 72, h: 72 }, onCommit, follow } = {}) {
   const [position, setPosition] = useState(initial);
   const [dragging, setDragging] = useState(false);
   const start = useRef(null);
   const moved = useRef(false);
+  const displayPosition = !dragging && follow ? follow : position;
 
   const bounds = useCallback(() => {
     const maxRight = Math.max(0, (window.innerWidth || 0) - size.w);
@@ -24,11 +30,14 @@ export function useDraggable(initial, { size = { w: 72, h: 72 }, onCommit } = {}
   }, [size.w, size.h]);
 
   const onPointerDown = useCallback((e) => {
-    start.current = { x: e.clientX, y: e.clientY, right: position.right, bottom: position.bottom };
+    // Start from wherever the element is actually rendered right now (which
+    // may be a `follow` position, mid-walk) so grabbing it never causes a jump.
+    start.current = { x: e.clientX, y: e.clientY, right: displayPosition.right, bottom: displayPosition.bottom };
     moved.current = false;
+    setPosition(displayPosition);
     setDragging(true);
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not all targets support capture */ }
-  }, [position]);
+  }, [displayPosition]);
 
   const onPointerMove = useCallback((e) => {
     if (!start.current) return;
@@ -62,5 +71,5 @@ export function useDraggable(initial, { size = { w: 72, h: 72 }, onCommit } = {}
 
   const wasDragged = useCallback(() => moved.current, []);
 
-  return { position, handleProps: { onPointerDown, onPointerMove, onPointerUp }, dragging, wasDragged };
+  return { position: displayPosition, handleProps: { onPointerDown, onPointerMove, onPointerUp }, dragging, wasDragged };
 }
