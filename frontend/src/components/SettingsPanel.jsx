@@ -1,5 +1,5 @@
 import React, { useState, useId } from 'react';
-import { Save } from 'lucide-react';
+import { Save, Plus, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import { useAssistant } from '../contexts/AssistantContext';
@@ -22,8 +22,14 @@ const SettingsPanel = () => {
     temp: settings.units.temp,
     ppm_scale: settings.ppm_scale,
     default_species: settings.default_species || '',
+    // MR-53: price per liter of each nutrient product, for the cost card.
+    nutrient_prices: (settings.nutrient_prices || []).map((p) => ({ name: p.name, price_per_liter: String(p.price_per_liter) })),
   });
   const [busy, setBusy] = useState(false);
+
+  const updatePrice = (i, patch) => setForm({ ...form, nutrient_prices: form.nutrient_prices.map((p, idx) => (idx === i ? { ...p, ...patch } : p)) });
+  const removePrice = (i) => setForm({ ...form, nutrient_prices: form.nutrient_prices.filter((_, idx) => idx !== i) });
+  const addPrice = () => setForm({ ...form, nutrient_prices: [...form.nutrient_prices, { name: '', price_per_liter: '' }] });
 
   const save = async () => {
     setBusy(true);
@@ -32,6 +38,9 @@ const SettingsPanel = () => {
         units: { length: form.length, volume: form.volume, temp: form.temp },
         ppm_scale: Number(form.ppm_scale),
         default_species: form.default_species || null,
+        nutrient_prices: form.nutrient_prices
+          .filter((p) => p.name.trim())
+          .map((p) => ({ name: p.name.trim(), price_per_liter: parseFloat(p.price_per_liter) || 0 })),
       });
       toast.success('Settings saved');
     } catch (err) {
@@ -82,6 +91,28 @@ const SettingsPanel = () => {
             {SPECIES_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </Field>
+      </div>
+
+      {/* Nutrient prices (MR-53): what a liter of each product costs, in your
+          own currency, so the plant view can total what a grow has used. */}
+      <div>
+        <div className={`font-medium ${colors.text}`}>Nutrient prices</div>
+        <div className={`text-sm ${colors.textMuted} mb-2`}>Price per liter of each product you dose. Names must match the dose names on your logs.</div>
+        <div className="space-y-2">
+          {form.nutrient_prices.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input aria-label="Nutrient name" value={p.name} onChange={(e) => updatePrice(i, { name: e.target.value })} placeholder="e.g., Part A" className={`flex-1 ${selectCls}`} />
+              <input aria-label="Price per liter" type="number" step="0.01" min="0" value={p.price_per_liter} onChange={(e) => updatePrice(i, { price_per_liter: e.target.value })} placeholder="per liter" className={`w-32 ${selectCls}`} />
+              <button type="button" aria-label="Remove price" onClick={() => removePrice(i)} className={`${colors.bgAccent} border ${colors.border} rounded-lg p-2`}>
+                <X size={16} className={colors.text} />
+              </button>
+            </div>
+          ))}
+          <button type="button" onClick={addPrice} disabled={form.nutrient_prices.length >= 20}
+            className={`${colors.bgAccent} ${colors.text} border ${colors.border} rounded-lg px-3 py-1.5 text-sm disabled:opacity-50 flex items-center gap-1`}>
+            <Plus size={14} /> Add nutrient price
+          </button>
+        </div>
       </div>
 
       <button onClick={save} disabled={busy} className={`${colors.primaryBg} text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50`}>

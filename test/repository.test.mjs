@@ -14,7 +14,7 @@ describe('normalize / emptyData', () => {
     const d = data();
     expect(d.schemaVersion).toBe(repo.SCHEMA_VERSION);
     expect(d).toMatchObject({ plants: [], logs: [], schedules: [], nextId: 1, nextPlantId: 1, nextScheduleId: 1 });
-    expect(d.settings).toEqual({ units: { length: 'cm', volume: 'liters', temp: 'C' }, ppm_scale: 500, default_species: null });
+    expect(d.settings).toEqual({ units: { length: 'cm', volume: 'liters', temp: 'C' }, ppm_scale: 500, default_species: null, nutrient_prices: [] });
   });
   it('normalize fills missing top-level and nested settings fields', () => {
     const d = repo.normalize({ logs: [{ id: 1 }], settings: { units: { temp: 'F' } } });

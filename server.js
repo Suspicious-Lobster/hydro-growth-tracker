@@ -761,8 +761,13 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     res.json(repo.getSettings(data));
   }));
 
-  // PUT /settings – merge a settings patch (enums clamped).
+  // PUT /settings – merge a settings patch (enums clamped; the nutrient
+  // price list is validated, MR-53).
   app.put('/settings', handle((req, res) => {
+    if (req.body && 'nutrient_prices' in req.body) {
+      const err = repo.validateNutrientPrices(req.body.nutrient_prices);
+      if (err) return res.status(400).json({ error: 'Validation failed', details: [err] });
+    }
     const data = readData();
     const settings = repo.updateSettings(data, req.body);
     writeData(data);

@@ -20,7 +20,30 @@ export const defaultSettings = () => ({
   units: { length: 'cm', volume: 'liters', temp: 'C' },
   ppm_scale: 500,
   default_species: null,
+  // MR-53: what a liter of each nutrient product costs, in the user's own
+  // currency (a plain number; the app never names a currency).
+  nutrient_prices: [],
 });
+
+// Bounds for the nutrient price list; the HTTP layer refuses a body outside
+// them, and updateSettings() normalizes whatever passed.
+export const NUTRIENT_PRICES_MAX = 20;
+export const NUTRIENT_PRICE_NAME_MAX = 60;
+export const NUTRIENT_PRICE_MAX = 100000;
+
+// Returns an error string, or null when `list` is an acceptable price list.
+export function validateNutrientPrices(list) {
+  if (!Array.isArray(list)) return 'nutrient_prices must be a list';
+  if (list.length > NUTRIENT_PRICES_MAX) return `nutrient_prices must have at most ${NUTRIENT_PRICES_MAX} entries`;
+  for (const p of list) {
+    if (!p || typeof p !== 'object') return 'Each price must be an object with name and price_per_liter';
+    const name = typeof p.name === 'string' ? p.name.trim() : '';
+    if (!name || name.length > NUTRIENT_PRICE_NAME_MAX) return `Each price needs a name of 1 to ${NUTRIENT_PRICE_NAME_MAX} characters`;
+    const price = parseFloat(p.price_per_liter);
+    if (Number.isNaN(price) || price < 0 || price > NUTRIENT_PRICE_MAX) return `price_per_liter must be a number between 0 and ${NUTRIENT_PRICE_MAX}`;
+  }
+  return null;
+}
 
 // Default shape of the JSON data file (current schema version).
 export const emptyData = () => ({
@@ -621,5 +644,10 @@ export function updateSettings(data, body) {
   }
   if (body.ppm_scale === 500 || body.ppm_scale === 700) s.ppm_scale = body.ppm_scale;
   if ('default_species' in body) s.default_species = body.default_species || null;
+  // Only a list that validateNutrientPrices() accepts is stored; anything
+  // else leaves the saved prices untouched (the route has already 400'd).
+  if ('nutrient_prices' in body && validateNutrientPrices(body.nutrient_prices) === null) {
+    s.nutrient_prices = body.nutrient_prices.map((p) => ({ name: p.name.trim(), price_per_liter: parseFloat(p.price_per_liter) }));
+  }
   return s;
 }

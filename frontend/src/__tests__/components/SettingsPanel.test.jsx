@@ -89,4 +89,19 @@ describe('SettingsPanel (MR-25)', () => {
     expect(toastSuccess).toHaveBeenCalledWith('Settings saved');
     expect(screen.getByDisplayValue('Inches (in)')).toBeInTheDocument();
   });
+
+  // MR-53: nutrient prices are edited as rows and saved with the rest.
+  it('adds a nutrient price row and saves it as nutrient_prices', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /add nutrient price/i }));
+    await user.type(screen.getByLabelText('Nutrient name'), 'Part A');
+    await user.type(screen.getByLabelText('Price per liter'), '30');
+    await user.click(screen.getByRole('button', { name: /save settings/i }));
+
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+    const [payload] = updateSettings.mock.calls[0];
+    expect(payload.nutrient_prices).toEqual([{ name: 'Part A', price_per_liter: 30 }]);
+  });
 });
