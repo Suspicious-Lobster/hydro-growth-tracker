@@ -20,16 +20,32 @@ LANES = {
     "C": "Electron shell and packaging",
     "D": "Tests and CI",
     "E": "Docs and cleanup",
+    "F": "Features",
 }
 HEADER = re.compile(r"<!--row (.*?)-->\s*\n\*\*(MR-\d+) \[[A-Z/]+\] (.*?)\*\*", re.S)
 
 
-def main(version: str, date: str) -> int:
+ROW_REF = re.compile(r"\((MR-\d+)(?:,|\))")
+
+
+def already_released(changelog: Path | None) -> set[str]:
+    """Row ids already listed in an existing CHANGELOG.md, so a new section
+    only carries what is NEW since the last release. (1.3.0's first draft
+    repeated every 1.2.0 row because the board never forgets a done row.)"""
+    if changelog is None or not changelog.exists():
+        return set()
+    return set(ROW_REF.findall(changelog.read_text(encoding="utf-8")))
+
+
+def main(version: str, date: str, changelog: Path | None = None) -> int:
     text = BOARD.read_text(encoding="utf-8")
+    skip = already_released(changelog)
     rows: dict[str, list[tuple[str, str, str]]] = {k: [] for k in LANES}
     for m in HEADER.finditer(text):
         fields = dict(kv.split("=", 1) for kv in m.group(1).split() if "=" in kv)
         if fields.get("status") != "done":
+            continue
+        if m.group(2) in skip:
             continue
         lane = fields.get("lane", "E")
         title = m.group(3).strip().rstrip(".")
@@ -49,7 +65,8 @@ def main(version: str, date: str) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         print(__doc__, file=sys.stderr)
         sys.exit(2)
-    sys.exit(main(sys.argv[1], sys.argv[2]))
+    existing = Path(sys.argv[3]) if len(sys.argv) == 4 else None
+    sys.exit(main(sys.argv[1], sys.argv[2], existing))

@@ -4,6 +4,45 @@ All notable changes to Hydro Growth Tracker. Entries are generated from the
 board's done rows (`python tools/changelog_from_board.py <version> <date>`);
 row ids point at `docs/board.md`, shas at the commit.
 
+## 1.3.0 - 2026-09-03
+
+### Tests and CI
+
+- validate ladder that knows which test files belong to in-flight rows (MR-36, 1a8482c)
+- Playwright e2e coverage for the new features: quick log, reservoir event, dosing, zip backup (MR-58, 95553f4)
+- One renderWithProviders helper for component tests; retire the per-component toast fallback (MR-60, 3e3924a)
+- Validate on a detached worktree so in-flight worker edits never poison the ladder (MR-61, 3d96855)
+
+### Docs and cleanup
+
+- Docs and version for the feature release: user guide sections, changelog lane F, version 1.3.0 (MR-57)
+- Version 1.2.0 and a CHANGELOG (MR-30, 6152151)
+- Node 22 baseline: engines field, .nvmrc, and a check that CI matches (MR-35, 4319216)
+- TASKS.md: mark auto-backup (18) and installer smoke test (20) done, point every open item at its board row (MR-56, fef60dd)
+
+### Features
+
+- Backend: structured nutrient doses on logs, reservoir-event entity, optional nutrients text, photo replace on edit (TASKS 1, 2, 9, 13 backend half) (MR-37, f5b1e7c)
+- VPD calculation, stage bands, chart series and out-of-range alert (TASKS 3) (MR-38, ec676d8)
+- EC and pH drift detection with Bud warning early (TASKS 5) (MR-39, ad6c317)
+- Deficiency diagnosis helper: pick symptoms, get likely nutrient issue and fix (TASKS 7) (MR-40, 83dc93c)
+- Dashboard widgets: next feeding, latest readings, alerts, harvest countdown (TASKS 10) (MR-42, ff1208e)
+- Log search and filter: text, plant, date range, stage, measurement presence (TASKS 11) (MR-43, efa3d70)
+- Feeding reminders as desktop notifications with a settings toggle (TASKS 16) (MR-44, 1017c0e)
+- Dosing UI: dose rows on the add and edit log forms, shown in the log list and CSV (TASKS 1 frontend half) (MR-41, cfa123a)
+- Reservoir change tracker UI: log changes and top-offs, see when water was last refreshed (TASKS 2 frontend half) (MR-46, 7ba301d)
+- Quick-log fast entry: pH, EC and height in one strip on the dashboard (TASKS 9) (MR-47, 5e81dc4)
+- Grow-vs-ideal overlay: expected height curve from the species profile behind the real line (TASKS 6) (MR-48, c9ace1a)
+- Harvest prediction with a confidence range from observed stage transitions and growth rate (TASKS 8) (MR-49, 6d7233b)
+- Backup with photos: zip export and restore that carries the uploads folder (TASKS 17) (MR-54, 5e2b32a)
+- Multi-plant compare overlay: several plants on one chart by day since start (TASKS 12) (MR-50, 81fe9c0)
+- Photo timeline in the plant view, and replacing a photo when editing a log (TASKS 13 frontend half) (MR-51, 0a69c85)
+- Achievements and badges that Bud celebrates (TASKS 15) (MR-45, 6a8c232)
+- Bud health-reactive expansion: reacts to reservoir age, drift, VPD and stage changes, and knows more tips (TASKS 14) (MR-52, c9be6b0)
+- Water and cost tracking: consumption per grow and running cost from nutrient prices (TASKS 4) (MR-53, 92b2c70)
+- CSV import of logs from another tracker with a dry-run preview (TASKS 19) (MR-55, af05907)
+- Mount CostCard in the plant view (MR-59, 7ed2c2b)
+
 ## 1.2.0 - 2026-09-02
 
 ### Data safety and security

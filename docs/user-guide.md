@@ -21,14 +21,126 @@ data is never lost.
 1. Open the **Plants** tab and create a plant (name, species, system type,
    reservoir size, start date). You can rename, archive, or delete a plant
    later.
-2. Open **Add Log** to record a measurement for a plant. Height and the
-   nutrients you used are required; everything else is optional: pH, EC/PPM,
-   water and air temperature, humidity, light hours, reservoir volume, growth
-   stage, notes, and a photo.
+2. Open **Add Log** to record a measurement for a plant. Height is required;
+   everything else is optional: nutrients (as free text, structured doses, or
+   both), pH, EC/PPM, water and air temperature, humidity, light hours,
+   reservoir volume, growth stage, notes, and a photo.
 3. Use **View Logs** to browse, edit, or delete past entries.
 4. The **Dashboard** shows each plant's latest measurements and flags any
    reading that falls outside the recommended range for its species and
    growth stage.
+
+## New in 1.3
+
+These features were added in version 1.3.0.
+
+### Doses
+
+On **Add Log** and when editing a log, a "Doses" editor lets you record each
+nutrient product by name with its ml/L, up to 10 rows. Doses show as small
+pills (for example "Part A 2 ml/L") under the nutrients line in **View
+Logs**, and are included as a column in CSV export. The old free-text
+nutrients field is now optional, so you can log with doses alone.
+
+### Reservoir tracking
+
+Open a plant's page for a "Reservoir" card. Log a **Full change** or
+**Top-off**, with the volume in your display units, a date, and optional
+EC/pH/notes. The card shows "Last full change: N days ago" so you always
+know how fresh your solution is.
+
+### VPD (vapour pressure deficit)
+
+The plant chart now plots VPD, computed from air temperature and humidity
+(leaf temperature is taken as 2 degrees C below air temperature), with a
+shaded band showing the ideal range for the plant's growth stage. A VPD
+outside that band shows up in the plant's alerts.
+
+### Drift alerts
+
+Bud now warns you early when pH or EC is drifting toward the edge of the
+healthy range across your last few readings, instead of waiting until a
+reading is already out of range.
+
+### Deficiency helper
+
+Click Bud and choose "Something looks wrong" to tick the symptoms you see
+(yellowing leaves, curling, spots, and more). Bud ranks the most likely
+nutrient issues and shows a fix for each.
+
+### Dashboard widgets
+
+The Dashboard now shows four tiles above your plant cards: **Next
+feeding**, **Latest reading**, **Alerts**, and **Harvest** countdown, so you
+can see the state of your whole grow at a glance.
+
+### Log filters
+
+**View Logs** has a filter toolbar: a text search, a plant picker, a date
+range, a growth-stage filter, a filter for logs that have a measurement
+(pH/EC/PPM/photo), and a "Clear filters" button.
+
+### Feeding reminders
+
+Turn on **Feeding reminders** in Settings under "Fun & Effects" to get a
+desktop notification once a day when a feeding is due.
+
+### Badges
+
+Click Bud and choose "Show my badges" to see the achievements you have
+earned so far, such as your first log or a 7-day care streak. Bud
+celebrates when you earn a new one.
+
+### Quick log
+
+A one-row strip on the **Dashboard** lets you log plant, height, pH, and EC
+in seconds, without opening the full Add Log form.
+
+### Ideal curve
+
+When a plant has a start date, its growth chart shows a dashed "Ideal" line
+based on the species profile, so you can see how your plant's height
+compares to the expected curve for its stage.
+
+### Harvest range
+
+Bud's harvest countdown now gives a range, like "about N days (M-K)", along
+with a confidence level based on how your plant's stages have actually
+progressed.
+
+### Compare plants
+
+Below the dashboard's plant grid, open the collapsible "Compare plants"
+card to pick up to 6 plants and a metric (height, pH, or EC) and see them
+plotted together on one chart, aligned by days since each plant started.
+
+### Photo timeline
+
+Once a plant has 2 or more photos, its page shows a photo timeline above
+the history table: a slider that scrubs through the photos with a caption
+showing the date and height at that point. When editing a log, "Replace
+photo" lets you swap in a new image.
+
+### Water and cost
+
+A plant's page shows a "Water & cost" card: total water used, nutrient
+usage per product, and an estimated running cost. Set your prices per
+liter in **Settings > Nutrient prices**.
+
+### Zip backup
+
+In **Settings > Backup & Restore**, "Download backup with photos" saves a
+zip file containing your data plus every photo, so you no longer need to
+copy the `uploads/` folder separately. "Restore from zip..." brings it all
+back.
+
+### CSV import
+
+In **Settings > Backup & Restore**, "Import logs from CSV..." lets you
+bring in logs from another tracker or spreadsheet. It shows a preview of
+what will be imported (and any rows with problems) before you confirm.
+Required columns are plant, date, and height; everything else is optional.
+This app's own CSV export can be re-imported as-is.
 
 ## Feeding schedules
 

@@ -32,6 +32,39 @@ nutrient mixes — all stored locally, fully offline.
   feeding program to a calendar-compatible file.
 - **Dark / light themes**, **toast notifications**, and **add-log draft
   auto-save**.
+- **Structured doses** — record nutrient products by name and ml/L (up to 10
+  per log) alongside or instead of free-text nutrients; shown as pills in
+  View Logs and as a column in CSV export.
+- **Reservoir tracker** — log full changes and top-offs per plant, with
+  volume, EC/pH and notes, and a "last full change" readout.
+- **VPD tracking** — vapour pressure deficit computed from air temperature
+  and humidity, charted with a stage-aware ideal band and out-of-range
+  alerts.
+- **Drift alerts** — Bud warns when pH or EC is trending out of range across
+  recent readings, before it's actually out of range.
+- **Deficiency helper** — pick the symptoms you see and get ranked likely
+  nutrient issues with fixes, via Bud.
+- **Dashboard widgets and quick log** — next-feeding, latest-reading, alerts
+  and harvest tiles above the plant grid, plus a one-row quick-log strip for
+  fast pH/EC/height entries.
+- **Log filters** — search and filter View Logs by plant, date range, stage,
+  and measurement presence.
+- **Feeding reminders** — optional desktop notifications when a feeding is
+  due, once per day.
+- **Badges** — achievements for logging milestones and care streaks, with
+  Bud celebrating newly earned ones.
+- **Ideal curve & harvest range** — a dashed expected-height curve on the
+  growth chart, and a harvest countdown with a confidence range based on
+  observed stage transitions.
+- **Compare plants** — overlay up to 6 plants' height, pH, or EC on one
+  chart, aligned by days since each plant's start.
+- **Photo timeline** — scrub through a plant's photos over time, with photo
+  replacement when editing a log.
+- **Water & cost tracking** — running water usage and nutrient cost per
+  plant, priced from your own nutrient prices in Settings.
+- **Zip backup & CSV import** — download a backup that includes your photos,
+  restore from that zip, and import logs from a CSV file with a dry-run
+  preview.
 
 ## 🔒 Privacy and your data
 
@@ -105,6 +138,10 @@ cd frontend && npm install && cd ..
 npm run dev
 ```
 
+On Node 20, `npm install` cannot fetch the Electron binary itself. Instead
+run `npm install --ignore-scripts`, then `node scripts/fetch-electron.mjs` to
+download it separately.
+
 The Electron window opens automatically once the dev server is ready.
 
 ## 📦 Building a desktop installer
@@ -124,16 +161,24 @@ Build the platform-native package on the matching OS (or use a CI matrix).
 
 ## 📱 Usage
 
-- **Dashboard** — per-plant cards with latest measurements and out-of-range
-  alerts; click a plant for its detail view.
-- **Add Log** — record a growth entry with full measurements; pick an existing
-  plant or create a new one inline. The form auto-saves a draft as you type.
-- **View Logs** — browse, edit, or delete entries.
+- **Dashboard** — widgets for next feeding, latest reading, alerts and
+  harvest, a quick-log strip, per-plant cards with latest measurements and
+  out-of-range alerts, and a collapsible compare-plants chart; click a plant
+  for its detail view.
+- **Add Log** — record a growth entry with full measurements, structured
+  nutrient doses, and a photo; pick an existing plant or create a new one
+  inline. The form auto-saves a draft as you type.
+- **View Logs** — browse, filter (search, plant, date range, stage,
+  measurement presence), edit, or delete entries.
 - **Feeding** — see due/overdue feedings, mark them fed, add/edit/delete
   schedules, view species-aware recommendations, open the nutrient calculator,
-  or export a feeding calendar.
-- **Plants** — create, edit, rename, archive, restore, or delete plants.
-- **Settings** — display units and PPM scale.
+  export a feeding calendar, or turn on desktop feeding reminders.
+- **Plants** — create, edit, rename, archive, restore, or delete plants; each
+  plant's page has VPD and ideal-curve charts, a reservoir tracker, a photo
+  timeline, and a water & cost card.
+- **Settings** — display units, PPM scale, nutrient prices, feeding
+  reminders, and backup/restore (including zip backup with photos and CSV
+  import).
 
 ## 🧰 Useful scripts
 
