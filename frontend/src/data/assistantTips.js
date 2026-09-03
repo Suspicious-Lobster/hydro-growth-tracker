@@ -6,11 +6,17 @@
 //
 // Tone: playful, lightly cannabis-punny, family-friendly. All copy lives here.
 
-import { totalGrowth, daysTracked, latestLog, currentHeight } from '../utils/stats';
-import { stageLabel, getStageGuidance, getProfile } from './recommendations';
+import { totalGrowth, daysTracked, latestLog, currentHeight, sortLogsByDate } from '../utils/stats';
+import { stageLabel, getStageGuidance, getProfile, inferStage } from './recommendations';
 import { feedingStatus } from '../utils/feeding';
 import { phTrend, driftAlerts, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
 import { BADGES } from '../utils/achievements';
+import { parseLocalDate } from '../utils/dates';
+import { GROWTH_STAGES } from './plantKnowledge';
+
+// Lifecycle order used to tell whether an inferred stage change is a step
+// forward (worth celebrating) rather than a correction/backslide.
+const STAGE_ORDER = Object.values(GROWTH_STAGES);
 
 // Higher number = more important. Alerts always outrank chit-chat. Reminders
 // (feeding/logging) sit just below alerts; insights (trends) below milestones.
@@ -21,6 +27,9 @@ const LOG_NUDGE_DAYS = 4;
 
 // Minimum gap between non-alert tips, so Bud is friendly, not naggy.
 export const RATE_LIMIT_MS = 60 * 1000;
+
+// A reservoir sitting unchanged this long (or longer) earns a nudge.
+export const RESERVOIR_STALE_DAYS = 14;
 
 const plantKey = (plant) => (plant && plant.id != null ? plant.id : 'none');
 
@@ -47,13 +56,21 @@ const driftCopy = (d) => {
   return `Heads up — ${label} drift: it's ${dirWord} and sitting outside the target band (aim ${d.min}–${d.max}). Worth a look before it wanders further. 🧪`;
 };
 
-const IDLE_TIPS = [
+export const IDLE_TIPS = [
   "Psst — logging height every few days makes your growth chart way more satisfying. 📈",
   "Stay hydrated, and so should your roots. 💧",
   "A quick pH check today saves a headache tomorrow.",
   "Talking to your plants is optional. Logging them is not. 😉",
   "Clean reservoir, happy roots. Just sayin'.",
   "Good things grow to those who track.",
+  "Bud's motto: measure twice, harvest once. 🌿",
+  "Fun fact: plants can't read your mind. Logs help. 📋",
+  "A watched pot never boils, but a watered root always grows.",
+  "Feeling leafy? That's a good sign, keep it up. 🍃",
+  "Every log is a tiny time capsule for future-you. 🕰️",
+  "Bud approves of consistent EC checks. Very responsible of you.",
+  "Small daily habits, big leafy results. 🌱",
+  "Reservoir water gets stale faster than yesterday's memes.",
 ];
 
 // Logging-streak praise, biggest first (find() picks the highest earned tier).
@@ -76,7 +93,7 @@ const GREETING_TIPS = [
 
 // Build every tip that *could* apply right now, each with a stable id so the
 // same condition always yields the same id (enables dedupe + "don't show again").
-export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = [], stage, schedules = [], newBadges = [] } = {}, now = 0) {
+export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = [], stage, schedules = [], newBadges = [], reservoirEvents = [] } = {}, now = 0) {
   const candidates = [];
   const pid = plantKey(selectedPlant);
 
@@ -127,6 +144,26 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         priority: TIP_KINDS.milestone,
       });
     }
+    // Stage-change congratulation: compare the last two logs' OWN inferred
+    // stages (not the caller-supplied `stage`), so this fires the moment a
+    // fresh log crosses into a new stage, independent of the generic
+    // "just hit X" milestone above.
+    const recentLogs = sortLogsByDate(logs);
+    if (recentLogs.length >= 2) {
+      const [prevLog, newLog] = recentLogs.slice(-2);
+      const prevStage = inferStage(selectedPlant.species, prevLog.height, prevLog.growth_stage);
+      const newStage = inferStage(selectedPlant.species, newLog.height, newLog.growth_stage);
+      if (prevStage && newStage && prevStage !== newStage
+        && STAGE_ORDER.indexOf(newStage) > STAGE_ORDER.indexOf(prevStage)) {
+        candidates.push({
+          id: `milestone:stage:${pid}:${newStage}`,
+          kind: 'milestone',
+          expression: 'celebrating',
+          text: `${selectedPlant.name} just leveled up to ${stageLabel(newStage)} — nice work! 🎉`,
+          priority: TIP_KINDS.milestone,
+        });
+      }
+    }
     const grown = totalGrowth(logs);
     const bucket = Math.floor(grown / 10) * 10;
     if (bucket >= 10) {
@@ -165,6 +202,34 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
 
   // 3. Reminders + insights — need a selected plant with data.
   if (selectedPlant) {
+    // Reservoir freshness — nudge once the newest change is stale, otherwise
+    // (if a change has never been logged at all) gently invite a first one.
+    const newestChange = reservoirEvents.find((e) => e && e.kind === 'change');
+    if (newestChange) {
+      const changedAt = parseLocalDate(newestChange.date);
+      if (changedAt) {
+        const age = Math.floor((now - changedAt.getTime()) / 86400000);
+        if (age >= RESERVOIR_STALE_DAYS) {
+          const weekBucket = Math.floor(age / 7);
+          candidates.push({
+            id: `reminder:reservoir:${pid}:${weekBucket}`,
+            kind: 'reminder',
+            expression: 'idle',
+            text: `${selectedPlant.name}'s reservoir hasn't been changed in ${age} days — stale water makes roots grumpy. Time for a refresh? 💧`,
+            priority: TIP_KINDS.reminder,
+          });
+        }
+      }
+    } else if (logs.length >= 5) {
+      candidates.push({
+        id: `contextual:reservoir-intro:${pid}`,
+        kind: 'contextual',
+        expression: 'idle',
+        text: `Haven't seen a reservoir change logged for ${selectedPlant.name} yet — give it a go, roots love a fresh start. 💧`,
+        priority: TIP_KINDS.contextual,
+      });
+    }
+
     // Feeding due (reuse the schedule timing util; `now` is injected for purity).
     const when = new Date(now);
     for (const s of schedules) {

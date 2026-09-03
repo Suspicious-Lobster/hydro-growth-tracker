@@ -8,6 +8,8 @@ import { latestLog } from '../../utils/stats';
 import { inferStage } from '../../data/recommendations';
 import { measurementAlerts } from '../../utils/ranges';
 import { dueCount } from '../../utils/feeding';
+import { vpdKpa } from '../../utils/vpd';
+import { parseLocalDate } from '../../utils/dates';
 import { selectTip, answerQuestion } from '../../data/assistantTips';
 import { isHarvestWindow } from '../../utils/trends';
 import { earnedBadges, newlyEarned } from '../../utils/achievements';
@@ -43,7 +45,7 @@ const writeSeenBadgeIds = (ids) => {
 // The floating leaf buddy. Gathers the current context, asks the pure tip engine
 // what (if anything) to say, and renders the draggable mascot + speech bubble.
 export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
-  const { getPlantLogs, schedules, logs: allLogs, plants, loading } = useAppData();
+  const { getPlantLogs, getPlantReservoirEvents, schedules, logs: allLogs, plants, loading } = useAppData();
   const {
     effectsEnabled, muted, soundEnabled, position, minimized,
     dismissedTipIds, lastShownAt, setPosition, setMinimized, markShown, dismissTip,
@@ -73,12 +75,18 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const plantSchedules = selectedPlant
     ? (schedules || []).filter((s) => s.plant_id === selectedPlant.id)
     : [];
+  // Reservoir history for the selected plant (guarded: older test mocks of
+  // useAppData may not provide getPlantReservoirEvents at all).
+  const reservoirEvents = selectedPlant && getPlantReservoirEvents ? getPlantReservoirEvents(selectedPlant) : [];
+  // Informational VPD reading for the latest log; the out-of-band ALERT itself
+  // already reaches Bud via `alerts` (measurementAlerts includes a 'vpd' key).
+  const vpd = latest ? vpdKpa(latest.air_temp, latest.humidity) : null;
   // Badges: which are earned right now, and which are newly earned since the
   // last time we celebrated one (persisted in localStorage so it's not repeated).
   const earnedIds = earnedBadges({ plants, logs: allLogs }, new Date());
   const seenBadgeIds = readSeenBadgeIds();
   const newBadges = newlyEarned(seenBadgeIds, earnedIds);
-  const input = { activeTab, selectedPlant, alerts, logs, stage, schedules: plantSchedules, newBadges };
+  const input = { activeTab, selectedPlant, alerts, logs, stage, schedules: plantSchedules, newBadges, reservoirEvents, vpd };
 
   // Worried resting face when the selected plant has a clearly out-of-range reading;
   // visibly buzzing once it's in the harvest window with nothing wrong.
@@ -96,6 +104,17 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const stateRef = useRef();
   stateRef.current = { input, dismissedIds: dismissedTipIds, lastShownAt, muted, earnedIds };
 
+  // Age (whole days) of the most recent reservoir change, or null if none has
+  // ever been logged — included in `sig` so crossing the stale-day threshold
+  // re-triggers the proactive check.
+  const newestChangeEvent = reservoirEvents.find((e) => e && e.kind === 'change');
+  const reservoirAgeDays = newestChangeEvent
+    ? (() => {
+      const changedAt = parseLocalDate(newestChangeEvent.date);
+      return changedAt ? Math.floor((Date.now() - changedAt.getTime()) / 86400000) : null;
+    })()
+    : null;
+
   // A compact signature: re-run the proactive check whenever the situation changes.
   const sig = JSON.stringify({
     activeTab,
@@ -108,6 +127,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
     muted,
     dismissed: dismissedTipIds.length,
     newBadges,
+    reservoirAgeDays,
   });
 
   const { position: pos, handleProps, dragging, wasDragged } = useDraggable(position, {

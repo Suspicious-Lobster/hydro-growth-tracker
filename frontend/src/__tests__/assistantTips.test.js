@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectTip, buildCandidates, answerQuestion, RATE_LIMIT_MS, TIP_KINDS } from '../data/assistantTips';
+import { selectTip, buildCandidates, answerQuestion, RATE_LIMIT_MS, TIP_KINDS, IDLE_TIPS } from '../data/assistantTips';
 
 const plant = { id: 1, name: 'Tomato', species: 'tomato', target_stage: null };
 const alert = { key: 'ph', label: 'pH', value: 7.4, range: { min: 5.8, max: 6.2 }, status: 'out' };
@@ -249,6 +249,38 @@ describe('assistantTips badge milestones', () => {
   it('does not emit a badge milestone when newBadges is empty', () => {
     const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: [] });
     expect(cands.some((c) => c.id.startsWith('milestone:badge:'))).toBe(false);
+  });
+});
+
+describe('assistantTips MR-52: reservoir age, VPD, stage-change, idle count', () => {
+  it('IDLE_TIPS has at least 14 entries', () => {
+    expect(IDLE_TIPS.length).toBeGreaterThanOrEqual(14);
+  });
+
+  it('yields a reservoir reminder when the newest change is 15 days old', () => {
+    const now = new Date('2026-01-16').getTime();
+    const reservoirEvents = [{ id: 1, plant_id: 1, kind: 'change', date: '2026-01-01', volume: 10 }];
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: [], reservoirEvents }, now);
+    const tip = cands.find((c) => c.kind === 'reminder' && c.text.toLowerCase().includes('reservoir'));
+    expect(tip).toBeTruthy();
+  });
+
+  it('does not yield a reservoir reminder when the newest change is only 13 days old', () => {
+    const now = new Date('2026-01-16').getTime();
+    const reservoirEvents = [{ id: 1, plant_id: 1, kind: 'change', date: '2026-01-03', volume: 10 }];
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: [], reservoirEvents }, now);
+    const tip = cands.find((c) => c.kind === 'reminder' && c.text.toLowerCase().includes('reservoir'));
+    expect(tip).toBeFalsy();
+  });
+
+  it('celebrates a stage change with a milestone containing the new stage label', () => {
+    const logs = [
+      { height: 10, date: '2026-01-01', created_at: '2026-01-01T00:00:00Z' },
+      { height: 20, date: '2026-01-05', created_at: '2026-01-05T00:00:00Z' },
+    ];
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs });
+    const tip = cands.find((c) => c.kind === 'milestone' && c.text.includes('Early Vegetative'));
+    expect(tip).toBeTruthy();
   });
 });
 
