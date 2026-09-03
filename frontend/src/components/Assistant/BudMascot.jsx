@@ -11,6 +11,7 @@ import { dueCount } from '../../utils/feeding';
 import { vpdKpa } from '../../utils/vpd';
 import { parseLocalDate } from '../../utils/dates';
 import { selectTip, answerQuestion } from '../../data/assistantTips';
+import { answer as answerChat } from '../../data/budChat';
 import { isHarvestWindow } from '../../utils/trends';
 import { earnedBadges, newlyEarned } from '../../utils/achievements';
 import { setSoundEnabled, pop } from '../../utils/sound';
@@ -73,7 +74,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const {
     effectsEnabled, muted, soundEnabled, position, minimized,
     dismissedTipIds, lastShownAt, setPosition, setMinimized, markShown, dismissTip,
-    tourStep, tourDone, startTour, setTourStep, endTour,
+    tourStep, tourDone, startTour, setTourStep, endTour, voice,
   } = useAssistant();
   const reduced = useReducedMotion();
   const animate = effectsEnabled && !reduced;
@@ -151,7 +152,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const earnedIds = earnedBadges({ plants, logs: allLogs }, new Date());
   const seenBadgeIds = readSeenBadgeIds();
   const newBadges = newlyEarned(seenBadgeIds, earnedIds);
-  const input = { activeTab, selectedPlant, alerts, logs, stage, schedules: plantSchedules, newBadges, reservoirEvents, vpd };
+  const input = { activeTab, selectedPlant, alerts, logs, stage, schedules: plantSchedules, newBadges, reservoirEvents, vpd, voice };
 
   // Worried resting face when the selected plant has a clearly out-of-range reading;
   // visibly buzzing once it's in the harvest window with nothing wrong.
@@ -276,6 +277,18 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
     setTip(answer);
     setOpen(true);
   }, []);
+  // Free-text question typed into the AskMenu (MR-66). Answers are
+  // user-initiated, like onPick's fixed questions, so they skip markShown
+  // (exempt from the 60s rate limit) and also fire the returned body cue.
+  const onAsk = useCallback((text) => {
+    setMenuOpen(false);
+    const res = answerChat(text, stateRef.current.input, { voice: stateRef.current.input.voice, now: Date.now() });
+    const id = `chat:${Date.now()}`;
+    shownIdRef.current = id;
+    setTip({ id, kind: 'answer', expression: res.expression, text: res.text, dismissible: false });
+    setOpen(true);
+    fireCue(res.cue);
+  }, [fireCue]);
   const closeDiagnose = useCallback(() => setDiagnoseOpen(false), []);
   const closeBadges = useCallback(() => setBadgesOpen(false), []);
 
@@ -343,7 +356,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
 
             {menuOpen && !open && (
               <div className="pointer-events-auto">
-                <AskMenu animate={animate} onPick={onPick} />
+                <AskMenu animate={animate} onPick={onPick} onAsk={onAsk} />
               </div>
             )}
           </>
