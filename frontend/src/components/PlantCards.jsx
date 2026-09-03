@@ -6,6 +6,7 @@ import { latestLog, currentHeight, totalGrowth, daysTracked } from '../utils/sta
 import { formatLength, formatTemp } from '../utils/format';
 import { inferStage, stageLabel, hasOwnProfile } from '../data/recommendations';
 import { measurementAlerts, describeAlert } from '../utils/ranges';
+import DashboardWidgets from './DashboardWidgets';
 
 const PlantCard = React.memo(({ plant, logs, lengthUnit, tempUnit, onSelect }) => {
   const { colors } = useTheme();
@@ -81,7 +82,7 @@ const Pill = ({ colors, children }) => (
   <span className={`${colors.bgAccent} ${colors.textSecondary} px-2 py-0.5 rounded-full`}>{children}</span>
 );
 
-const Dashboard = ({ onSelectPlant }) => {
+const Dashboard = ({ onSelectPlant, now }) => {
   const { colors } = useTheme();
   const { plants, settings, getPlantLogs } = useAppData();
   const lengthUnit = settings.units.length;
@@ -98,18 +99,21 @@ const Dashboard = ({ onSelectPlant }) => {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-      {plants.map((plant) => (
-        <PlantCard
-          key={plant.id}
-          plant={plant}
-          logs={getPlantLogs(plant)}
-          lengthUnit={lengthUnit}
-          tempUnit={tempUnit}
-          onSelect={onSelectPlant}
-        />
-      ))}
-    </div>
+    <>
+      <DashboardWidgets now={now} />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        {plants.map((plant) => (
+          <PlantCard
+            key={plant.id}
+            plant={plant}
+            logs={getPlantLogs(plant)}
+            lengthUnit={lengthUnit}
+            tempUnit={tempUnit}
+            onSelect={onSelectPlant}
+          />
+        ))}
+      </div>
+    </>
   );
 };
 
