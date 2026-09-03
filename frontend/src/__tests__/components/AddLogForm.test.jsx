@@ -92,6 +92,56 @@ describe('AddLogForm (MR-25)', () => {
     expect(screen.getByText('Draft saved')).toBeInTheDocument();
   });
 
+  it('adding two dose rows and submitting posts a payload whose doses array has both entries', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    const plantSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="1"]'));
+    await user.selectOptions(plantSelect, '1');
+
+    const heightInput = screen.getByPlaceholderText('0.0');
+    await user.clear(heightInput);
+    await user.type(heightInput, '10');
+
+    await user.click(screen.getByRole('button', { name: /add dose/i }));
+    await user.click(screen.getByRole('button', { name: /add dose/i }));
+
+    const nameInputs = screen.getAllByLabelText('Dose name');
+    const mlInputs = screen.getAllByLabelText('Dose ml/L');
+    expect(nameInputs).toHaveLength(2);
+
+    await user.type(nameInputs[0], 'Part A');
+    await user.type(mlInputs[0], '2');
+    await user.type(nameInputs[1], 'Part B');
+    await user.type(mlInputs[1], '3');
+
+    await user.click(screen.getByRole('button', { name: /add growth log/i }));
+
+    expect(createLog).toHaveBeenCalledTimes(1);
+    const [body] = createLog.mock.calls[0];
+    expect(body.doses).toEqual([
+      { name: 'Part A', ml_per_l: 2 },
+      { name: 'Part B', ml_per_l: 3 },
+    ]);
+  });
+
+  it('submitting with empty nutrients text and no doses does not show a nutrients error', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    const plantSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="1"]'));
+    await user.selectOptions(plantSelect, '1');
+
+    const heightInput = screen.getByPlaceholderText('0.0');
+    await user.clear(heightInput);
+    await user.type(heightInput, '10');
+
+    await user.click(screen.getByRole('button', { name: /add growth log/i }));
+
+    expect(createLog).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/nutrients.*required/i)).not.toBeInTheDocument();
+  });
+
   it('Clear button empties the field and removes the draft key', async () => {
     const user = userEvent.setup();
     renderForm();

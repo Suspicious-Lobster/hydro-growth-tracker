@@ -14,6 +14,7 @@ import { stageLabel, getProfileStages } from '../data/recommendations';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
 import { filterLogs, isFilterActive } from '../utils/logFilter';
 import ConfirmDialog from './ui/ConfirmDialog';
+import { DosesEditor } from './AddLogForm';
 
 // Round a display-unit value to a sane number of decimals when prefilling an
 // input, so e.g. 10cm shown in inches doesn't render as 3.9370078740157...
@@ -56,6 +57,7 @@ const LogViewer = () => {
       light_hours: log.light_hours ?? '',
       reservoir_volume: log.reservoir_volume == null ? '' : round2(fromLiters(parseFloat(log.reservoir_volume), volumeUnit)),
       nutrients: log.nutrients || '',
+      doses: (log.doses || []).map((d) => ({ name: d.name, ml_per_l: d.ml_per_l })),
       notes: log.notes || '',
     });
   };
@@ -68,7 +70,6 @@ const LogViewer = () => {
   const saveLog = async (logId) => {
     if (!editForm.plant_id) { toast.error('Select a plant'); return; }
     if (editForm.height === '' || parseFloat(editForm.height) < 0) { toast.error('Height must be a positive number'); return; }
-    if (!editForm.nutrients.trim()) { toast.error('Nutrients are required'); return; }
     try {
       await updateLog(logId, {
         // Plant is chosen by id, never re-sent as free text — a typo'd
@@ -87,6 +88,7 @@ const LogViewer = () => {
         light_hours: numOrNull(editForm.light_hours),
         reservoir_volume: editForm.reservoir_volume === '' ? null : toLiters(parseFloat(editForm.reservoir_volume), volumeUnit),
         nutrients: editForm.nutrients.trim(),
+        doses: editForm.doses.filter((d) => d.name.trim()).map((d) => ({ name: d.name.trim(), ml_per_l: parseFloat(d.ml_per_l) })),
         notes: editForm.notes,
       });
       toast.success('Log updated');
@@ -254,6 +256,10 @@ const LogViewer = () => {
                       <LabeledInput label={`Reservoir (${volumeUnitLabel(volumeUnit)})`} colors={colors} cls={inputCls} type="number" value={editForm.reservoir_volume} onChange={(v) => setEditForm({ ...editForm, reservoir_volume: v })} />
                     </div>
                     <div>
+                      <label className={`block text-sm ${colors.text} mb-1`}>Doses</label>
+                      <DosesEditor doses={editForm.doses || []} onChange={(doses) => setEditForm({ ...editForm, doses })} colors={colors} />
+                    </div>
+                    <div>
                       <label className={`block text-sm ${colors.text} mb-1`}>Notes</label>
                       <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} className={inputCls} rows={2} />
                     </div>
@@ -302,6 +308,15 @@ const LogViewer = () => {
                     </div>
 
                     <div className={`text-sm ${colors.textMuted} mb-2`}><strong>Nutrients:</strong> {log.nutrients || 'Not specified'}</div>
+                    {(log.doses || []).length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {log.doses.map((d, i) => (
+                          <span key={i} className={`${colors.bgSecondary} ${colors.text} text-xs px-2 py-1 rounded-full border ${colors.border}`}>
+                            {d.name} {d.ml_per_l} ml/L
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {log.notes && <div className={`${colors.bgSecondary} p-3 rounded text-sm ${colors.text} italic`}>{log.notes}</div>}
                     {log.image_url && (
                       <img src={resolveImageUrl(log.image_url)} alt={`${log.plant_name} growth`} className="max-w-xs rounded-lg shadow-md mt-3" />

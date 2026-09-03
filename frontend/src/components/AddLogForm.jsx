@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useId } from 'react';
-import { Plus, Minus, Save, AlertCircle } from 'lucide-react';
+import { Plus, Minus, Save, AlertCircle, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import { useToast } from '../contexts/ToastContext';
@@ -8,7 +8,7 @@ import { GROWTH_STAGES } from '../data/plantKnowledge';
 import { getProfileStages, stageLabel } from '../data/recommendations';
 import { toCm, toCelsius, toLiters, lengthUnitLabel, tempUnitLabel, volumeUnitLabel } from '../utils/format';
 import { todayLocalISO } from '../utils/dates';
-import { validateLogByField } from '@shared/validation';
+import { validateLogByField, DOSES_MAX } from '@shared/validation';
 
 const DRAFT_KEY = 'logFormDraft';
 const blankForm = () => ({
@@ -22,6 +22,7 @@ const blankForm = () => ({
   water_temp: '', air_temp: '', humidity: '', light_hours: '',
   reservoir_volume: '',
   nutrients: '',
+  doses: [],
   notes: '',
   image: null,
 });
@@ -106,6 +107,7 @@ const AddLogForm = ({ defaultPlantId = null }) => {
       light_hours: numOrUndef(form.light_hours),
       reservoir_volume: form.reservoir_volume === '' ? undefined : toLiters(parseFloat(form.reservoir_volume), volumeUnit),
       nutrients: form.nutrients,
+      doses: form.doses.filter((d) => d.name.trim()).map((d) => ({ name: d.name.trim(), ml_per_l: parseFloat(d.ml_per_l) })),
       notes: form.notes,
     };
     if (plantMode === 'existing') payload.plant_id = selectedPlant?.id;
@@ -129,7 +131,11 @@ const AddLogForm = ({ defaultPlantId = null }) => {
       let body = payload;
       if (form.image) {
         const fd = new FormData();
-        Object.entries(payload).forEach(([k, v]) => { if (v !== undefined) fd.append(k, v); });
+        Object.entries(payload).forEach(([k, v]) => {
+          if (v === undefined) return;
+          if (k === 'doses') { if (v.length > 0) fd.append('doses', JSON.stringify(v)); return; }
+          fd.append(k, v);
+        });
         fd.append('image', form.image);
         body = fd;
         config = { headers: { 'Content-Type': 'multipart/form-data' } };
@@ -234,6 +240,11 @@ const AddLogForm = ({ defaultPlantId = null }) => {
             placeholder="e.g., General Hydroponics Flora Series, 5ml/L" className={inputCls(errors.nutrients)} />
         </Field>
 
+        <div>
+          <label className={`block text-sm font-medium ${colors.text} mb-1`}>Doses</label>
+          <DosesEditor doses={form.doses} onChange={(doses) => update({ doses })} colors={colors} error={errors.doses} />
+        </div>
+
         <Field label="Notes" colors={colors}>
           <textarea name="notes" value={form.notes} onChange={handleChange} rows="3" maxLength={1000}
             placeholder="Observations, changes…" className={`${inputCls()} resize-none`} />
@@ -274,6 +285,53 @@ const Field = ({ label, error, colors, children }) => {
     <div>
       <label htmlFor={bound ? id : undefined} className={`block text-sm font-medium ${colors.text} mb-1`}>{label}</label>
       {child}
+      {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+    </div>
+  );
+};
+
+// Nutrient dosing recipe: up to DOSES_MAX rows of a name + ml/L strength.
+// Shared between AddLogForm and LogViewer's edit form so the row shape and
+// bounds (DOSES_MAX) are defined once.
+export const DosesEditor = ({ doses, onChange, colors, error }) => {
+  const updateRow = (i, patch) => {
+    onChange(doses.map((d, idx) => (idx === i ? { ...d, ...patch } : d)));
+  };
+  const removeRow = (i) => onChange(doses.filter((_, idx) => idx !== i));
+  const addRow = () => onChange([...doses, { name: '', ml_per_l: '' }]);
+  const rowCls = `w-full px-3 py-2 ${colors.bgAccent} border ${colors.border} rounded-lg ${colors.text} focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors`;
+
+  return (
+    <div className="space-y-2">
+      {doses.map((dose, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            aria-label="Dose name"
+            value={dose.name}
+            onChange={(e) => updateRow(i, { name: e.target.value })}
+            placeholder="e.g., Part A"
+            className={`flex-1 ${rowCls}`}
+          />
+          <input
+            aria-label="Dose ml/L"
+            type="number"
+            step="0.1"
+            min="0"
+            value={dose.ml_per_l}
+            onChange={(e) => updateRow(i, { ml_per_l: e.target.value })}
+            placeholder="ml/L"
+            className={`w-24 ${rowCls}`}
+          />
+          <button type="button" aria-label="Remove dose" onClick={() => removeRow(i)}
+            className={`${colors.bgAccent} border ${colors.border} rounded-lg p-2`}>
+            <X size={16} className={colors.text} />
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={addRow} disabled={doses.length >= DOSES_MAX}
+        className={`${colors.bgAccent} ${colors.text} border ${colors.border} rounded-lg px-3 py-1.5 text-sm disabled:opacity-50 flex items-center gap-1`}>
+        <Plus size={14} /> Add dose
+      </button>
       {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
     </div>
   );

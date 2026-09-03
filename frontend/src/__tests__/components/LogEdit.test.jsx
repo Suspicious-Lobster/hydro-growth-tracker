@@ -25,6 +25,7 @@ const log = {
   light_hours: null,
   reservoir_volume: null,
   nutrients: 'FloraGro',
+  doses: [{ name: 'Part A', ml_per_l: 2 }],
   notes: '',
   image_url: null,
   growth_stage: null,
@@ -137,6 +138,43 @@ describe('LogViewer editing (MR-12)', () => {
     expect(updateLog).toHaveBeenCalledTimes(1);
     const [, payload] = updateLog.mock.calls[0];
     expect(payload.height).toBeCloseTo(25.4, 5);
+  });
+
+  it('a log rendered with doses shows the text "2 ml/L"', () => {
+    renderViewer();
+    expect(screen.getByText(/2 ml\/L/)).toBeInTheDocument();
+  });
+
+  it('editing a log with doses shows the rows prefilled and saving sends them', async () => {
+    const user = userEvent.setup();
+    renderViewer();
+
+    await user.click(screen.getByTitle('Edit'));
+
+    expect(screen.getByLabelText('Dose name')).toHaveValue('Part A');
+    expect(screen.getByLabelText('Dose ml/L')).toHaveValue(2);
+
+    await user.click(screen.getByText('Save'));
+
+    expect(updateLog).toHaveBeenCalledTimes(1);
+    const [, payload] = updateLog.mock.calls[0];
+    expect(payload.doses).toEqual([{ name: 'Part A', ml_per_l: 2 }]);
+  });
+
+  it('saving with empty nutrients and no doses succeeds (no nutrients-required toast)', async () => {
+    const user = userEvent.setup();
+    renderViewer();
+
+    await user.click(screen.getByTitle('Edit'));
+
+    const nutrientsInput = screen.getByDisplayValue('FloraGro');
+    await user.clear(nutrientsInput);
+    await user.click(screen.getByLabelText('Remove dose'));
+
+    await user.click(screen.getByText('Save'));
+
+    expect(toastError).not.toHaveBeenCalledWith('Nutrients are required');
+    expect(updateLog).toHaveBeenCalledTimes(1);
   });
 
   it('delete uses ConfirmDialog, never window.confirm', async () => {
