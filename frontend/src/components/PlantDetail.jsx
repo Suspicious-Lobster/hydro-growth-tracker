@@ -3,6 +3,7 @@ import { ArrowLeft, Droplets, Leaf, Calendar, Beaker } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import GrowthChart from './GrowthChart';
+import ReservoirLog from './ReservoirLog';
 import { sortLogsByDate, latestLog, currentHeight, totalGrowth, daysTracked, growthRate } from '../utils/stats';
 import { formatLength, formatTemp, formatVolume, formatDate, fromCm } from '../utils/format';
 import { inferStage, stageLabel, getStageGuidance } from '../data/recommendations';
@@ -109,6 +110,9 @@ const PlantDetail = ({ plant, onBack }) => {
           </div>
         </div>
       )}
+
+      {/* Reservoir */}
+      <ReservoirLog plant={plant} />
 
       {/* History table */}
       <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-5 ${colors.border} border`}>

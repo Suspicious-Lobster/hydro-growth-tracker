@@ -30,6 +30,7 @@ const sampleSettings = {
   ppm_scale: 500,
   default_species: null,
 };
+const sampleReservoirEvents = [];
 
 function mockHappyLoad() {
   api.get.mockImplementation((url) => {
@@ -37,6 +38,7 @@ function mockHappyLoad() {
     if (url === '/logs') return Promise.resolve({ data: sampleLogs });
     if (url === '/feeding') return Promise.resolve({ data: sampleSchedules });
     if (url === '/settings') return Promise.resolve({ data: sampleSettings });
+    if (url === '/reservoir') return Promise.resolve({ data: sampleReservoirEvents });
     return Promise.reject(new Error(`unmocked GET ${url}`));
   });
 }
@@ -113,6 +115,7 @@ describe('AppDataContext background refresh (MR-13)', () => {
       if (url === '/logs') return Promise.resolve({ data: sampleLogs });
       if (url === '/feeding') return Promise.resolve({ data: sampleSchedules });
       if (url === '/settings') return Promise.resolve({ data: sampleSettings });
+      if (url === '/reservoir') return Promise.resolve({ data: sampleReservoirEvents });
       return Promise.reject(new Error(`unmocked GET ${url}`));
     });
 
@@ -149,6 +152,7 @@ describe('AppDataContext background refresh (MR-13)', () => {
       if (url === '/logs') return Promise.resolve({ data: sampleLogs });
       if (url === '/feeding') return Promise.resolve({ data: sampleSchedules });
       if (url === '/settings') return Promise.resolve({ data: sampleSettings });
+      if (url === '/reservoir') return Promise.resolve({ data: sampleReservoirEvents });
       return Promise.reject(new Error(`unmocked GET ${url}`));
     });
 
@@ -162,5 +166,72 @@ describe('AppDataContext background refresh (MR-13)', () => {
     expect(screen.getByTestId('refreshing').textContent).toBe('false');
     expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     expect(screen.getByTestId('count').textContent).toBe('1');
+  });
+});
+
+// MR-46: loadAll must also fetch /reservoir and expose the events, and
+// createReservoirEvent must post + refresh like the other mutations.
+describe('AppDataContext reservoir events (MR-46)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function ReservoirProbe() {
+    const { reservoirEvents, createReservoirEvent } = useAppData();
+    return (
+      <div>
+        <span data-testid="reservoir-count">{reservoirEvents.length}</span>
+        <button onClick={() => createReservoirEvent({ plant_id: 1, date: '2026-06-01', kind: 'change', volume: 10 })}>
+          add-event
+        </button>
+      </div>
+    );
+  }
+
+  function renderReservoirProbe() {
+    return render(
+      <AppDataProvider>
+        <ReservoirProbe />
+      </AppDataProvider>
+    );
+  }
+
+  it('loadAll issues a GET /reservoir and exposes the events', async () => {
+    const sampleEvents = [{ id: 1, plant_id: 1, date: '2026-06-01', kind: 'change', volume: 10 }];
+    api.get.mockImplementation((url) => {
+      if (url === '/plants') return Promise.resolve({ data: samplePlants });
+      if (url === '/logs') return Promise.resolve({ data: sampleLogs });
+      if (url === '/feeding') return Promise.resolve({ data: sampleSchedules });
+      if (url === '/settings') return Promise.resolve({ data: sampleSettings });
+      if (url === '/reservoir') return Promise.resolve({ data: sampleEvents });
+      return Promise.reject(new Error(`unmocked GET ${url}`));
+    });
+
+    renderReservoirProbe();
+
+    await waitFor(() => expect(screen.getByTestId('reservoir-count').textContent).toBe('1'));
+    expect(api.get).toHaveBeenCalledWith('/reservoir');
+  });
+
+  it('createReservoirEvent posts to /reservoir and refreshes', async () => {
+    mockHappyLoad();
+    renderReservoirProbe();
+    await waitFor(() => expect(screen.getByTestId('reservoir-count').textContent).toBe('0'));
+
+    const newEvent = { id: 2, plant_id: 1, date: '2026-06-01', kind: 'change', volume: 10 };
+    api.post.mockResolvedValue({ data: newEvent });
+    api.get.mockImplementation((url) => {
+      if (url === '/plants') return Promise.resolve({ data: samplePlants });
+      if (url === '/logs') return Promise.resolve({ data: sampleLogs });
+      if (url === '/feeding') return Promise.resolve({ data: sampleSchedules });
+      if (url === '/settings') return Promise.resolve({ data: sampleSettings });
+      if (url === '/reservoir') return Promise.resolve({ data: [newEvent] });
+      return Promise.reject(new Error(`unmocked GET ${url}`));
+    });
+
+    await userEvent.click(screen.getByText('add-event'));
+
+    expect(api.post).toHaveBeenCalledWith('/reservoir', { plant_id: 1, date: '2026-06-01', kind: 'change', volume: 10 });
+    await waitFor(() => expect(screen.getByTestId('reservoir-count').textContent).toBe('1'));
   });
 });

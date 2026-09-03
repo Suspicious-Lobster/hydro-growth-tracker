@@ -4,6 +4,7 @@ import { render } from '@testing-library/react';
 import { vpdKpa, vpdBand } from '../utils/vpd';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
 import { ThemeProvider } from '../contexts/ThemeContext';
+import { ToastProvider } from '../contexts/ToastContext';
 import PlantDetail from '../components/PlantDetail';
 
 describe('vpdKpa', () => {
@@ -88,6 +89,7 @@ vi.mock('../contexts/AppDataContext', () => ({
     schedules: [],
     settings: { units: { length: 'cm', volume: 'liters', temp: 'C' } },
     getPlantLogs: () => logsWithVpd,
+    getPlantReservoirEvents: () => [],
   }),
 }));
 
@@ -113,7 +115,8 @@ describe('PlantDetail chart caption - VPD (MR-38)', () => {
       React.createElement(
         ThemeProvider,
         null,
-        React.createElement(PlantDetail, { plant, onBack: () => {} })
+        // PlantDetail hosts ReservoirLog (MR-46), which toasts.
+        React.createElement(ToastProvider, null, React.createElement(PlantDetail, { plant, onBack: () => {} }))
       )
     );
     const chartWrapper = container.querySelector('[aria-label^="Growth"]');

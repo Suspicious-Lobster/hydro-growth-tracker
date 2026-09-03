@@ -14,6 +14,7 @@ const initialState = {
   plants: [],
   logs: [],
   schedules: [],
+  reservoirEvents: [],
   settings: { units: { length: 'cm', volume: 'liters', temp: 'C' }, ppm_scale: 500, default_species: null },
   loading: true,
   refreshing: false,
@@ -52,11 +53,12 @@ export const AppDataProvider = ({ children }) => {
   const loadAll = useCallback(async () => {
     dispatch({ type: hasLoadedRef.current ? 'REFRESH_START' : 'LOAD_START' });
     try {
-      const [plants, logs, schedules, settings] = await Promise.all([
+      const [plants, logs, schedules, settings, reservoirEvents] = await Promise.all([
         api.get('/plants'),
         api.get('/logs'),
         api.get('/feeding'),
         api.get('/settings'),
+        api.get('/reservoir'),
       ]);
       dispatch({
         type: 'LOAD_SUCCESS',
@@ -65,6 +67,7 @@ export const AppDataProvider = ({ children }) => {
           logs: Array.isArray(logs.data) ? logs.data : [],
           schedules: Array.isArray(schedules.data) ? schedules.data : [],
           settings: settings.data || initialState.settings,
+          reservoirEvents: Array.isArray(reservoirEvents.data) ? reservoirEvents.data : [],
         },
       });
       hasLoadedRef.current = true;
@@ -102,6 +105,11 @@ export const AppDataProvider = ({ children }) => {
     deleteSchedule: (id) => after(api.delete(`/feeding/${id}`)),
     markFed: (id) => after(api.post(`/feeding/${id}/fed`)),
 
+    // Reservoir events
+    createReservoirEvent: (payload) => after(api.post('/reservoir', payload)),
+    updateReservoirEvent: (id, payload) => after(api.put(`/reservoir/${id}`, payload)),
+    deleteReservoirEvent: (id) => after(api.delete(`/reservoir/${id}`)),
+
     // Settings (no full refresh needed — update in place)
     updateSettings: async (payload) => {
       const res = await api.put('/settings', payload);
@@ -119,15 +127,27 @@ export const AppDataProvider = ({ children }) => {
       if (!logsByPlantId.has(key)) logsByPlantId.set(key, []);
       logsByPlantId.get(key).push(log);
     }
+    const reservoirEventsByPlantId = new Map();
+    for (const event of state.reservoirEvents) {
+      const key = event.plant_id ?? `name:${event.plant_name}`;
+      if (!reservoirEventsByPlantId.has(key)) reservoirEventsByPlantId.set(key, []);
+      reservoirEventsByPlantId.get(key).push(event);
+    }
     return {
       plantsById,
       logsByPlantId,
+      reservoirEventsByPlantId,
       getPlantLogs: (plant) => {
         if (!plant) return [];
         return logsByPlantId.get(plant.id) || logsByPlantId.get(`name:${plant.name}`) || [];
       },
+      // Events are already served newest-first by the API; preserve that order.
+      getPlantReservoirEvents: (plant) => {
+        if (!plant) return [];
+        return reservoirEventsByPlantId.get(plant.id) || reservoirEventsByPlantId.get(`name:${plant.name}`) || [];
+      },
     };
-  }, [state.plants, state.logs]);
+  }, [state.plants, state.logs, state.reservoirEvents]);
 
   // Memoize so consumers only re-render when state/actions/derived actually
   // change, not on every provider render.

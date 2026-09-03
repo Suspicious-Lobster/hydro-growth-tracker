@@ -53,6 +53,7 @@ vi.mock('../../contexts/AppDataContext', () => ({
     schedules: [],
     settings,
     getPlantLogs: () => [backdatedLog],
+    getPlantReservoirEvents: () => [],
     updateLog: vi.fn(),
     deleteLog: vi.fn(),
   }),
@@ -83,9 +84,12 @@ describe('log date ordering/display (MR-10)', () => {
   });
 
   it("PlantDetail's history table shows the entered date (2020) for the same log", () => {
+    // PlantDetail hosts ReservoirLog (MR-46), which toasts, so it needs the provider.
     render(
       <ThemeProvider>
-        <PlantDetail plant={plant} onBack={() => {}} />
+        <ToastProvider>
+          <PlantDetail plant={plant} onBack={() => {}} />
+        </ToastProvider>
       </ThemeProvider>
     );
     expect(screen.getByText('Measurement history').closest('div').textContent).toContain('2020');
