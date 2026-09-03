@@ -2,10 +2,10 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import {
   buildLush, ARM_REST, ARM_SMOKE, ARM_WAVE, ARM_STRETCH,
-  ARM_CHEER, ARM_SHRUG, ARM_FACEPALM, ARM_POINT, BLOODSHOT,
+  ARM_CHEER, ARM_SHRUG, ARM_FACEPALM, ARM_POINT, ARM_SCRATCH, ARM_WATCH, BLOODSHOT,
 } from './lush/buildLush';
-import { flick, snore } from '../../utils/sound';
-import { cueFor } from '../../data/budCues';
+import { flick, snore, playCue } from '../../utils/sound';
+import { CUES, cueFor } from '../../data/budCues';
 
 // The living, 3D incarnation of Bud ("Lush"). Boots a tiny three.js scene, builds
 // the procedural leaf character, and runs one rAF loop that drives the four "alive"
@@ -37,14 +37,48 @@ const MOUTH_BASE = {
 };
 
 // Idle emote timing (seconds): the smoke bit runs raise→spark→puff→lower; the
-// single-phase emotes (wave / stretch / groove / munch) just run for their duration.
+// single-phase emotes (wave / stretch / groove / munch / lookAround / scratch /
+// hum / watch) just run for their duration. The new bits' durations are pulled
+// straight from CUES so there's one source of truth for "how long is this".
 // The smoke point is where the plume rises from (near Bud's mouth). Emotes only fire
 // while he's idle and undisturbed.
-const EMOTE = { raise: 1.0, spark: 1.4, puff: 2.4, wave: 2.4, stretch: 2.6, groove: 3.4, munch: 3.2, cooldown: 8 };
-// Cumulative pick weights for the idle emote roulette.
-const EMOTE_PICKS = [
-  [0.22, 'wave'], [0.5, 'smoke'], [0.68, 'stretch'], [0.85, 'groove'], [1.01, 'munch'],
-];
+const EMOTE = {
+  raise: 1.0, spark: 1.4, puff: 2.4, wave: 2.4, stretch: 2.6, groove: 3.4, munch: 3.2,
+  lookAround: CUES.lookAround.dur, scratch: CUES.scratch.dur, hum: CUES.hum.dur, watch: CUES.watch.dur,
+  cooldown: 8,
+};
+// Base pick weights for the idle emote roulette (MR-68), keyed by emote kind (note
+// the internal kind names 'munch'/'stretch' are the snack/yawn bits — CUES calls
+// them 'munchies'/'yawn'). pickEmote multiplies munch 3x at noon (11:30-13:30) and
+// late night (22:00-01:00), and stretch 3x after 21:00, using a decimal hour so the
+// minute matters at the window edges.
+const EMOTE_WEIGHTS = {
+  wave: 22, smoke: 28, stretch: 18, groove: 17, munch: 16, lookAround: 14, scratch: 10, hum: 12, watch: 8,
+};
+// Maps an emote kind to the CUES entry that names its start-of-bit sound (only
+// entries that actually play one — lookAround/scratch/watch/wave/groove/smoke
+// don't, per the design notes).
+const EMOTE_SOUND_CUE = { munch: 'munchies', stretch: 'yawn', hum: 'hum' };
+
+// Sample one idle emote kind, weighted for the time of day. `hour` is a decimal
+// (e.g. 11.5 = 11:30) and `rand` is a fresh Math.random() value in [0, 1) passed
+// in by the caller so this stays pure and testable (window.__bud.pickEmote).
+const pickEmote = (hour, rand) => {
+  const weights = { ...EMOTE_WEIGHTS };
+  const noon = hour >= 11.5 && hour < 13.5;
+  const lateNight = hour >= 22 || hour < 1;
+  if (noon || lateNight) weights.munch *= 3;
+  if (hour >= 21) weights.stretch *= 3;
+  const total = Object.values(weights).reduce((a, b) => a + b, 0);
+  const roll = rand * total;
+  let cumulative = 0;
+  const names = Object.keys(weights);
+  for (const name of names) {
+    cumulative += weights[name];
+    if (roll < cumulative) return name;
+  }
+  return names[0];
+};
 const SMOKE_EMIT = { x: 0.26, y: 0.0, z: 0.97 };
 const COUGH_EMIT = { x: 0.05, y: -0.05, z: 0.78 }; // from the mouth, when he coughs
 const SLEEP_AFTER = 28; // seconds of stillness before Bud dozes off
@@ -194,8 +228,21 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
     let prevExpr = exprRef.current;
     let sleepLid = 0;     // eased eyes-shut amount while dozing (0..1)
     // emote.kind: 'smoke' (raise→spark→puff→lower) or a single-phase bit
-    // ('wave' | 'stretch' | 'groove' | 'munch').
+    // ('wave' | 'stretch' | 'groove' | 'munch' | 'lookAround' | 'scratch' | 'hum' | 'watch').
     const emote = { phase: 'wait', kind: null, t: 0, next: 5 + Math.random() * 6 };
+    // Start an idle emote by kind: sets phase (smoke gets its own raise→spark→puff
+    // chain, everything else is single-phase and phase === kind), resets its clock,
+    // and plays the bit's start-of-cue sound (if it has one) exactly once.
+    const startEmote = (kind) => {
+      emote.kind = kind;
+      emote.phase = kind === 'smoke' ? 'raise' : kind;
+      emote.t = 0;
+      const soundCue = EMOTE_SOUND_CUE[kind];
+      if (soundCue) {
+        const rec = cueFor(soundCue);
+        if (rec && rec.sound) playCue(rec.sound);
+      }
+    };
     const cough = { active: false, t: 0, dur: 0.85 };
     // ---- physics-y dragging: pointer velocity drives a limb pendulum + body tilt,
     // and letting go leaves a decaying wobble.
@@ -208,7 +255,9 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
     let shadesBlend = 0;
     const lean = { x: 0, y: 0, z: 0 }; // smoothed body lean (see the rotation block)
     let hatBlend = 0;
-    let hour = new Date().getHours();
+    // Decimal hour (e.g. 11.5 = 11:30) so pickEmote's noon/late-night windows can
+    // see the minute, not just the hour.
+    let hour = new Date().getHours() + new Date().getMinutes() / 60;
     let hourCheck = 0;
     let prevFlameOn = false;
     let prevBreathUp = false;
@@ -223,6 +272,7 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
     const startCue = (req) => {
       cue.name = req.name; cue.payload = req.payload; cue.dur = req.dur; cue.t = 0; cue.active = true;
       if (req.name === 'land') { wobble.t = 0; wobble.amp = 0.3; } // piggyback the drop-squash wobble
+      if (req.name === 'welcomeBack') playCue('pop'); // perk-up-and-wave plays its 'pop' the moment it starts
     };
 
     const tick = () => {
@@ -248,7 +298,7 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
 
       // --- time of day: refresh the hour once a minute ---
       hourCheck += dt;
-      if (hourCheck >= 60) { hourCheck = 0; hour = new Date().getHours(); }
+      if (hourCheck >= 60) { hourCheck = 0; const now = new Date(); hour = now.getHours() + now.getMinutes() / 60; }
       const tod = dayMood(hour);
       const excited = moodRef.current === 'excited' && !doze.sleeping;
 
@@ -365,6 +415,9 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
           case 'facepalm':
             body.position.y -= 0.15 * cueK; // dip
             break;
+          case 'welcomeBack':
+            body.position.y += Math.abs(Math.sin(elapsed * 7)) * 0.15 * cueK; // perks up
+            break;
           default: break; // land: handled by the wobble mechanism triggered in startCue
         }
       }
@@ -376,16 +429,17 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         case 'wait':
           if (!idleOk || doze.sleeping || cue.active) emote.t = 0; // also hold off while a reaction cue plays
           else if (emote.t >= emote.next) {
-            const roll = Math.random();
-            emote.kind = (EMOTE_PICKS.find(([p]) => roll < p) || EMOTE_PICKS[0])[1];
-            emote.phase = emote.kind === 'smoke' ? 'raise' : emote.kind;
-            emote.t = 0;
+            startEmote(pickEmote(hour, Math.random()));
           }
           break;
         case 'wave':
         case 'stretch':
         case 'groove':
         case 'munch':
+        case 'lookAround':
+        case 'scratch':
+        case 'hum':
+        case 'watch':
           if (emote.t >= EMOTE[emote.phase]) { emote.phase = 'cooldown'; emote.t = 0; }
           break;
         case 'raise':
@@ -417,7 +471,8 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       if (!idleOk && (emote.phase === 'raise' || emote.phase === 'spark' || emote.phase === 'puff')) {
         emote.phase = 'lower'; emote.t = 0;
       }
-      if (!idleOk && (emote.phase === 'wave' || emote.phase === 'stretch' || emote.phase === 'groove' || emote.phase === 'munch')) {
+      if (!idleOk && (emote.phase === 'wave' || emote.phase === 'stretch' || emote.phase === 'groove' || emote.phase === 'munch'
+        || emote.phase === 'lookAround' || emote.phase === 'scratch' || emote.phase === 'hum' || emote.phase === 'watch')) {
         emote.phase = 'cooldown'; emote.t = 0;
       }
 
@@ -430,11 +485,17 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       const stretching = emote.phase === 'stretch';
       const grooving = emote.phase === 'groove';
       const munching = emote.phase === 'munch';
+      const lookingAround = emote.phase === 'lookAround';
+      const scratching = emote.phase === 'scratch';
+      const humming = emote.phase === 'hum';
+      const watching = emote.phase === 'watch';
       const rightTarget = emote.kind === 'wave' ? ARM_WAVE.R
-        : emote.kind === 'stretch' ? ARM_STRETCH.R : ARM_SMOKE.R;
-      const leftTarget = emote.kind === 'stretch' ? ARM_STRETCH.L : ARM_SMOKE.L;
-      armBlendR = lerp(armBlendR, (holding || waving || stretching) ? 1 : 0, 1 - Math.pow(0.004, dt));
-      armBlendL = lerp(armBlendL, (sparking || stretching || munching) ? 1 : 0, 1 - Math.pow(0.002, dt));
+        : emote.kind === 'stretch' ? ARM_STRETCH.R
+        : emote.kind === 'scratch' ? ARM_SCRATCH.R : ARM_SMOKE.R;
+      const leftTarget = emote.kind === 'stretch' ? ARM_STRETCH.L
+        : emote.kind === 'watch' ? ARM_WATCH.L : ARM_SMOKE.L;
+      armBlendR = lerp(armBlendR, (holding || waving || stretching || scratching) ? 1 : 0, 1 - Math.pow(0.004, dt));
+      armBlendL = lerp(armBlendL, (sparking || stretching || munching || watching) ? 1 : 0, 1 - Math.pow(0.002, dt));
       applyArmPose(limbs.armR, ARM_REST.R, rightTarget, armBlendR);
       applyArmPose(limbs.armL, ARM_REST.L, leftTarget, armBlendL);
       // Cue arms take priority over the idle emote's arms: blend from wherever
@@ -451,6 +512,8 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         const dir = cue.payload && cue.payload.dir === -1 ? -1 : 1;
         const target = dir === -1 ? mirrorArmX(ARM_POINT.R) : ARM_POINT.R;
         applyArmPose(limbs.armR, limbs.armR.rotation, target, cueK);
+      } else if (cueName === 'welcomeBack') {
+        applyArmPose(limbs.armR, limbs.armR.rotation, ARM_WAVE.R, cueK); // the wave arm pose
       }
       let browBoost = 0;
       if (waving) {
@@ -479,11 +542,38 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         limbs.armL.rotation.x += Math.cos(beat) * 0.15;
         limbs.armR.rotation.x += Math.cos(beat + Math.PI) * 0.15;
       }
+      // Scratch: a small side-to-side wiggle of the hand against the head.
+      if (scratching) {
+        limbs.armR.rotation.z += Math.sin(elapsed * 10) * 0.12 * armBlendR;
+      }
+      // Hum: closed-mouth sway, gentle side-to-side.
+      if (humming) {
+        body.rotation.z += Math.sin(elapsed * 2.2) * 0.06;
+      }
+      // Look around: sweeps gaze left, right, then up over the bit's duration, with
+      // a small head turn riding along (a one-frame += per the rotation-block note).
+      let lookGaze = null;
+      if (lookingAround) {
+        const u = Math.min(1, emote.t / EMOTE.lookAround);
+        if (u < 0.3) lookGaze = { x: -smoothstep(u / 0.3), y: 0 };
+        else if (u < 0.35) lookGaze = { x: -1, y: 0 };
+        else if (u < 0.65) lookGaze = { x: -1 + 2 * smoothstep((u - 0.35) / 0.3), y: 0 };
+        else if (u < 0.7) lookGaze = { x: 1, y: 0 };
+        else if (u < 0.9) {
+          const k = smoothstep((u - 0.7) / 0.2);
+          lookGaze = { x: 1 - k, y: k };
+        } else lookGaze = { x: 0, y: 1 - smoothstep((u - 0.9) / 0.1) };
+        body.rotation.y += lookGaze.x * 0.12;
+      }
+      // Watch: the little wrist-watch disc shows only while the left arm is up
+      // checking it; gaze drops to the wrist (down-and-left, cursor-independent).
+      const showingWatch = watching && armBlendL > 0.04;
+      lush.watch.group.visible = showingWatch;
       // Munchies: the cookie swaps in for the lighter while the left hand is up, and
       // shrinks bite by bite with a chewing arm-bob.
       const snacking = emote.kind === 'munch' && armBlendL > 0.04;
       lush.snack.group.visible = snacking;
-      lush.lighter.group.visible = !snacking;
+      lush.lighter.group.visible = !snacking && !showingWatch;
       if (munching) {
         limbs.armL.rotation.x += Math.sin(elapsed * 9) * 0.07 * armBlendL;
         lush.snack.cookie.scale.setScalar(Math.max(0.25, 1 - (emote.t / EMOTE.munch) * 0.65));
@@ -570,6 +660,7 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         mOpen = 0.12 + Math.max(0, Math.sin(elapsed * 9)) * 0.35 * armBlendL;
         mWide = 0.55;
       }
+      if (humming) { mOpen = 0.02; mWide = 0.7; }                   // closed-mouth hum
       if (talkClock > 0) {                                         // chatting away
         mOpen = 0.12 + (0.5 + 0.5 * Math.sin(elapsed * 19)) * 0.6;
         mWide = 0.85;
@@ -588,6 +679,7 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       if (cueName === 'cheer') { mOpen = lerp(mOpen, 0.5, cueK); mWide = lerp(mWide, 1.0, cueK); }      // big grin
       if (sulking) { mOpen = lerp(mOpen, 0.02, cueK); mWide = lerp(mWide, 0.45, cueK); }                // frowny (flip below)
       if (cueName === 'shrug') { mOpen = lerp(mOpen, 0.02, cueK); mWide = lerp(mWide, 0.5, cueK); }     // flat "beats me"
+      if (cueName === 'welcomeBack') { mOpen = lerp(mOpen, 0.5, cueK); mWide = lerp(mWide, 1.0, cueK); } // big smile
       mouthOpen = lerp(mouthOpen, mOpen, 0.4);
       mouthWide = lerp(mouthWide, mWide, 0.3);
       const mw = 0.55 + mouthWide * 0.7;
@@ -635,6 +727,7 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         case 'sulk': cueLidDroop = 0.5 * cueK; break;
         case 'facepalm': cueLidDroop = 0.95 * cueK; break;
         case 'shrug': cueBrowYDelta = 0.3 * cueK; break;
+        case 'welcomeBack': cueBrowYDelta = 0.3 * cueK; break; // brows up
         default: break;
       }
       // Lids scale with the time of day (heavy at night) and pop a little when excited.
@@ -662,6 +755,10 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
           gx = lerp(gx, dir * R * 0.4, cueK);
           gy = lerp(gy, 0, cueK);
         }
+        // Look around: a cursor-independent gaze override sweeping left/right/up.
+        if (lookGaze) { gx = lookGaze.x * R * 0.42; gy = lookGaze.y * R * 0.4; }
+        // Watch: gaze drops down-and-left to the wrist, cursor-independent.
+        if (showingWatch) { gx = -R * 0.3; gy = -R * 0.35; }
         pupil.position.x = lerp(pupil.position.x, gx, 0.18);
         pupil.position.y = lerp(pupil.position.y, gy, 0.18);
         // lid: y from -0.1R (shut) to 1.2R (wide open)
@@ -713,11 +810,16 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
     // `import.meta.env.DEV`, so it never reaches the production bundle.
     if (import.meta.env.DEV) {
       window.__bud = {
-        smoke: () => { emote.kind = 'smoke'; emote.phase = 'raise'; emote.t = 0; },
-        wave: () => { emote.kind = 'wave'; emote.phase = 'wave'; emote.t = 0; },
-        stretch: () => { emote.kind = 'stretch'; emote.phase = 'stretch'; emote.t = 0; },
-        groove: () => { emote.kind = 'groove'; emote.phase = 'groove'; emote.t = 0; },
-        munch: () => { emote.kind = 'munch'; emote.phase = 'munch'; emote.t = 0; },
+        smoke: () => startEmote('smoke'),
+        wave: () => startEmote('wave'),
+        stretch: () => startEmote('stretch'),
+        groove: () => startEmote('groove'),
+        munch: () => startEmote('munch'),
+        // MR-68: generalised idle-emote trigger (covers the four new bits too) and
+        // the pure weighted-pick function, exposed so the roulette can be measured
+        // (counted) rather than eyeballed.
+        emote: (name) => startEmote(name),
+        pickEmote: (h, rand) => pickEmote(h, rand),
         shades: (v = true) => { shadesRef.current = Boolean(v); },
         setHour: (h) => { hour = h; hourCheck = -3600; },
         setExpr: (e) => { exprRef.current = e; },

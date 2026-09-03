@@ -278,6 +278,19 @@ export const ARM_FACEPALM = {
 export const ARM_POINT = {
   R: { x: 0.05, y: -0.05, z: 1.55 },
 };
+// Idle-life poses (MR-68). Right hand up to the side of the head to scratch —
+// pitched up sharply like the facepalm pose (that's what actually clears the big
+// front leaf) but with z tuned near zero so the hand lands beside the head/cheek
+// instead of sweeping all the way across the face like facepalm does.
+export const ARM_SCRATCH = {
+  R: { x: -1.55, y: 0.4, z: -0.05 },
+};
+// Left forearm raised in front of his chest to check the watch — same direction
+// and rough magnitude as the smoke/munch pose (the one pose we know reliably
+// clears the leaf and reads near the mouth) so the watch face is actually visible.
+export const ARM_WATCH = {
+  L: { x: -1.15, y: 0.1, z: 1.05 },
+};
 
 // One articulated arm: a shoulder pivot Group with the capsule hanging from it and a
 // `hand` Group at the wrist that props (joint / lighter) can be parented to.
@@ -396,6 +409,33 @@ function makeSnack(track) {
   group.rotation.set(1.6, 0.5, 0.4);
   group.visible = false;
   return { group, cookie };
+}
+
+// A small round wrist-watch for the "checks his watch" idle bit (MR-68): a dark
+// band and a pale face, parented to the left wrist. BudThree shows it only while
+// that bit is playing (it lives in the same fist slot family as the lighter/snack,
+// but sits on top of the wrist rather than in the fist).
+function makeWatch(track) {
+  const group = new THREE.Group();
+  const bandMat = new THREE.MeshStandardMaterial({ color: '#2b2b2b', roughness: 0.6 });
+  track.materials.push(bandMat);
+  const bandGeo = new THREE.TorusGeometry(0.2, 0.045, 8, 16);
+  track.geometries.push(bandGeo);
+  const band = new THREE.Mesh(bandGeo, bandMat);
+  group.add(band);
+
+  const faceMat = new THREE.MeshStandardMaterial({ color: '#e8e4d8', roughness: 0.4, metalness: 0.2 });
+  track.materials.push(faceMat);
+  const faceGeo = new THREE.CircleGeometry(0.15, 16);
+  track.geometries.push(faceGeo);
+  const face = new THREE.Mesh(faceGeo, faceMat);
+  face.position.z = 0.03;
+  group.add(face);
+
+  // Just above the fist, facing the camera once the arm is raised in front of him.
+  group.position.set(0, 0.14, 0.2);
+  group.visible = false;
+  return { group };
 }
 
 // Cool-guy sunglasses that slide down over the eyes when the grow is dialed in.
@@ -552,6 +592,8 @@ export function buildLush() {
   limbs.handL.add(lighter.group);
   const snack = makeSnack(track);
   limbs.handL.add(snack.group);
+  const watch = makeWatch(track);
+  limbs.handL.add(watch.group);
   // Smoke rises in body space so it tracks Bud but isn't squashed by the breathe.
   const smoke = makeSmoke(track);
   body.add(smoke.group);
@@ -594,7 +636,7 @@ export function buildLush() {
 
   return {
     root, body, leaf, face, eyes: [left, right], mouth, shadow,
-    limbs, joint, lighter, snack, smoke, zzz, shades, hat,
+    limbs, joint, lighter, snack, watch, smoke, zzz, shades, hat,
     dispose,
   };
 }
