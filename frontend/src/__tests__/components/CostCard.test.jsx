@@ -4,7 +4,9 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ThemeProvider } from '../../contexts/ThemeContext';
+import { ToastProvider } from '../../contexts/ToastContext';
 import CostCard from '../../components/CostCard';
+import PlantDetail from '../../components/PlantDetail';
 
 const plant = { id: 1, name: 'Tomato', reservoir_volume: 12 };
 const logs = [
@@ -19,6 +21,7 @@ let settings;
 vi.mock('../../contexts/AppDataContext', () => ({
   useAppData: () => ({
     settings,
+    schedules: [],
     getPlantLogs: () => logs,
     getPlantReservoirEvents: () => events,
   }),
@@ -50,6 +53,20 @@ describe('CostCard (MR-53)', () => {
     expect(card.textContent).toContain('40 ml'); // 2 ml/L x 20 L (the change, not the 12 L setting)
     expect(card.textContent).toContain('1.20');
     expect(card.textContent).toContain('Unpriced: Bloom');
+  });
+
+  // MR-59: the card is actually mounted in the plant view (a component that
+  // exists but nothing renders is not a feature, CODING-PRACTICES 5.0).
+  it('PlantDetail renders the cost card', () => {
+    globalThis.ResizeObserver = globalThis.ResizeObserver || class { observe() {} unobserve() {} disconnect() {} };
+    render(
+      <ThemeProvider>
+        <ToastProvider>
+          <PlantDetail plant={plant} onBack={() => {}} />
+        </ToastProvider>
+      </ThemeProvider>
+    );
+    expect(screen.getByTestId('cost-card').textContent).toContain('Water used');
   });
 
   it('with no doses it explains what to log instead of showing a table', () => {

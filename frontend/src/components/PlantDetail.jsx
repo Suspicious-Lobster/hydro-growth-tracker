@@ -4,6 +4,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import GrowthChart from './GrowthChart';
 import ReservoirLog from './ReservoirLog';
+import PhotoTimeline from './PhotoTimeline';
+import CostCard from './CostCard';
 import { sortLogsByDate, latestLog, currentHeight, totalGrowth, daysTracked, growthRate } from '../utils/stats';
 import { formatLength, formatTemp, formatVolume, formatDate, fromCm } from '../utils/format';
 import { inferStage, stageLabel, getStageGuidance } from '../data/recommendations';
@@ -23,6 +25,7 @@ const PlantDetail = ({ plant, onBack }) => {
   const guidance = getStageGuidance(plant.species, stage);
   const alerts = latest ? measurementAlerts(latest, plant.species, stage) : [];
   const plantSchedules = schedules.filter((s) => s.plant_id === plant.id);
+  const photoCount = logs.filter((l) => l.image_url).length;
 
   // Expected-height curve from the species profile, aligned to each log's
   // date, when the plant has a recorded start date (MR-48). null when it
@@ -122,6 +125,17 @@ const PlantDetail = ({ plant, onBack }) => {
 
       {/* Reservoir */}
       <ReservoirLog plant={plant} />
+
+      {/* Water and cost (MR-53, mounted by MR-59) */}
+      <CostCard plant={plant} />
+
+      {/* Photo timeline */}
+      {photoCount >= 2 && (
+        <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-5 ${colors.border} border`}>
+          <h3 className={`text-lg font-semibold ${colors.text} mb-3`}>Photo timeline</h3>
+          <PhotoTimeline logs={logs} lengthUnit={lengthUnit} />
+        </div>
+      )}
 
       {/* History table */}
       <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-5 ${colors.border} border`}>
