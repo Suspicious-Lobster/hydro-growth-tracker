@@ -32,7 +32,7 @@
   "phase_deps": {},
 
   "work": {
-    "max_workers": 5,
+    "max_workers": 20,
     "agents": { "H": "mech", "S": "implementer", "O": null },
 
     "validate": "npm test && npm --prefix frontend run lint && npm --prefix frontend run test:unit && python tools/board.py lint",
