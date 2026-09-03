@@ -29,15 +29,37 @@ async function seriousViolations(page) {
 let ctx;
 test.afterEach(async () => { if (ctx) { await ctx.close(); ctx = null; } });
 
-for (const tab of TABS) {
-  test(`${tab} tab: no serious or critical axe violations`, async () => {
-    ctx = await launchApp();
-    const { page } = ctx;
-    await createPlant(page, 'Axe Test Plant');
-    await addLog(page, { plantName: 'Axe Test Plant', height: 12, ph: 6.2 });
-    await goTo(page, tab);
-    const serious = await seriousViolations(page);
-    // Prints the offending element with the id, so a red run names its evidence.
-    expect(serious, `axe violations on ${tab}`).toEqual([]);
-  });
+// MR-75: run every tab under both colour schemes explicitly rather than
+// inheriting whatever the OS happens to be set to. One scheme per machine
+// means half the palette is never checked (CI runs light, most dev machines
+// run dark), so a class-string bug in only one scheme can slip through.
+for (const theme of ['light', 'dark']) {
+  for (const tab of TABS) {
+    test(`${tab} tab (${theme}): no serious or critical axe violations`, async () => {
+      ctx = await launchApp({ theme });
+      const { page } = ctx;
+      // Assert the precondition: the reload actually landed on the scheme we
+      // asked for, so a spec cannot pass while silently testing the wrong
+      // one (CODING-PRACTICES 1.3). ThemeContext toggles the 'dark' class on
+      // <html> exactly when isDark, driven by localStorage 'theme'.
+      const isDarkClass = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+      expect(isDarkClass, `expected 'dark' class on <html> to be ${theme === 'dark'} for theme=${theme}`).toBe(theme === 'dark');
+      await createPlant(page, 'Axe Test Plant');
+      await addLog(page, { plantName: 'Axe Test Plant', height: 12, ph: 6.2 });
+      await goTo(page, tab);
+      // click() resolves once the DOM event dispatches, not once React commits
+      // the re-render, and the active tab button also carries
+      // `transition-all duration-200`: reading axe too early catches it
+      // either pre-render (still transparent) or mid CSS transition
+      // (partial alpha on its way to the solid fill), both of which read as
+      // a false color-contrast violation. bg-light-primary-bg and
+      // bg-dark-primary-bg are both #2563eb (App.jsx / tailwind.config.js),
+      // so the settled colour is the same rgb() in either theme; wait for it.
+      const activeTabButton = page.getByRole('button', { name: tab, exact: true });
+      await expect(activeTabButton).toHaveCSS('background-color', 'rgb(37, 99, 235)');
+      const serious = await seriousViolations(page);
+      // Prints the offending element with the id, so a red run names its evidence.
+      expect(serious, `axe violations on ${tab} (${theme})`).toEqual([]);
+    });
+  }
 }

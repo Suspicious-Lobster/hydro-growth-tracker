@@ -16,7 +16,9 @@ export const PNG_1x1 = Buffer.from(
 );
 
 // `seed`: optional string/object written as hydro-data.json before launch.
-export async function launchApp({ seed } = {}) {
+// `theme`: optional 'light' | 'dark' written to localStorage before reload,
+// overriding the OS preference that ThemeContext falls back to otherwise.
+export async function launchApp({ seed, theme } = {}) {
   const dist = path.join(ROOT, 'frontend', 'dist', 'index.html');
   if (!fs.existsSync(dist)) {
     // A gate aborts rather than testing the wrong thing (CODING-PRACTICES 1.7).
@@ -37,7 +39,7 @@ export async function launchApp({ seed } = {}) {
   // preferences kept in localStorage. Set them and reload so the first paint
   // is the plain app.
   await page.waitForLoadState('domcontentloaded');
-  await page.evaluate(() => {
+  await page.evaluate((themeArg) => {
     localStorage.setItem('bud.tourDone', 'true');
     localStorage.setItem('bud.effectsEnabled', 'false');
     localStorage.setItem('bud.muted', 'true');
@@ -45,7 +47,8 @@ export async function launchApp({ seed } = {}) {
     // Bud floats over the page in a fixed layer and can sit on top of list
     // buttons; minimised, he is a small chip out of the way.
     localStorage.setItem('bud.minimized', 'true');
-  });
+    if (themeArg) localStorage.setItem('theme', themeArg);
+  }, theme);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Hydro Growth Tracker' })).toBeVisible();
 
