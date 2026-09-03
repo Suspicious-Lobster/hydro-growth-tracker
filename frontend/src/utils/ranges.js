@@ -3,6 +3,7 @@
 
 import { getProfile, getStageGuidance } from '../data/recommendations';
 import { formatTemp } from './format';
+import { vpdKpa, vpdBand } from './vpd';
 
 // 'ok' inside range, 'warn' just outside (within 10% of the span), 'out'
 // well outside, 'unknown' when there's no value or no target.
@@ -32,6 +33,13 @@ export function measurementAlerts(log, species, stage) {
     { key: 'humidity', label: 'Humidity', value: log.humidity, range: profile.optimalHumidity },
   ];
 
+  // VPD needs both air temp and humidity plus a known growth stage (its band
+  // is keyed by stage, not species); without a stage there's nothing to check
+  // against, so skip it rather than fabricate a range.
+  if (stage) {
+    checks.push({ key: 'vpd', label: 'VPD', value: vpdKpa(log.air_temp, log.humidity), range: vpdBand(stage) });
+  }
+
   const alerts = [];
   for (const c of checks) {
     const status = classify(c.value, c.range);
@@ -53,7 +61,7 @@ export function describeAlert(alert, units = {}) {
       range: `${formatTemp(alert.range.min, u)}–${formatTemp(alert.range.max, u)}`,
     };
   }
-  const suffix = alert.key === 'humidity' ? '%' : '';
+  const suffix = alert.key === 'humidity' ? '%' : alert.key === 'vpd' ? ' kPa' : '';
   return {
     value: `${alert.value}${suffix}`,
     range: `${alert.range.min}${suffix}–${alert.range.max}${suffix}`,

@@ -7,6 +7,7 @@ import { sortLogsByDate, latestLog, currentHeight, totalGrowth, daysTracked, gro
 import { formatLength, formatTemp, formatVolume, formatDate, fromCm } from '../utils/format';
 import { inferStage, stageLabel, getStageGuidance } from '../data/recommendations';
 import { measurementAlerts, describeAlert } from '../utils/ranges';
+import { vpdKpa, vpdBand } from '../utils/vpd';
 
 const PlantDetail = ({ plant, onBack }) => {
   const { colors } = useTheme();
@@ -28,6 +29,7 @@ const PlantDetail = ({ plant, onBack }) => {
     height: log.height == null ? null : Math.round(fromCm(parseFloat(log.height), lengthUnit) * 100) / 100,
     ph: log.ph != null ? parseFloat(log.ph) : null,
     ec: log.ec != null ? parseFloat(log.ec) : null,
+    vpd: vpdKpa(log.air_temp, log.humidity),
   }));
 
   return (
@@ -72,8 +74,10 @@ const PlantDetail = ({ plant, onBack }) => {
       {/* Chart */}
       {chartData.length > 1 && (
         <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-5 ${colors.border} border`}>
-          <h3 className={`text-lg font-semibold ${colors.text} mb-3`}>Growth, pH &amp; EC</h3>
-          <div className="h-72"><GrowthChart data={chartData} lengthUnit={lengthUnit} phRange={guidance?.phRange} ecRange={guidance?.ec} /></div>
+          <h3 className={`text-lg font-semibold ${colors.text} mb-3`}>Growth, pH, EC &amp; VPD</h3>
+          <div className="h-72">
+            <GrowthChart data={chartData} lengthUnit={lengthUnit} phRange={guidance?.phRange} ecRange={guidance?.ec} vpdRange={stage ? vpdBand(stage) : null} />
+          </div>
         </div>
       )}
 
