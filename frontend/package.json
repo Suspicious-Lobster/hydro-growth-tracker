@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
+    "lint:files": "eslint --max-warnings 0",
     "test:unit": "vitest run",
     "preview": "vite preview"
   },
