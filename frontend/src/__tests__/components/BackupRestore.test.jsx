@@ -175,3 +175,55 @@ describe('BackupRestore zip (MR-54)', () => {
     );
   });
 });
+
+// MR-55: CSV import asks the server for a dry run first, shows the summary,
+// and only posts dryRun:false after confirmation; errors disable the commit.
+describe('BackupRestore CSV import (MR-55)', () => {
+  beforeEach(() => {
+    stubMatchMedia();
+    api.post.mockReset();
+    toastSuccess.mockClear();
+    refresh.mockClear();
+  });
+
+  const pickCsv = (text) => {
+    const input = screen.getByTestId('csv-input');
+    const file = new File([text], 'logs.csv', { type: 'text/csv' });
+    if (typeof file.text !== 'function') file.text = () => Promise.resolve(text);
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    fireEvent.change(input);
+  };
+
+  it('shows the dry-run summary, then confirm posts dryRun:false', async () => {
+    api.post
+      .mockResolvedValueOnce({ data: { dryRun: true, rows: 3, valid: 3, errors: [], newPlants: ['Tomato'] } })
+      .mockResolvedValueOnce({ data: { created: { logs: 3, plants: 1 } } });
+    const user = userEvent.setup();
+    renderPanel();
+
+    pickCsv('plant,date,height\nTomato,2026-06-01,5\n');
+
+    expect(await screen.findByText(/3 valid/)).toBeInTheDocument();
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.post.mock.calls[0][0]).toBe('/logs/import');
+    expect(api.post.mock.calls[0][1]).toMatchObject({ dryRun: true });
+
+    await user.click(screen.getByRole('button', { name: /import 3 logs/i }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+    expect(api.post.mock.calls[1][1]).toMatchObject({ dryRun: false, csv: 'plant,date,height\nTomato,2026-06-01,5\n' });
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Imported 3 logs and 1 new plants'));
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('a dry run with errors lists them by line and disables the import button', async () => {
+    api.post.mockResolvedValueOnce({ data: { dryRun: true, rows: 2, valid: 1, errors: [{ line: 3, messages: ['pH must be between 0 and 14'] }], newPlants: [] } });
+    renderPanel();
+
+    pickCsv('plant,date,height,ph\nB,2026-06-01,5,6\nB,2026-06-02,5,15\n');
+
+    expect(await screen.findByText(/Line 3: pH must be between 0 and 14/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /import 1 logs/i })).toBeDisabled();
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+});

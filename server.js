@@ -80,6 +80,106 @@ export function formatDosesCell(doses) {
   return doses.map((d) => `${d.name} ${d.ml_per_l} ml/L`).join('; ');
 }
 
+// ---------------------------- CSV import (MR-55) ----------------------------
+
+// Minimal RFC 4180 reader: quoted fields, doubled quotes, CR/LF/CRLF rows.
+// Returns an array of rows (arrays of strings). A trailing empty line is
+// dropped. Written here rather than pulled in as a dependency because the
+// whole surface is 30 lines and the export side (json2csv) is write-only.
+export function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  let i = 0;
+  const src = String(text || '').replace(/^﻿/, '');
+  while (i < src.length) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"') {
+        if (src[i + 1] === '"') { field += '"'; i += 2; continue; }
+        quoted = false; i += 1; continue;
+      }
+      field += c; i += 1; continue;
+    }
+    if (c === '"') { quoted = true; i += 1; continue; }
+    if (c === ',') { row.push(field); field = ''; i += 1; continue; }
+    if (c === '\r' || c === '\n') {
+      row.push(field); field = '';
+      rows.push(row); row = [];
+      if (c === '\r' && src[i + 1] === '\n') i += 1;
+      i += 1; continue;
+    }
+    field += c; i += 1;
+  }
+  if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter((r) => !(r.length === 1 && r[0] === ''));
+}
+
+// Column names we understand (lower-cased, trimmed, spaces -> underscores)
+// mapped to the log field they fill. Unknown columns (id, plant_id,
+// created_at, anything foreign) are ignored.
+export const IMPORT_COLUMNS = {
+  plant: 'plant_name', plant_name: 'plant_name', name: 'plant_name',
+  date: 'date',
+  height: 'height', height_unit: 'height_unit', unit: 'height_unit',
+  growth_stage: 'growth_stage', stage: 'growth_stage',
+  ph: 'ph', ec: 'ec', ppm: 'ppm',
+  water_temp: 'water_temp', air_temp: 'air_temp', temp_unit: 'temp_unit',
+  humidity: 'humidity', light_hours: 'light_hours', reservoir_volume: 'reservoir_volume',
+  nutrients: 'nutrients', doses: 'doses', notes: 'notes',
+};
+export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+
+// "Part A 2 ml/L; Part B 1.5 ml/L" (our own export cell) -> doses array.
+function parseDosesCell(cell) {
+  if (!cell) return undefined;
+  const doses = [];
+  for (const part of String(cell).split(';')) {
+    const m = /^\s*(.+?)\s+([\d.]+)\s*ml\/L\s*$/i.exec(part);
+    if (m) doses.push({ name: m[1].trim(), ml_per_l: parseFloat(m[2]) });
+  }
+  return doses;
+}
+
+// Turn CSV text into candidate log bodies plus per-line errors. Every row is
+// run through validateLog; nothing here touches the store. A leading single
+// quote (our own csvSafe prefix) is stripped back off text cells. Height in
+// inches is converted to canonical cm. `line` is the 1-based line in the
+// file (the header is line 1).
+export function parseLogImport(text) {
+  const rows = parseCsv(text);
+  if (rows.length === 0) return { header: [], candidates: [], errors: [{ line: 1, messages: ['The file is empty'] }] };
+  const header = rows[0].map((h) => String(h).trim().toLowerCase().replace(/\s+/g, '_').replace(/^'/, ''));
+  const mapped = header.map((h) => IMPORT_COLUMNS[h] || null);
+  const known = mapped.filter(Boolean);
+  if (!known.includes('plant_name') || !known.includes('date') || !known.includes('height')) {
+    return { header, candidates: [], errors: [{ line: 1, messages: ['The header needs at least plant, date and height columns'] }] };
+  }
+  const unquote = (v) => (typeof v === 'string' && v.startsWith("'") ? v.slice(1) : v);
+  const candidates = [];
+  const errors = [];
+  rows.slice(1).forEach((cells, idx) => {
+    const line = idx + 2;
+    const body = {};
+    mapped.forEach((field, col) => {
+      if (!field) return;
+      const raw = unquote(cells[col] ?? '').trim();
+      if (raw === '') return;
+      body[field] = field === 'doses' ? parseDosesCell(raw) : raw;
+    });
+    if (body.height_unit === 'in' && body.height !== undefined) {
+      const h = parseFloat(body.height);
+      if (!Number.isNaN(h)) body.height = Math.round(h * 2.54 * 100) / 100;
+    }
+    delete body.height_unit;
+    const messages = validateLog(body, { requireDate: true });
+    if (messages.length > 0) errors.push({ line, messages });
+    else candidates.push({ line, body });
+  });
+  return { header, candidates, errors };
+}
+
 // Names a zip-backup upload entry may carry: a flat file directly under
 // uploads/, made of the characters finalizeUpload() ever produces plus the
 // legacy sanitized set. Anything else (a directory, '..', an absolute path,
@@ -460,6 +560,38 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     res.header('Content-Type', 'text/csv; charset=utf-8');
     res.attachment(`hydro_logs_${Date.now()}.csv`);
     res.send('\uFEFF' + csv);
+  }));
+
+  // POST /logs/import – { csv, dryRun }. Parse and validate every row first
+  // (MR-55). dryRun (default true) reports counts, per-line errors and the
+  // plants that would be created and writes nothing. dryRun:false writes
+  // every row in ONE save, and only when there are no errors: a half-imported
+  // file is worse than a refused one.
+  app.post('/logs/import', handle((req, res) => {
+    const csv = req.body?.csv;
+    if (typeof csv !== 'string' || csv.trim() === '') return res.status(400).json({ error: 'Send the CSV text as { csv }' });
+    if (Buffer.byteLength(csv, 'utf8') > IMPORT_MAX_BYTES) {
+      return res.status(413).json({ error: `CSV is larger than ${IMPORT_MAX_BYTES / (1024 * 1024)} MB` });
+    }
+    const dryRun = req.body.dryRun !== false;
+    const { candidates, errors } = parseLogImport(csv);
+    const data = readData();
+    const newPlants = [...new Set(candidates
+      .map((c) => String(c.body.plant_name).trim())
+      .filter((name) => !repo.findPlantByName(data, name, { activeOnly: true })))];
+    const summary = { rows: candidates.length + errors.length, valid: candidates.length, errors, newPlants };
+    if (dryRun) return res.json({ dryRun: true, ...summary });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: `Fix the ${errors.length} invalid row(s) before importing`, ...summary });
+    }
+    if (candidates.length === 0) return res.status(400).json({ error: 'Nothing to import', ...summary });
+    const plantsBefore = data.plants.length;
+    for (const c of candidates) repo.createLog(data, c.body);
+    writeData(data);
+    res.status(201).json({
+      dryRun: false, ...summary,
+      created: { logs: candidates.length, plants: data.plants.length - plantsBefore },
+    });
   }));
 
   // POST /logs – create a log, with optional image upload.

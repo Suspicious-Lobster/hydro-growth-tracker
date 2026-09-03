@@ -30,11 +30,48 @@ const BackupRestore = () => {
 
   const fileRef = useRef(null);
   const zipRef = useRef(null);
+  const csvRef = useRef(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [restoring, setRestoring] = useState(false);
   // { kind: 'json', parsed, counts, filename } | { kind: 'zip', file, filename }
   const [pending, setPending] = useState(null);
+  // CSV import (MR-55): { csv, filename, summary } after the server's dry run.
+  const [pendingImport, setPendingImport] = useState(null);
+  const [importing, setImporting] = useState(false);
+
+  // Read the CSV locally, ask the server for a dry run (nothing is written),
+  // and stage the summary for confirmation.
+  const handleCsvFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImporting(true);
+    try {
+      const csv = await file.text();
+      const res = await api.post('/logs/import', { csv, dryRun: true });
+      setPendingImport({ csv, filename: file.name, summary: res.data });
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'Could not read that CSV'));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const confirmImport = async () => {
+    setImporting(true);
+    try {
+      const res = await api.post('/logs/import', { csv: pendingImport.csv, dryRun: false });
+      await refresh();
+      const c = res.data?.created;
+      toast.success(c ? `Imported ${c.logs} logs${c.plants ? ` and ${c.plants} new plants` : ''}` : 'Logs imported');
+      setPendingImport(null);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'Failed to import logs'));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -152,6 +189,64 @@ const BackupRestore = () => {
           data-testid="zip-input"
         />
       </div>
+
+      <div className="space-y-2">
+        <p className={`text-sm ${colors.textMuted}`}>
+          Bring in logs from a spreadsheet or another tracker: a CSV with at least plant, date and height columns
+          (this app&apos;s own export works as-is). You get a preview before anything is added.
+        </p>
+        <button onClick={() => csvRef.current?.click()} disabled={importing} className={btn}>
+          <Upload size={16} /> {importing && !pendingImport ? 'Checking…' : 'Import logs from CSV…'}
+        </button>
+        <input
+          ref={csvRef}
+          type="file"
+          accept="text/csv,.csv"
+          onChange={handleCsvFile}
+          className="hidden"
+          aria-hidden="true"
+          data-testid="csv-input"
+        />
+      </div>
+
+      {pendingImport && (
+        <Modal title="Import these logs?" onClose={() => !importing && setPendingImport(null)} maxWidth="max-w-lg">
+          <div className="space-y-4">
+            <div className={`text-sm ${colors.text}`}>
+              <span className="font-mono">{pendingImport.filename}</span> holds {pendingImport.summary.rows} rows:{' '}
+              <strong>{pendingImport.summary.valid} valid</strong>, {pendingImport.summary.errors.length} with problems.
+              {pendingImport.summary.newPlants?.length > 0 && (
+                <> New plants will be created: {pendingImport.summary.newPlants.join(', ')}.</>
+              )}
+            </div>
+            {pendingImport.summary.errors.length > 0 && (
+              <div className={`p-3 rounded-lg ${colors.bgAccent} border ${colors.border} text-sm space-y-1`}>
+                <div className={`flex items-center gap-2 ${colors.text} font-medium`}>
+                  <AlertTriangle size={16} className="text-amber-500" /> Fix these rows in the file, then try again
+                </div>
+                <ul className={`${colors.textMuted} list-disc pl-5`}>
+                  {pendingImport.summary.errors.slice(0, 5).map((e) => (
+                    <li key={e.line}>Line {e.line}: {e.messages.join('; ')}</li>
+                  ))}
+                  {pendingImport.summary.errors.length > 5 && <li>…and {pendingImport.summary.errors.length - 5} more</li>}
+                </ul>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setPendingImport(null)} disabled={importing} className={btn}>
+                Cancel
+              </button>
+              <button
+                onClick={confirmImport}
+                disabled={importing || pendingImport.summary.errors.length > 0 || pendingImport.summary.valid === 0}
+                className={`${colors.primaryBg} text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50`}
+              >
+                {importing ? 'Importing…' : `Import ${pendingImport.summary.valid} logs`}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {pending && (
         <Modal title="Restore from backup?" onClose={() => !restoring && setPending(null)} maxWidth="max-w-lg">
