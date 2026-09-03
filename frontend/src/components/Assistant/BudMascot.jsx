@@ -15,6 +15,9 @@ import { isHarvestWindow } from '../../utils/trends';
 import { earnedBadges, newlyEarned } from '../../utils/achievements';
 import { setSoundEnabled, pop } from '../../utils/sound';
 import { TOUR_STEPS, stepCompleted } from '../../data/onboarding';
+import { useBudEvent } from '../../hooks/useBudEvent';
+import { emitSafe } from '../../utils/budBus';
+import { BUD_EVENTS } from '../../data/budCues';
 import BudLeaf from './BudLeaf';
 import BudRenderer from './BudRenderer';
 import SpeechBubble from './SpeechBubble';
@@ -25,6 +28,27 @@ import Achievements from '../Achievements';
 
 const SIZE = 324;
 const CHECK_INTERVAL_MS = 60 * 1000;
+const AWAY_SECONDS_FOR_WELCOME_BACK = 600; // 10 minutes
+
+// Maps a budBus event to a cue name (or null to ignore it). Kept as a plain
+// table, not a switch, so the red proof (MR-62) is a single deleted entry.
+// Each entry is a function of the event payload so status-dependent events
+// (form:reading) can branch.
+const EVENT_TO_CUE = {
+  [BUD_EVENTS.FORM_READING]: (payload) => {
+    if (payload?.status === 'ok') return 'nod';
+    if (payload?.status === 'warn' || payload?.status === 'out') return 'wince';
+    return null;
+  },
+  [BUD_EVENTS.FORM_FOCUS]: () => 'peek',
+  [BUD_EVENTS.SAVE_OK]: () => 'cheer',
+  [BUD_EVENTS.SAVE_ERROR]: () => 'facepalm',
+  [BUD_EVENTS.DELETE]: () => 'sulk',
+  [BUD_EVENTS.APP_RETURN]: (payload) => (
+    (payload?.awaySeconds ?? 0) >= AWAY_SECONDS_FOR_WELCOME_BACK ? 'welcomeBack' : null
+  ),
+  [BUD_EVENTS.TAB]: (payload) => (payload?.tab === 'settings' ? 'yawn' : null),
+};
 
 // Which badges have already been celebrated, kept local to BudMascot (not
 // AssistantContext, since it's driven by data/achievements rather than a UI
@@ -64,6 +88,47 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const [badgesOpen, setBadgesOpen] = useState(false);
   const shownIdRef = useRef(null);
   const prevCountsRef = useRef(null);
+
+  // A one-shot piece of body language for BudRenderer/BudThree to perform
+  // (see data/budCues.js). `at` is a counter-bumped timestamp so two events
+  // arriving within the same millisecond still produce a distinct stamp the
+  // rig can key an animation restart on.
+  const [cue, setCue] = useState(null);
+  const cueCounterRef = useRef(0);
+  const fireCue = useCallback((name, payload) => {
+    if (!name) return;
+    cueCounterRef.current += 1;
+    setCue({ name, at: Date.now() + cueCounterRef.current, payload });
+  }, []);
+
+  // The single point where budBus events become cues. Cues never open the
+  // speech bubble and never call markShown — they're a silent reaction, not
+  // a tip, so they don't touch the 60s tip rate limit.
+  useBudEvent('*', useCallback((payload, type) => {
+    const toCue = EVENT_TO_CUE[type];
+    if (!toCue) return;
+    fireCue(toCue(payload), payload);
+  }, [fireCue]));
+
+  // Bud perks up when the tab regains focus after a long absence. Tracks the
+  // hidden timestamp locally and emits through the bus (rather than calling
+  // fireCue directly) so the same mapping table handles both this and any
+  // other source of an app:return event.
+  const hiddenAtRef = useRef(null);
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        hiddenAtRef.current = Date.now();
+        return;
+      }
+      if (hiddenAtRef.current == null) return;
+      const awaySeconds = Math.floor((Date.now() - hiddenAtRef.current) / 1000);
+      hiddenAtRef.current = null;
+      emitSafe(BUD_EVENTS.APP_RETURN, { awaySeconds });
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
 
   // Derive the engine input from current data.
   const logs = selectedPlant ? getPlantLogs(selectedPlant) : [];
@@ -292,7 +357,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
             className="block cursor-grab active:cursor-grabbing touch-none select-none drop-shadow-lg"
             style={{ touchAction: 'none' }}
           >
-            <BudRenderer expression={expression} animate={animate} size={SIZE} dragging={dragging} talking={open || tourActive} mood={mood} shades={shades} />
+            <BudRenderer expression={expression} animate={animate} size={SIZE} dragging={dragging} talking={open || tourActive} mood={mood} shades={shades} cue={cue} />
           </button>
           <button
             onClick={() => setMinimized(true)}
