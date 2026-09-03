@@ -12,6 +12,7 @@ import {
 import { dayKey } from '../utils/dates';
 import { stageLabel, getProfileStages } from '../data/recommendations';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
+import { filterLogs, isFilterActive } from '../utils/logFilter';
 import ConfirmDialog from './ui/ConfirmDialog';
 
 // Round a display-unit value to a sane number of decimals when prefilling an
@@ -31,7 +32,12 @@ const LogViewer = () => {
   const [editForm, setEditForm] = useState({});
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [filters, setFilters] = useState({ q: '', plantId: '', from: '', to: '', stage: '', has: '' });
   const { length: lengthUnit, temp: tempUnit, volume: volumeUnit } = settings.units;
+
+  const filterActive = isFilterActive(filters);
+  const visibleLogs = filterActive ? filterLogs(logs, filters) : logs;
+  const clearFilters = () => setFilters({ q: '', plantId: '', from: '', to: '', stage: '', has: '' });
 
   const startEditing = (log) => {
     setEditingId(log.id);
@@ -115,7 +121,92 @@ const LogViewer = () => {
           <Edit3 className="text-green-400" size={24} />
           <h2 className={`text-2xl font-bold ${colors.text}`}>View & Edit Logs</h2>
         </div>
-        <p className={`${colors.textMuted} mt-2`}>Total logs: {logs.length}</p>
+        <p className={`${colors.textMuted} mt-2`}>
+          {filterActive ? `Showing ${visibleLogs.length} of ${logs.length} logs` : `Total logs: ${logs.length}`}
+        </p>
+      </div>
+
+      <div className={`p-6 border-b ${colors.border}`}>
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="lg:col-span-2">
+            <label className={`block text-sm ${colors.text} mb-1`}>Search</label>
+            <input
+              type="text"
+              aria-label="Search logs"
+              value={filters.q}
+              onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+              className={inputCls}
+              placeholder="Plant, nutrients, notes…"
+            />
+          </div>
+          <div>
+            <label className={`block text-sm ${colors.text} mb-1`}>Plant</label>
+            <select
+              aria-label="Filter by plant"
+              value={filters.plantId}
+              onChange={(e) => setFilters({ ...filters, plantId: e.target.value })}
+              className={inputCls}
+            >
+              <option value="">All plants</option>
+              {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={`block text-sm ${colors.text} mb-1`}>From</label>
+            <input
+              type="date"
+              aria-label="From date"
+              value={filters.from}
+              onChange={(e) => setFilters({ ...filters, from: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className={`block text-sm ${colors.text} mb-1`}>To</label>
+            <input
+              type="date"
+              aria-label="To date"
+              value={filters.to}
+              onChange={(e) => setFilters({ ...filters, to: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className={`block text-sm ${colors.text} mb-1`}>Stage</label>
+            <select
+              aria-label="Filter by stage"
+              value={filters.stage}
+              onChange={(e) => setFilters({ ...filters, stage: e.target.value })}
+              className={inputCls}
+            >
+              <option value="">All stages</option>
+              {Object.values(GROWTH_STAGES).map((s) => <option key={s} value={s}>{stageLabel(s)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={`block text-sm ${colors.text} mb-1`}>Has measurement</label>
+            <select
+              aria-label="Has measurement"
+              value={filters.has}
+              onChange={(e) => setFilters({ ...filters, has: e.target.value })}
+              className={inputCls}
+            >
+              <option value="">Any</option>
+              <option value="ph">pH</option>
+              <option value="ec">EC</option>
+              <option value="ppm">PPM</option>
+              <option value="photo">Photo</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-3">
+          <button
+            onClick={clearFilters}
+            className={`px-4 py-2 ${colors.bgAccent} ${colors.text} rounded-lg text-sm border ${colors.border}`}
+          >
+            Clear filters
+          </button>
+        </div>
       </div>
 
       <div className="p-6">
@@ -124,9 +215,14 @@ const LogViewer = () => {
             <FileText size={48} className="mx-auto mb-4 opacity-50" />
             <p>No logs found. Add your first growth log!</p>
           </div>
+        ) : visibleLogs.length === 0 ? (
+          <div className={`text-center ${colors.textMuted} py-12`}>
+            <FileText size={48} className="mx-auto mb-4 opacity-50" />
+            <p>No logs match these filters</p>
+          </div>
         ) : (
           <div className="space-y-4">
-            {logs.map((log) => (
+            {visibleLogs.map((log) => (
               <div key={log.id} className={`${colors.bgAccent} rounded-lg p-4 border ${colors.border}`}>
                 {editingId === log.id ? (
                   <div className="space-y-3">
