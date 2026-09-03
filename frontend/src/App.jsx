@@ -19,6 +19,7 @@ import PlantManager from './components/PlantManager';
 import LogViewer from './components/LogViewer';
 import PlantDetail from './components/PlantDetail';
 import SettingsPanel from './components/SettingsPanel';
+import { useFeedingReminders } from './hooks/useFeedingReminders';
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -30,10 +31,14 @@ const TABS = [
 ];
 
 function AppContent() {
-  const { plants, logs, loading, refreshing, error, refresh } = useAppData();
-  const { tourStep, tourDone } = useAssistant();
+  const { plants, logs, schedules, loading, refreshing, error, refresh } = useAppData();
+  const { tourStep, tourDone, remindersEnabled } = useAssistant();
   const [selectedPlantId, setSelectedPlantId] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // MR-44: nag with a desktop notification when a feeding is due, so it's
+  // noticed without keeping the Feeding tab open.
+  useFeedingReminders({ schedules, enabled: remindersEnabled });
 
   const selectedPlant = plants.find((p) => p.id === selectedPlantId) || null;
 

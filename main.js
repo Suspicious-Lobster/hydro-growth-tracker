@@ -12,6 +12,11 @@ const __dirname = path.dirname(__filename);
 const isDev = process.env.NODE_ENV === 'development';
 const DEV_RENDERER_ORIGIN = 'http://localhost:5173';
 
+// MR-44: Windows groups notifications (and taskbar entries) by AppUserModelId;
+// without it a packaged app's notifications show as coming from "Electron"
+// or don't show at all. Must equal package.json build.appId (parity-tested).
+app.setAppUserModelId('com.hydrotracker.hydro-growth-tracker');
+
 let mainWindow;
 let backendServer;
 let logger;

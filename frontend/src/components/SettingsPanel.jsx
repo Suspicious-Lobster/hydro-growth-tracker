@@ -12,7 +12,7 @@ import AboutDialog from './AboutDialog';
 const SettingsPanel = () => {
   const { colors } = useTheme();
   const { settings, updateSettings } = useAppData();
-  const { effectsEnabled, muted, soundEnabled, toggleEffects, setMuted, setSoundEnabled, resetDismissed, startTour } = useAssistant();
+  const { effectsEnabled, muted, soundEnabled, remindersEnabled, toggleEffects, setMuted, setSoundEnabled, setRemindersEnabled, resetDismissed, startTour } = useAssistant();
   const toast = useToast();
   const [showAbout, setShowAbout] = useState(false);
 
@@ -98,6 +98,7 @@ const SettingsPanel = () => {
       <Toggle colors={colors} label="Animated effects" description="Swaying leaves and mascot animations." checked={effectsEnabled} onChange={toggleEffects} />
       <Toggle colors={colors} label="Bud the assistant" description="Proactive grow tips. Turn off to mute pop-ups." checked={!muted} onChange={() => setMuted(!muted)} />
       <Toggle colors={colors} label="Sound effects" description="Tiny pops, snores, and lighter flicks from Bud. Quiet by design." checked={soundEnabled} onChange={() => setSoundEnabled(!soundEnabled)} />
+      <Toggle colors={colors} label="Feeding reminders" description="Desktop notification when a feeding is due." checked={remindersEnabled !== false} onChange={() => setRemindersEnabled && setRemindersEnabled(!(remindersEnabled !== false))} />
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => { resetDismissed(); toast.success('Tips reset — Bud will share them again'); }}

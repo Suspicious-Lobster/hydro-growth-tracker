@@ -23,6 +23,7 @@ const KEYS = {
   lastShown: 'bud.lastShownAt',
   tourStep: 'bud.tourStep',
   tourDone: 'bud.tourDone',
+  remindersEnabled: 'bud.remindersEnabled',
 };
 
 const DEFAULT_POSITION = { right: 24, bottom: 24 };
@@ -54,6 +55,8 @@ export const AssistantProvider = ({ children }) => {
   // = the active step index. tourDone: the tour has been finished/skipped.
   const [tourStep, setTourStepState] = useState(() => read(KEYS.tourStep, null));
   const [tourDone, setTourDone] = useState(() => read(KEYS.tourDone, false));
+  // Desktop notification when a feeding is due (MR-44). Default on.
+  const [remindersEnabled, setRemindersEnabledState] = useState(() => read(KEYS.remindersEnabled, true));
 
   useEffect(() => write(KEYS.effects, effectsEnabled), [effectsEnabled]);
   useEffect(() => write(KEYS.muted, muted), [muted]);
@@ -64,12 +67,14 @@ export const AssistantProvider = ({ children }) => {
   useEffect(() => write(KEYS.lastShown, lastShownAt), [lastShownAt]);
   useEffect(() => write(KEYS.tourStep, tourStep), [tourStep]);
   useEffect(() => write(KEYS.tourDone, tourDone), [tourDone]);
+  useEffect(() => write(KEYS.remindersEnabled, remindersEnabled), [remindersEnabled]);
 
   const toggleEffects = useCallback(() => setEffectsEnabled((v) => !v), []);
   const setMuted = useCallback((v) => setMutedState(Boolean(v)), []);
   const setSoundEnabled = useCallback((v) => setSoundEnabledState(Boolean(v)), []);
   const setPosition = useCallback((p) => setPositionState(p), []);
   const setMinimized = useCallback((v) => setMinimizedState(Boolean(v)), []);
+  const setRemindersEnabled = useCallback((v) => setRemindersEnabledState(Boolean(v)), []);
   const markShown = useCallback((now) => setLastShownAtState(now), []);
   const dismissTip = useCallback((id) => {
     setDismissedTipIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
@@ -82,13 +87,13 @@ export const AssistantProvider = ({ children }) => {
 
   const value = useMemo(() => ({
     effectsEnabled, muted, soundEnabled, position, minimized, dismissedTipIds, lastShownAt,
-    tourStep, tourDone,
+    tourStep, tourDone, remindersEnabled,
     toggleEffects, setMuted, setSoundEnabled, setPosition, setMinimized, markShown, dismissTip, resetDismissed,
-    startTour, setTourStep, endTour,
+    startTour, setTourStep, endTour, setRemindersEnabled,
   }), [effectsEnabled, muted, soundEnabled, position, minimized, dismissedTipIds, lastShownAt,
-    tourStep, tourDone,
+    tourStep, tourDone, remindersEnabled,
     toggleEffects, setMuted, setSoundEnabled, setPosition, setMinimized, markShown, dismissTip, resetDismissed,
-    startTour, setTourStep, endTour]);
+    startTour, setTourStep, endTour, setRemindersEnabled]);
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
 };
