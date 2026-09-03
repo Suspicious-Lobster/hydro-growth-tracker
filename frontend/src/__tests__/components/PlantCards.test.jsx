@@ -46,13 +46,13 @@ describe('PlantCards Dashboard - generic guidance hint', () => {
 
   it('shows generic guidance for a species with no authored profile', () => {
     renderDashboard();
-    const mysteryCard = screen.getByText('Mystery Plant').closest('button');
+    const mysteryCard = screen.getByRole('heading', { name: 'Mystery Plant' }).closest('button');
     expect(mysteryCard.textContent).toContain('generic guidance');
   });
 
   it('does not show generic guidance for a species with its own profile', () => {
     renderDashboard();
-    const basilCard = screen.getByText('Basil Plant').closest('button');
+    const basilCard = screen.getByRole('heading', { name: 'Basil Plant' }).closest('button');
     expect(basilCard.textContent).not.toContain('generic guidance');
   });
 });

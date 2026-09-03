@@ -7,6 +7,7 @@ import { formatLength, formatTemp } from '../utils/format';
 import { inferStage, stageLabel, hasOwnProfile } from '../data/recommendations';
 import { measurementAlerts, describeAlert } from '../utils/ranges';
 import DashboardWidgets from './DashboardWidgets';
+import QuickLogForm from './QuickLogForm';
 
 const PlantCard = React.memo(({ plant, logs, lengthUnit, tempUnit, onSelect }) => {
   const { colors } = useTheme();
@@ -101,6 +102,7 @@ const Dashboard = ({ onSelectPlant, now }) => {
   return (
     <>
       <DashboardWidgets now={now} />
+      <QuickLogForm />
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {plants.map((plant) => (
           <PlantCard

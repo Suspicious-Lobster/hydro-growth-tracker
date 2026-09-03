@@ -49,14 +49,14 @@ describe('Dashboard alerts (MR-25)', () => {
 
   it('shows an out-of-range pH alert for a tomato logged at pH 7.5', () => {
     renderDashboard();
-    const card = screen.getByText('High pH Tomato').closest('button');
+    const card = screen.getByRole('heading', { name: 'High pH Tomato' }).closest('button');
     expect(card.textContent).toContain('pH');
     expect(card.textContent).toContain('out of range');
   });
 
   it('shows no out-of-range alert for a tomato logged at pH 6.0', () => {
     renderDashboard();
-    const card = screen.getByText('Fine Tomato').closest('button');
+    const card = screen.getByRole('heading', { name: 'Fine Tomato' }).closest('button');
     expect(card.textContent).not.toContain('out of range');
   });
 });
