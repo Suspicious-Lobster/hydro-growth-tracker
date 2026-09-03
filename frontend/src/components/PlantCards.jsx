@@ -8,6 +8,7 @@ import { inferStage, stageLabel, hasOwnProfile } from '../data/recommendations';
 import { measurementAlerts, describeAlert } from '../utils/ranges';
 import DashboardWidgets from './DashboardWidgets';
 import QuickLogForm from './QuickLogForm';
+import CompareChart from './CompareChart';
 
 const PlantCard = React.memo(({ plant, logs, lengthUnit, tempUnit, onSelect }) => {
   const { colors } = useTheme();
@@ -115,6 +116,7 @@ const Dashboard = ({ onSelectPlant, now }) => {
           />
         ))}
       </div>
+      <CompareChart plants={plants} getPlantLogs={getPlantLogs} lengthUnit={lengthUnit} />
     </>
   );
 };
