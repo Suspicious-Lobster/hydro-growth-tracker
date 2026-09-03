@@ -84,7 +84,9 @@ const PlantSidebar = ({ selectedPlantId, onPlantSelect, onShowAll, onManagePlant
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-medium truncate">{plant.name}</div>
-                    <div className="text-sm opacity-70 truncate">
+                    {/* No opacity here: 70 percent of the secondary colour fell under
+                        axe's contrast floor on the CI runner's theme (MR-74). */}
+                    <div className={`text-sm truncate ${isSelected ? '' : colors.textMuted}`}>
                       {logs.length} log{logs.length === 1 ? '' : 's'}
                       {logs.length > 0 && ` • ${formatLength(currentHeight(logs), lengthUnit)}`}
                     </div>

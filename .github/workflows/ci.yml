@@ -25,6 +25,10 @@ jobs:
       TZ: ${{ matrix.tz }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: board.py lint checks that every done row's commit
+          # exists, and a depth-1 checkout has none of them (MR-73).
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -67,6 +71,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: board.py lint checks that every done row's commit
+          # exists, and a depth-1 checkout has none of them (MR-73).
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:

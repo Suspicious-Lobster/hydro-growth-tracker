@@ -71,8 +71,12 @@ export default {
           'bg-secondary': '#f8fafc',
           'bg-accent': '#f1f5f9',
           text: '#1e293b',
-          'text-secondary': '#475569',
-          'text-muted': '#64748b',
+          // One step darker than before (MR-74): the old muted #64748b read
+          // 4.4:1 on the accent tile background (#f1f5f9), under axe's 4.5
+          // floor for the 10px stat labels; #475569 reads 6.9 there and the
+          // secondary moves to #334155 (9.5) so the two stay distinct.
+          'text-secondary': '#334155',
+          'text-muted': '#475569',
           primary: '#2563eb',
           'primary-bg': '#2563eb',
           'primary-hover': '#1d4ed8',

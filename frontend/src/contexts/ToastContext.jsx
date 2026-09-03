@@ -13,9 +13,13 @@ export const useToast = () => {
 let nextToastId = 1;
 
 const TONE = {
-  success: { icon: CheckCircle, classes: 'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-300' },
-  error: { icon: AlertTriangle, classes: 'border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-300' },
-  info: { icon: Info, classes: 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-300' },
+  // Light-theme text is the 800 shade (MR-74): the toast is translucent and
+  // blurred, so its effective background is whatever page content sits
+  // behind it; green-700 measured 4.22:1 on the blend behind Add Log and
+  // axe's floor is 4.5. The 800s read 7.1 / 8.3 / 8.7 on plain white.
+  success: { icon: CheckCircle, classes: 'border-green-500/40 bg-green-500/10 text-green-800 dark:text-green-300' },
+  error: { icon: AlertTriangle, classes: 'border-red-500/40 bg-red-500/10 text-red-800 dark:text-red-300' },
+  info: { icon: Info, classes: 'border-blue-500/40 bg-blue-500/10 text-blue-800 dark:text-blue-300' },
 };
 
 export const ToastProvider = ({ children }) => {

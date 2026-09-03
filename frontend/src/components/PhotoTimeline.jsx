@@ -59,7 +59,7 @@ const PhotoTimeline = ({ logs, lengthUnit }) => {
       <p data-testid="photo-caption" className="text-center text-sm mt-2">
         {formatDate(photo.date)} · {formatLength(photo.height, lengthUnit)}
       </p>
-      <p className="text-center text-xs opacity-70">{clamped + 1} of {photos.length}</p>
+      <p className="text-center text-xs">{clamped + 1} of {photos.length}</p>
     </div>
   );
 };
