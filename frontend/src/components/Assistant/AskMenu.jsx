@@ -9,6 +9,7 @@ const ITEMS = [
   { key: 'week', label: 'How was my week?' },
   { key: 'action', label: 'What should I do?' },
   { key: 'fun', label: 'Tell me something' },
+  { key: 'diagnose', label: 'Something looks wrong' },
 ];
 
 export default function AskMenu({ animate = true, onPick }) {

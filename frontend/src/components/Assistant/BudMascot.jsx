@@ -17,6 +17,7 @@ import BudRenderer from './BudRenderer';
 import SpeechBubble from './SpeechBubble';
 import AskMenu from './AskMenu';
 import BudWizard from './BudWizard';
+import DeficiencyHelper from '../DeficiencyHelper';
 
 const SIZE = 324;
 const CHECK_INTERVAL_MS = 60 * 1000;
@@ -39,6 +40,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const [tip, setTip] = useState(null);
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
   const shownIdRef = useRef(null);
   const prevCountsRef = useRef(null);
 
@@ -154,11 +156,13 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   // Answer the picked question in the speech bubble (bypasses cooldown + mute).
   const onPick = useCallback((key) => {
     setMenuOpen(false);
+    if (key === 'diagnose') { setDiagnoseOpen(true); return; }
     const answer = answerQuestion(stateRef.current.input, key, { now: Date.now() });
     shownIdRef.current = answer.id;
     setTip(answer);
     setOpen(true);
   }, []);
+  const closeDiagnose = useCallback(() => setDiagnoseOpen(false), []);
 
   const closeTip = useCallback(() => setOpen(false), []);
   const dontShow = useCallback(() => {
@@ -195,56 +199,59 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   }
 
   return (
-    <div
-      className="fixed z-50 flex flex-col items-end pointer-events-none"
-      style={{ right: pos.right, bottom: pos.bottom }}
-    >
-      {tourActive ? (
-        <div className="pointer-events-auto">
-          <BudWizard
-            step={tourStepData}
-            index={tourStep}
-            total={TOUR_STEPS.length}
-            animate={animate}
-            onPrimary={onTourPrimary}
-            onSecondary={onTourSecondary}
-            onSkip={onSkipTour}
-          />
+    <>
+      {diagnoseOpen && <DeficiencyHelper onClose={closeDiagnose} />}
+      <div
+        className="fixed z-50 flex flex-col items-end pointer-events-none"
+        style={{ right: pos.right, bottom: pos.bottom }}
+      >
+        {tourActive ? (
+          <div className="pointer-events-auto">
+            <BudWizard
+              step={tourStepData}
+              index={tourStep}
+              total={TOUR_STEPS.length}
+              animate={animate}
+              onPrimary={onTourPrimary}
+              onSecondary={onTourSecondary}
+              onSkip={onSkipTour}
+            />
+          </div>
+        ) : (
+          <>
+            {open && (
+              <div className="pointer-events-auto">
+                <SpeechBubble tip={tip} animate={animate} onClose={closeTip} onDontShow={dontShow} />
+              </div>
+            )}
+
+            {menuOpen && !open && (
+              <div className="pointer-events-auto">
+                <AskMenu animate={animate} onPick={onPick} />
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="relative pointer-events-auto">
+          <button
+            {...handleProps}
+            onClick={onLeafClick}
+            aria-label="Bud the assistant — click to ask, drag to move"
+            className="block cursor-grab active:cursor-grabbing touch-none select-none drop-shadow-lg"
+            style={{ touchAction: 'none' }}
+          >
+            <BudRenderer expression={expression} animate={animate} size={SIZE} dragging={dragging} talking={open || tourActive} mood={mood} shades={shades} />
+          </button>
+          <button
+            onClick={() => setMinimized(true)}
+            aria-label="Minimize Bud"
+            className="absolute -top-1 -left-1 bg-black/40 hover:bg-black/60 text-white rounded-full p-0.5 transition-colors"
+          >
+            <Minus size={12} />
+          </button>
         </div>
-      ) : (
-        <>
-          {open && (
-            <div className="pointer-events-auto">
-              <SpeechBubble tip={tip} animate={animate} onClose={closeTip} onDontShow={dontShow} />
-            </div>
-          )}
-
-          {menuOpen && !open && (
-            <div className="pointer-events-auto">
-              <AskMenu animate={animate} onPick={onPick} />
-            </div>
-          )}
-        </>
-      )}
-
-      <div className="relative pointer-events-auto">
-        <button
-          {...handleProps}
-          onClick={onLeafClick}
-          aria-label="Bud the assistant — click to ask, drag to move"
-          className="block cursor-grab active:cursor-grabbing touch-none select-none drop-shadow-lg"
-          style={{ touchAction: 'none' }}
-        >
-          <BudRenderer expression={expression} animate={animate} size={SIZE} dragging={dragging} talking={open || tourActive} mood={mood} shades={shades} />
-        </button>
-        <button
-          onClick={() => setMinimized(true)}
-          aria-label="Minimize Bud"
-          className="absolute -top-1 -left-1 bg-black/40 hover:bg-black/60 text-white rounded-full p-0.5 transition-colors"
-        >
-          <Minus size={12} />
-        </button>
       </div>
-    </div>
+    </>
   );
 }
