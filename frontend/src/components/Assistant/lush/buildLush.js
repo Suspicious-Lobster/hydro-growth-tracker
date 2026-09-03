@@ -257,6 +257,27 @@ export const ARM_STRETCH = {
   L: { x: -0.3, y: -0.2, z: -2.68 },
   R: { x: -0.3, y: 0.2, z: 2.68 },
 };
+// Reaction-cue poses (MR-64). Blended in over whatever the idle-emote arms are
+// doing, via the same applyArmPose lerp, so a cue always wins while it's active.
+// Both arms thrown up-and-out for a cheer (higher + wider than the stretch).
+export const ARM_CHEER = {
+  L: { x: -1.5, y: -0.15, z: -2.6 },
+  R: { x: -1.5, y: 0.15, z: 2.6 },
+};
+// Both arms out sideways, roughly level, for an "I have no idea" shrug.
+export const ARM_SHRUG = {
+  L: { x: 0.05, y: -0.1, z: -2.6 },
+  R: { x: 0.05, y: 0.1, z: 2.6 },
+};
+// Right forearm swung up and across to cover the face.
+export const ARM_FACEPALM = {
+  R: { x: -1.65, y: 0.35, z: -0.35 },
+};
+// Right arm straight out to the side (+X). BudThree mirrors this (negate y/z)
+// for payload.dir === -1 to point the other way (-X).
+export const ARM_POINT = {
+  R: { x: 0.05, y: -0.05, z: 1.55 },
+};
 
 // One articulated arm: a shoulder pivot Group with the capsule hanging from it and a
 // `hand` Group at the wrist that props (joint / lighter) can be parented to.

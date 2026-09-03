@@ -1,7 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { buildLush, ARM_REST, ARM_SMOKE, ARM_WAVE, ARM_STRETCH, BLOODSHOT } from './lush/buildLush';
+import {
+  buildLush, ARM_REST, ARM_SMOKE, ARM_WAVE, ARM_STRETCH,
+  ARM_CHEER, ARM_SHRUG, ARM_FACEPALM, ARM_POINT, BLOODSHOT,
+} from './lush/buildLush';
 import { flick, snore } from '../../utils/sound';
+import { cueFor } from '../../data/budCues';
 
 // The living, 3D incarnation of Bud ("Lush"). Boots a tiny three.js scene, builds
 // the procedural leaf character, and runs one rAF loop that drives the four "alive"
@@ -67,7 +71,21 @@ const applyArmPose = (pivot, rest, smoke, t) => {
   pivot.rotation.z = lerp(rest.z, smoke.z, t);
 };
 
-export default function BudThree({ expression = 'idle', size = 108, dragging = false, talking = false, mood = 'neutral', shades = false }) {
+// Mirror an ARM_POINT-style pose to the opposite side (payload.dir === -1):
+// keep the pitch (x), flip the yaw/swing (y, z) that aim it left vs right.
+const mirrorArmX = (p) => ({ x: p.x, y: -p.y, z: -p.z });
+
+// Ease a one-shot reaction cue in/out over its own duration (u = t/dur, 0..1):
+// ramp up over the first 20%, hold at full strength, ease back down over the
+// last 25% so every cue always lands back on rest before `dur` elapses.
+const smoothstep = (x) => x * x * (3 - 2 * x);
+const cueEnvelope = (u) => {
+  if (u <= 0.2) return smoothstep(u / 0.2);
+  if (u >= 0.75) return smoothstep(Math.max(0, (1 - u) / 0.25));
+  return 1;
+};
+
+export default function BudThree({ expression = 'idle', size = 108, dragging = false, talking = false, mood = 'neutral', shades = false, cue = null }) {
   const mountRef = useRef(null);
   // Live prop mirrors so the animation loop sees fresh values without re-init.
   const exprRef = useRef(expression);
@@ -75,6 +93,7 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
   const talkRef = useRef(talking);
   const moodRef = useRef(mood);
   const shadesRef = useRef(shades);
+  const cueRef = useRef(cue);
   const sceneApi = useRef(null);
 
   useEffect(() => { moodRef.current = mood; }, [mood]);
@@ -82,6 +101,7 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
   useEffect(() => { dragRef.current = dragging; }, [dragging]);
   useEffect(() => { talkRef.current = talking; }, [talking]);
   useEffect(() => { shadesRef.current = shades; }, [shades]);
+  useEffect(() => { cueRef.current = cue; }, [cue]);
 
   // Boot the scene once on mount.
   useEffect(() => {
@@ -186,11 +206,24 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
     let prevDragging = false;
     // ---- accessories + time-of-day + sound edge-detectors
     let shadesBlend = 0;
+    const lean = { x: 0, y: 0, z: 0 }; // smoothed body lean (see the rotation block)
     let hatBlend = 0;
     let hour = new Date().getHours();
     let hourCheck = 0;
     let prevFlameOn = false;
     let prevBreathUp = false;
+    // ---- one-shot reaction cues (MR-64): the brain hands over { name, at,
+    // payload } via a prop; cueRef mirrors it so the loop can edge-detect a
+    // new `at` without a re-render. `cue` is the currently-playing cue's own
+    // clock; `queuedCue` holds one that must wait for an idle emote to free up.
+    let cuesDisabled = false; // dev-only override for the red-proof capture
+    let lastCueAt = 0;
+    let queuedCue = null;
+    const cue = { name: null, payload: null, t: 0, dur: 0, active: false };
+    const startCue = (req) => {
+      cue.name = req.name; cue.payload = req.payload; cue.dur = req.dur; cue.t = 0; cue.active = true;
+      if (req.name === 'land') { wobble.t = 0; wobble.amp = 0.3; } // piggyback the drop-squash wobble
+    };
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
@@ -261,16 +294,87 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       const dragTilt = THREE.MathUtils.clamp(vel.x * 0.0009, -0.35, 0.35) * squash;
       const leanY = cursor.x * 0.4;
       const leanX = -cursor.y * 0.22 + breath * 0.03;
-      body.rotation.y = lerp(body.rotation.y, leanY + squash * 0.12, 1 - Math.pow(0.0005, dt));
-      body.rotation.x = lerp(body.rotation.x, leanX, 1 - Math.pow(0.002, dt));
-      body.rotation.z = lerp(body.rotation.z, dragTilt + wob + squash * 0.04 * Math.sin(elapsed * 9), 0.25);
+      // The smoothed lean lives in its own state and is ASSIGNED to the body
+      // each frame. Everything below that nudges body.rotation with `+=` (idle
+      // emotes, the cough, the reaction cues) is then a true one-frame offset.
+      // Lerping body.rotation from itself and adding on top compounded a
+      // constant offset ~10x (sulk's 0.35 rad droop tipped Bud onto his back
+      // in the MR-64 capture); the same class as the position.z drift.
+      lean.y = lerp(lean.y, leanY + squash * 0.12, 1 - Math.pow(0.0005, dt));
+      lean.x = lerp(lean.x, leanX, 1 - Math.pow(0.002, dt));
+      lean.z = lerp(lean.z, dragTilt + wob + squash * 0.04 * Math.sin(elapsed * 9), 0.25);
+      body.rotation.set(lean.x, lean.y, lean.z);
+
+      // --- cue machine: edge-detect a new one-shot cue request, decide whether
+      // it may interrupt an idle emote (per its `interrupts`), and step the
+      // currently active one. `walk` has dur 0 (MR-65's) — skip it here, don't crash.
+      if (!cuesDisabled && cueRef.current && cueRef.current.at !== lastCueAt) {
+        lastCueAt = cueRef.current.at;
+        const rec = cueFor(cueRef.current.name);
+        if (rec && rec.dur > 0) {
+          const req = { name: cueRef.current.name, payload: cueRef.current.payload, dur: rec.dur };
+          const emoteBusy = emote.phase !== 'wait' && emote.phase !== 'cooldown';
+          if (rec.interrupts || !emoteBusy) {
+            if (emoteBusy) { emote.phase = 'cooldown'; emote.t = 0; } // cut the idle emote short
+            startCue(req);
+          } else {
+            queuedCue = req; // wait for the idle emote to reach wait/cooldown
+          }
+        }
+      }
+      if (queuedCue && !cue.active && (emote.phase === 'wait' || emote.phase === 'cooldown')) {
+        startCue(queuedCue);
+        queuedCue = null;
+      }
+      if (cue.active) {
+        cue.t += dt;
+        if (cue.t >= cue.dur) { cue.active = false; cue.name = null; cue.payload = null; cue.t = 0; }
+      }
+      const cueK = cue.active ? cueEnvelope(cue.t / cue.dur) : 0;
+      const cueName = cue.active ? cue.name : null;
+
+      // --- cue body language: additive offsets atop the lean/breath pose above,
+      // eased in/out by cueK so the cue always returns the body to rest ---
+      if (cueName) {
+        const cueU = cue.dur > 0 ? cue.t / cue.dur : 1;
+        switch (cueName) {
+          case 'peek': {
+            const side = cursor.x >= 0 ? 1 : -1;
+            body.rotation.y += side * 0.22 * cueK; // lean toward the cursor
+            body.rotation.x -= 0.08 * cueK;        // small forward tilt
+            break;
+          }
+          case 'nod':
+            body.rotation.x += Math.sin(cueU * Math.PI * 2 * 2) * 0.18 * cueK; // two dips
+            break;
+          case 'wince':
+            // Absolute, not "-=": nothing else ever sets body.position.z, so an
+            // accumulating subtract here would drift the body away from the
+            // camera a little further on every single wince, forever.
+            body.position.z = -0.35 * cueK; // recoil back
+            break;
+          case 'cheer':
+            body.position.y += Math.abs(Math.sin(elapsed * 6)) * 0.18 * cueK; // bounce
+            break;
+          case 'sulk':
+            body.rotation.x += 0.35 * cueK; // droop
+            break;
+          case 'shrug':
+            body.rotation.z += 0.15 * cueK; // small head/body tilt
+            break;
+          case 'facepalm':
+            body.position.y -= 0.15 * cueK; // dip
+            break;
+          default: break; // land: handled by the wobble mechanism triggered in startCue
+        }
+      }
 
       // --- idle emote machine: wave, spark up, stretch, groove, or snack ---
       const idleOk = exprRef.current === 'idle' && !dragRef.current;
       emote.t += dt;
       switch (emote.phase) {
         case 'wait':
-          if (!idleOk || doze.sleeping) emote.t = 0; // only count toward it while awake + chilling
+          if (!idleOk || doze.sleeping || cue.active) emote.t = 0; // also hold off while a reaction cue plays
           else if (emote.t >= emote.next) {
             const roll = Math.random();
             emote.kind = (EMOTE_PICKS.find(([p]) => roll < p) || EMOTE_PICKS[0])[1];
@@ -333,6 +437,21 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       armBlendL = lerp(armBlendL, (sparking || stretching || munching) ? 1 : 0, 1 - Math.pow(0.002, dt));
       applyArmPose(limbs.armR, ARM_REST.R, rightTarget, armBlendR);
       applyArmPose(limbs.armL, ARM_REST.L, leftTarget, armBlendL);
+      // Cue arms take priority over the idle emote's arms: blend from wherever
+      // the pose above just landed, toward the cue's target, by cueK.
+      if (cueName === 'cheer') {
+        applyArmPose(limbs.armL, limbs.armL.rotation, ARM_CHEER.L, cueK);
+        applyArmPose(limbs.armR, limbs.armR.rotation, ARM_CHEER.R, cueK);
+      } else if (cueName === 'shrug') {
+        applyArmPose(limbs.armL, limbs.armL.rotation, ARM_SHRUG.L, cueK);
+        applyArmPose(limbs.armR, limbs.armR.rotation, ARM_SHRUG.R, cueK);
+      } else if (cueName === 'facepalm') {
+        applyArmPose(limbs.armR, limbs.armR.rotation, ARM_FACEPALM.R, cueK);
+      } else if (cueName === 'point') {
+        const dir = cue.payload && cue.payload.dir === -1 ? -1 : 1;
+        const target = dir === -1 ? mirrorArmX(ARM_POINT.R) : ARM_POINT.R;
+        applyArmPose(limbs.armR, limbs.armR.rotation, target, cueK);
+      }
       let browBoost = 0;
       if (waving) {
         // Theatrical hello: a big side-to-side arc, a lean into it, little hops, and
@@ -461,11 +580,19 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       }
       if (concerned) { mOpen = 0.03; mWide = 0.5; }                // small worried mouth
       if (doze.sleeping) { mOpen = 0.06; mWide = 0.45; }           // soft, slack
+      // Cue mouths get the last word (highest priority): a reaction cue should
+      // read on the face even mid-emote-cooldown or mid-tip.
+      const sulking = cueName === 'sulk';
+      if (cueName === 'nod') { mOpen = lerp(mOpen, 0.08, cueK); mWide = lerp(mWide, 0.8, cueK); }       // small approving smile
+      if (cueName === 'wince') { mOpen = lerp(mOpen, 0.03, cueK); mWide = lerp(mWide, 0.32, cueK); }    // small flinch mouth
+      if (cueName === 'cheer') { mOpen = lerp(mOpen, 0.5, cueK); mWide = lerp(mWide, 1.0, cueK); }      // big grin
+      if (sulking) { mOpen = lerp(mOpen, 0.02, cueK); mWide = lerp(mWide, 0.45, cueK); }                // frowny (flip below)
+      if (cueName === 'shrug') { mOpen = lerp(mOpen, 0.02, cueK); mWide = lerp(mWide, 0.5, cueK); }     // flat "beats me"
       mouthOpen = lerp(mouthOpen, mOpen, 0.4);
       mouthWide = lerp(mouthWide, mWide, 0.3);
       const mw = 0.55 + mouthWide * 0.7;
-      // Flip the smile into a frown when worried.
-      mouth.lips.scale.set(mw, concerned ? -0.85 : 1, 1);
+      // Flip the smile into a frown when worried, or sulking (eased by cueK).
+      mouth.lips.scale.set(mw, 1 - (concerned ? 1.85 : 0) - (sulking ? 1.85 * cueK : 0), 1);
       // Cavity: cap the height and anchor its top at the lip line so it opens DOWN
       // (not a big ball hanging off his chin).
       const openH = Math.min(0.42, mouthOpen * 0.4); // half-height of the opening
@@ -497,11 +624,24 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
       // --- per-eye: gaze, lids, brows, bloodshot ---
       const smokeDroop = emote.phase === 'puff' ? 0.22 : 0; // chilled-out half-lids
       const concernDroop = concerned ? 0.3 : 0;
+      // Cue lids/brows: narrowed for peek/wince, half for sulk, shut for facepalm;
+      // brows knit for wince, lift for shrug. All eased by cueK.
+      let cueLidDroop = 0;
+      let cueBrowYDelta = 0;
+      let cueBrowKnit = 0;
+      switch (cueName) {
+        case 'peek': cueLidDroop = 0.22 * cueK; cueBrowYDelta = -0.3 * cueK; break;
+        case 'wince': cueLidDroop = 0.35 * cueK; cueBrowKnit = 0.16 * cueK; break;
+        case 'sulk': cueLidDroop = 0.5 * cueK; break;
+        case 'facepalm': cueLidDroop = 0.95 * cueK; break;
+        case 'shrug': cueBrowYDelta = 0.3 * cueK; break;
+        default: break;
+      }
       // Lids scale with the time of day (heavy at night) and pop a little when excited.
       const wide = dragRef.current ? 1
         : Math.min(1, pose.lidOpen * tod.lid + (excited ? 0.15 : 0));
       // sleepLid forces the eyes shut while dozing; a big stretch scrunches them too.
-      const effLidOpen = Math.max(0, wide - smokeDroop - coughSquint - concernDroop - stretchEnv * 0.6)
+      const effLidOpen = Math.max(0, wide - smokeDroop - coughSquint - concernDroop - stretchEnv * 0.6 - cueLidDroop)
         * (1 - blink) * (1 - sleepLid);
       eyes.forEach((eye, i) => {
         const { pupil, lid, brow, R } = eye;
@@ -515,8 +655,13 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
           );
         }
         // gaze toward the cursor (clamped to the sclera), plus the pose's vertical bias
-        const gx = THREE.MathUtils.clamp(cursor.x * 0.6 + (i === 0 ? 0.02 : -0.02), -1, 1) * R * 0.42;
-        const gy = THREE.MathUtils.clamp(-cursor.y * 0.5 + pose.gazeY, -1, 1) * R * 0.4;
+        let gx = THREE.MathUtils.clamp(cursor.x * 0.6 + (i === 0 ? 0.02 : -0.02), -1, 1) * R * 0.42;
+        let gy = THREE.MathUtils.clamp(-cursor.y * 0.5 + pose.gazeY, -1, 1) * R * 0.4;
+        if (cueName === 'point') {
+          const dir = cue.payload && cue.payload.dir === -1 ? -1 : 1;
+          gx = lerp(gx, dir * R * 0.4, cueK);
+          gy = lerp(gy, 0, cueK);
+        }
         pupil.position.x = lerp(pupil.position.x, gx, 0.18);
         pupil.position.y = lerp(pupil.position.y, gy, 0.18);
         // lid: y from -0.1R (shut) to 1.2R (wide open)
@@ -525,9 +670,10 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         // brow lifts with the pose / surprise, and lowers + knits inward when worried
         const browBaseY = 1.05 * R;
         const targetBrowY = browBaseY
-          + (pose.browLift + squash * 0.25 + browBoost + (excited ? 0.18 : 0) - (concerned ? 0.4 : 0)) * R;
+          + (pose.browLift + squash * 0.25 + browBoost + (excited ? 0.18 : 0) - (concerned ? 0.4 : 0) + cueBrowYDelta) * R;
         brow.position.y = lerp(brow.position.y, targetBrowY, 0.25);
-        const targetBrowX = concerned ? (i === 0 ? 0.12 : -0.12) * R : 0;
+        const targetBrowX = (concerned ? (i === 0 ? 0.12 : -0.12) * R : 0)
+          + (cueBrowKnit ? (i === 0 ? cueBrowKnit : -cueBrowKnit) * R : 0);
         brow.position.x = lerp(brow.position.x, targetBrowX, 0.2);
       });
 
@@ -580,6 +726,10 @@ export default function BudThree({ expression = 'idle', size = 108, dragging = f
         setMood: (m) => { moodRef.current = m; },
         cough: () => { cough.active = true; cough.t = 0; },
         talk: (s = 2.5) => { talkClock = s; },
+        // MR-64: fire a one-shot reaction cue, same shape the brain hands in via props.
+        cue: (name, payload) => { cueRef.current = { name, at: Date.now(), payload }; },
+        disableCues: () => { cuesDisabled = true; },  // red-proof: cue() becomes a no-op
+        enableCues: () => { cuesDisabled = false; },
         lush, camera, renderer, scene,
       };
     }
