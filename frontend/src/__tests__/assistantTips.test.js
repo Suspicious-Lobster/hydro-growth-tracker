@@ -231,6 +231,27 @@ describe('assistantTips.answerQuestion', () => {
   });
 });
 
+describe('assistantTips badge milestones', () => {
+  it('emits a milestone tip for the first newly-earned badge', () => {
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: [], newBadges: ['ten_logs'] });
+    const badge = cands.find((c) => c.id === 'milestone:badge:ten_logs');
+    expect(badge).toBeTruthy();
+    expect(badge.kind).toBe('milestone');
+    expect(badge.text).toMatch(/Ten logs/);
+  });
+
+  it('selectTip surfaces the badge milestone as the top tip', () => {
+    const tip = selectTip({ activeTab: 'dashboard', selectedPlant: null, alerts: [], logs: [], newBadges: ['ten_logs'] }, { now: LATE });
+    expect(tip.id).toBe('milestone:badge:ten_logs');
+    expect(tip.text).toMatch(/Ten logs/);
+  });
+
+  it('does not emit a badge milestone when newBadges is empty', () => {
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: [] });
+    expect(cands.some((c) => c.id.startsWith('milestone:badge:'))).toBe(false);
+  });
+});
+
 describe('assistantTips reminders via selectTip', () => {
   it('nudges to log after a long gap', () => {
     const day = 86400000;

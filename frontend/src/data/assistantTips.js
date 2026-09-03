@@ -10,6 +10,7 @@ import { totalGrowth, daysTracked, latestLog, currentHeight } from '../utils/sta
 import { stageLabel, getStageGuidance, getProfile } from './recommendations';
 import { feedingStatus } from '../utils/feeding';
 import { phTrend, driftAlerts, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
+import { BADGES } from '../utils/achievements';
 
 // Higher number = more important. Alerts always outrank chit-chat. Reminders
 // (feeding/logging) sit just below alerts; insights (trends) below milestones.
@@ -75,9 +76,23 @@ const GREETING_TIPS = [
 
 // Build every tip that *could* apply right now, each with a stable id so the
 // same condition always yields the same id (enables dedupe + "don't show again").
-export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = [], stage, schedules = [] } = {}, now = 0) {
+export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = [], stage, schedules = [], newBadges = [] } = {}, now = 0) {
   const candidates = [];
   const pid = plantKey(selectedPlant);
+
+  // 0. Badge milestones — celebrate the first newly-earned badge, if any.
+  if (newBadges.length) {
+    const badge = BADGES.find((b) => b.id === newBadges[0]);
+    if (badge) {
+      candidates.push({
+        id: `milestone:badge:${badge.id}`,
+        kind: 'milestone',
+        expression: 'celebrating',
+        text: `Badge unlocked: ${badge.label}! ${badge.description} ${badge.emoji}`,
+        priority: TIP_KINDS.milestone,
+      });
+    }
+  }
 
   // 1. Alerts — highest priority, one per out-of-range reading.
   for (const a of alerts) {

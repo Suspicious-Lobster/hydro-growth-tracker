@@ -10,6 +10,7 @@ const ITEMS = [
   { key: 'action', label: 'What should I do?' },
   { key: 'fun', label: 'Tell me something' },
   { key: 'diagnose', label: 'Something looks wrong' },
+  { key: 'badges', label: 'Show my badges' },
 ];
 
 export default function AskMenu({ animate = true, onPick }) {

@@ -10,6 +10,7 @@ import { measurementAlerts } from '../../utils/ranges';
 import { dueCount } from '../../utils/feeding';
 import { selectTip, answerQuestion } from '../../data/assistantTips';
 import { isHarvestWindow } from '../../utils/trends';
+import { earnedBadges, newlyEarned } from '../../utils/achievements';
 import { setSoundEnabled, pop } from '../../utils/sound';
 import { TOUR_STEPS, stepCompleted } from '../../data/onboarding';
 import BudLeaf from './BudLeaf';
@@ -18,9 +19,26 @@ import SpeechBubble from './SpeechBubble';
 import AskMenu from './AskMenu';
 import BudWizard from './BudWizard';
 import DeficiencyHelper from '../DeficiencyHelper';
+import Achievements from '../Achievements';
 
 const SIZE = 324;
 const CHECK_INTERVAL_MS = 60 * 1000;
+
+// Which badges have already been celebrated, kept local to BudMascot (not
+// AssistantContext, since it's driven by data/achievements rather than a UI
+// preference). Mirrors AssistantContext's read/write-guarded-with-try/catch style.
+const BADGES_SEEN_KEY = 'bud.badges';
+const readSeenBadgeIds = () => {
+  try {
+    const raw = localStorage.getItem(BADGES_SEEN_KEY);
+    return raw === null ? [] : JSON.parse(raw);
+  } catch {
+    return [];
+  }
+};
+const writeSeenBadgeIds = (ids) => {
+  try { localStorage.setItem(BADGES_SEEN_KEY, JSON.stringify(ids)); } catch { /* storage full/unavailable */ }
+};
 
 // The floating leaf buddy. Gathers the current context, asks the pure tip engine
 // what (if anything) to say, and renders the draggable mascot + speech bubble.
@@ -41,6 +59,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [badgesOpen, setBadgesOpen] = useState(false);
   const shownIdRef = useRef(null);
   const prevCountsRef = useRef(null);
 
@@ -54,7 +73,12 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const plantSchedules = selectedPlant
     ? (schedules || []).filter((s) => s.plant_id === selectedPlant.id)
     : [];
-  const input = { activeTab, selectedPlant, alerts, logs, stage, schedules: plantSchedules };
+  // Badges: which are earned right now, and which are newly earned since the
+  // last time we celebrated one (persisted in localStorage so it's not repeated).
+  const earnedIds = earnedBadges({ plants, logs: allLogs }, new Date());
+  const seenBadgeIds = readSeenBadgeIds();
+  const newBadges = newlyEarned(seenBadgeIds, earnedIds);
+  const input = { activeTab, selectedPlant, alerts, logs, stage, schedules: plantSchedules, newBadges };
 
   // Worried resting face when the selected plant has a clearly out-of-range reading;
   // visibly buzzing once it's in the harvest window with nothing wrong.
@@ -70,7 +94,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   // Keep the latest values in a ref so the interval/effect always sees fresh data
   // without re-subscribing on every render.
   const stateRef = useRef();
-  stateRef.current = { input, dismissedIds: dismissedTipIds, lastShownAt, muted };
+  stateRef.current = { input, dismissedIds: dismissedTipIds, lastShownAt, muted, earnedIds };
 
   // A compact signature: re-run the proactive check whenever the situation changes.
   const sig = JSON.stringify({
@@ -83,6 +107,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
     day: Math.floor(Date.now() / 86400000), // re-evaluate time-based nudges daily
     muted,
     dismissed: dismissedTipIds.length,
+    newBadges,
   });
 
   const { position: pos, handleProps, dragging, wasDragged } = useDraggable(position, {
@@ -112,6 +137,9 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
         setOpen(true);
         setMenuOpen(false);
         markShown(now);
+        // A badge milestone was actually shown — remember it so it's never
+        // celebrated twice. Persist the ids as of this snapshot.
+        if (t.id.startsWith('milestone:badge:')) writeSeenBadgeIds(s.earnedIds);
       }
     };
     check();
@@ -157,12 +185,14 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   const onPick = useCallback((key) => {
     setMenuOpen(false);
     if (key === 'diagnose') { setDiagnoseOpen(true); return; }
+    if (key === 'badges') { setBadgesOpen(true); return; }
     const answer = answerQuestion(stateRef.current.input, key, { now: Date.now() });
     shownIdRef.current = answer.id;
     setTip(answer);
     setOpen(true);
   }, []);
   const closeDiagnose = useCallback(() => setDiagnoseOpen(false), []);
+  const closeBadges = useCallback(() => setBadgesOpen(false), []);
 
   const closeTip = useCallback(() => setOpen(false), []);
   const dontShow = useCallback(() => {
@@ -201,6 +231,7 @@ export default function BudMascot({ activeTab, selectedPlant, onNavigate }) {
   return (
     <>
       {diagnoseOpen && <DeficiencyHelper onClose={closeDiagnose} />}
+      {badgesOpen && <Achievements earnedIds={earnedIds} onClose={closeBadges} />}
       <div
         className="fixed z-50 flex flex-col items-end pointer-events-none"
         style={{ right: pos.right, bottom: pos.bottom }}
