@@ -9,6 +9,8 @@ import { SPECIES_OPTIONS, getProfileStages, stageLabel } from '../data/recommend
 import { currentHeight, totalGrowth, daysTracked } from '../utils/stats';
 import { formatLength, formatVolume, toLiters, fromLiters } from '../utils/format';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
+import { emitSafe } from '../utils/budBus';
+import { BUD_EVENTS } from '../data/budCues';
 
 const SYSTEM_TYPES = ['DWC', 'NFT', 'Ebb & Flow', 'Drip', 'Aeroponics', 'Kratky', 'Wick'];
 const emptyPlant = () => ({ name: '', species: '', variety: '', system_type: '', reservoir_volume: '', start_date: '', target_stage: '' });
@@ -62,6 +64,7 @@ const PlantManager = ({ onSelectPlant }) => {
       if (editing === 'new') {
         await createPlant(payloadFromForm());
         toast.success(`Added "${form.name.trim()}"`);
+        emitSafe(BUD_EVENTS.SAVE_OK, { kind: 'plant' });
       } else {
         await updatePlant(editing.id, payloadFromForm());
         toast.success('Plant updated');
@@ -95,6 +98,7 @@ const PlantManager = ({ onSelectPlant }) => {
     try {
       await deletePlant(confirmDelete.id);
       toast.success(`Deleted "${confirmDelete.name}"`);
+      emitSafe(BUD_EVENTS.DELETE, { kind: 'plant' });
       setConfirmDelete(null);
       await loadArchived();
     } catch (err) {

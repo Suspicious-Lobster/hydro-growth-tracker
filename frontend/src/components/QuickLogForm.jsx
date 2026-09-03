@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Zap } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
@@ -7,6 +7,10 @@ import { apiErrorMessage } from '../api/api';
 import { toCm, lengthUnitLabel } from '../utils/format';
 import { todayLocalISO } from '../utils/dates';
 import { validateLogByField } from '@shared/validation';
+import { inferStage } from '../data/recommendations';
+import { readingStatus } from './AddLogForm';
+import { emitSafe } from '../utils/budBus';
+import { BUD_EVENTS } from '../data/budCues';
 
 const numOrUndef = (v) => (v === '' || v === null || v === undefined ? undefined : parseFloat(v));
 
@@ -26,6 +30,41 @@ const QuickLogForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const lengthUnit = settings.units.length;
+  const selectedPlant = plants.find((p) => p.id === Number(plantId)) || null;
+
+  // MR-63: throttle form:reading to one emit per 400ms per field, always
+  // firing the last value after a pause (mirrors AddLogForm's useReadingEmitter,
+  // kept local/duplicated rather than shared — it's a few lines).
+  const readingTimers = useRef({});
+  const emitReading = (field, value, status) => {
+    const now = Date.now();
+    const entry = readingTimers.current[field] || { last: 0, timer: null };
+    if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+    const elapsed = now - entry.last;
+    const fire = () => {
+      entry.last = Date.now();
+      emitSafe(BUD_EVENTS.FORM_READING, { field, value, status });
+    };
+    if (elapsed >= 400) fire();
+    else entry.timer = setTimeout(fire, 400 - elapsed);
+    readingTimers.current[field] = entry;
+  };
+
+  const handlePhChange = (e) => {
+    const value = e.target.value;
+    setPh(value);
+    const heightCm = height === '' ? undefined : toCm(parseFloat(height), lengthUnit);
+    const stage = selectedPlant ? inferStage(selectedPlant.species, heightCm, null) : null;
+    emitReading('ph', value, readingStatus('ph', value, selectedPlant, stage));
+  };
+
+  const handleEcChange = (e) => {
+    const value = e.target.value;
+    setEc(value);
+    const heightCm = height === '' ? undefined : toCm(parseFloat(height), lengthUnit);
+    const stage = selectedPlant ? inferStage(selectedPlant.species, heightCm, null) : null;
+    emitReading('ec', value, readingStatus('ec', value, selectedPlant, stage));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,6 +81,7 @@ const QuickLogForm = () => {
     const fieldErrors = validateLogByField(payload, { requireDate: true });
     if (fieldErrors.height) {
       setError(fieldErrors.height);
+      emitSafe(BUD_EVENTS.SAVE_ERROR, { kind: 'log' });
       return;
     }
     setError('');
@@ -49,12 +89,14 @@ const QuickLogForm = () => {
     try {
       await createLog(payload);
       toast.success('Logged');
+      emitSafe(BUD_EVENTS.SAVE_OK, { kind: 'log' });
       // Keep the plant selected (and its height, for a quick re-weigh) but
       // clear the readings that change every check.
       setPh('');
       setEc('');
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to log'));
+      emitSafe(BUD_EVENTS.SAVE_ERROR, { kind: 'log' });
     } finally {
       setIsSubmitting(false);
     }
@@ -72,6 +114,7 @@ const QuickLogForm = () => {
             aria-label="Quick log plant"
             value={plantId}
             onChange={(e) => setPlantId(e.target.value)}
+            onFocus={() => emitSafe(BUD_EVENTS.FORM_FOCUS, {})}
             className={inputCls(false)}
           >
             {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -96,7 +139,7 @@ const QuickLogForm = () => {
             type="number"
             step="0.1"
             value={ph}
-            onChange={(e) => setPh(e.target.value)}
+            onChange={handlePhChange}
             className={inputCls(false)}
           />
         </div>
@@ -107,7 +150,7 @@ const QuickLogForm = () => {
             type="number"
             step="0.1"
             value={ec}
-            onChange={(e) => setEc(e.target.value)}
+            onChange={handleEcChange}
             className={inputCls(false)}
           />
         </div>

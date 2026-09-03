@@ -12,6 +12,8 @@ import { latestLog } from '../utils/stats';
 import { formatDate } from '../utils/format';
 import { feedingStatus, FREQUENCY_LABELS } from '../utils/feeding';
 import { inferStage, stageLabel, getStageGuidance } from '../data/recommendations';
+import { emitSafe } from '../utils/budBus';
+import { BUD_EVENTS } from '../data/budCues';
 
 const emptyForm = (plantId = '') => ({ plant_id: plantId, nutrient_type: '', ec_level: '', frequency: 'daily', custom_interval_days: '', notes: '' });
 
@@ -59,7 +61,7 @@ const FeedingSchedule = () => {
     setBusy(true);
     const payload = { ...form, plant_id: Number(form.plant_id), custom_interval_days: form.frequency === 'custom' ? Number(form.custom_interval_days) : null };
     try {
-      if (editing === 'new') { await createSchedule(payload); toast.success('Schedule added'); }
+      if (editing === 'new') { await createSchedule(payload); toast.success('Schedule added'); emitSafe(BUD_EVENTS.SAVE_OK, { kind: 'schedule' }); }
       else { await updateSchedule(editing.id, payload); toast.success('Schedule updated'); }
       setEditing(null);
     } catch (err) {
@@ -70,7 +72,7 @@ const FeedingSchedule = () => {
   };
 
   const doMarkFed = async (s) => {
-    try { await markFed(s.id); toast.success(`Marked "${s.plant_name}" as fed`); }
+    try { await markFed(s.id); toast.success(`Marked "${s.plant_name}" as fed`); emitSafe(BUD_EVENTS.SAVE_OK, { kind: 'schedule' }); }
     catch (err) { toast.error(apiErrorMessage(err)); }
   };
 

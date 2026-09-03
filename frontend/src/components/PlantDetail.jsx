@@ -73,7 +73,7 @@ const PlantDetail = ({ plant, onBack }) => {
 
       {/* Alerts */}
       {alerts.length > 0 && (
-        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
+        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4" data-bud-anchor="alert">
           <h3 className="text-red-400 font-semibold mb-2">Out-of-range readings</h3>
           <ul className="text-sm text-red-300 space-y-1">
             {alerts.map((a) => {

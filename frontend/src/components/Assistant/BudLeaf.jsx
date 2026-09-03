@@ -107,16 +107,31 @@ function Face({ expression }) {
   }
 }
 
-export default function BudLeaf({ expression = 'idle', animate = true, size = 72 }) {
+// Cues that get a static visual hint on the flat SVG fallback (for
+// reduced-motion users who never see the animated 3D rig's cue performance).
+// A tiny inline nudge per cue is enough — no animation needed here.
+const CUE_HINT_STYLE = {
+  nod: { transform: 'rotate(0deg)' },
+  cheer: { transform: 'translateY(-4px)' },
+  wince: { transform: 'rotate(-6deg)' },
+  sulk: { transform: 'rotate(4deg) translateY(4px)' },
+};
+
+export default function BudLeaf({ expression = 'idle', animate = true, size = 72, cue = null }) {
   const animClass = animate ? (ANIM[expression] || ANIM.idle) : '';
+  const cueName = cue?.name;
+  const cueClass = CUE_HINT_STYLE[cueName] ? `bud-cue-${cueName}` : '';
+  const cueStyle = CUE_HINT_STYLE[cueName] || undefined;
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 120 124"
-      className={animClass}
+      className={[animClass, cueClass].filter(Boolean).join(' ')}
+      style={cueStyle}
       role="img"
       aria-label={`Bud the leaf, looking ${expression}`}
+      data-cue={cueName || undefined}
     >
       <Body />
       <Face expression={expression} />

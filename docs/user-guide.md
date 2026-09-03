@@ -142,6 +142,66 @@ what will be imported (and any rows with problems) before you confirm.
 Required columns are plant, date, and height; everything else is optional.
 This app's own CSV export can be re-imported as-is.
 
+## Bud, your assistant
+
+Bud is the small character in the corner of the screen. He is not just a tip
+mascot: he reacts to what you are doing, wanders over to point things out,
+and can answer questions about your own data.
+
+### Voice
+
+Open **Settings > Fun & Effects > "Bud's voice"** to pick how Bud talks:
+
+- **Towelie (spacey)** - the default. Bud is forgetful and over-helpful: he
+  loses his train of thought, offers you a smoke, then lands on the useful
+  point. Every tip still carries the real number or range, even the goofy
+  ones.
+- **Clean** - short and warm, no catchphrases, no drug jokes. Same facts,
+  plainer delivery.
+
+### Reactions
+
+As you type a measurement, Bud peeks at the form and reacts without opening
+a speech bubble:
+
+- **Nod** - the value you just typed sits inside the plant's healthy range.
+- **Wince** - the value is out of range.
+- **Cheer** - a save went through.
+- **Facepalm** - a validation error stopped your save.
+- **Sulk** - you deleted something.
+- **Yawn** - you are on the Settings tab.
+- **Wave** - you come back to the app after being away for ten minutes or
+  more.
+
+### Wandering and Stay put
+
+Bud walks over beside the form you are filling in, and the first time you
+open a plant with out-of-range alerts he walks over and points at them. If
+nothing happens for 12 seconds he walks back home to his corner. He never
+covers up the thing he walked to, and he never moves while you are dragging
+him, while a speech bubble is open, during the guided tour, or while he is
+minimised.
+
+If you would rather he stayed put, turn off **Settings > "Bud wanders the
+screen"**. He stays in his corner instead.
+
+### Ask him anything
+
+Click Bud, type a question into the "Ask me anything..." box, and press
+Enter. He answers using your own data, offline - no question is sent
+anywhere. He can tell you about your pH and EC, feeding due dates, height
+and growth rate, harvest timing, how old your reservoir water is,
+climate/VPD readings, and your badges. If he does not recognise the
+question he shrugs and gives you one real fact instead of nothing.
+
+### Sounds and quiet mode
+
+Bud makes small sounds as he moves and reacts: a curious "huh?", a soft hum,
+a chomp when he snacks (more often around noon and late at night), a yawn
+(more often after 9pm), footsteps while he walks, and a giggle. All of these
+follow the existing **Settings > "Sound effects"** toggle, so turning it off
+keeps Bud silent.
+
 ## Feeding schedules
 
 Open the **Feeding** tab to see feedings that are due or overdue, mark a

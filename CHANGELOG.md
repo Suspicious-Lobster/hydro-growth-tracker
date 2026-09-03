@@ -4,6 +4,28 @@ All notable changes to Hydro Growth Tracker. Entries are generated from the
 board's done rows (`python tools/changelog_from_board.py <version> <date>`);
 row ids point at `docs/board.md`, shas at the commit.
 
+## 1.4.0 - 2026-09-03
+
+### Tests and CI
+
+- Bud capture strip: a Playwright script that drives every cue in the dev app and saves a contact sheet (MR-70, 4cdfcf7)
+
+### Docs and cleanup
+
+- Docs and version 1.4.0 for the Bud release (MR-71)
+
+### Features
+
+- Bud event bus and cue plumbing: the app can tell Bud what the user is doing, and Bud's body receives named cues (MR-62, 7feb7e8)
+- Bud's body performs the reaction cues: peek, nod, wince, cheer, sulk, shrug, facepalm, point, land (MR-64, 55d9440)
+- Towelie voice: forgetful, spacey, over-helpful copy for every tip, with a clean-voice switch in Settings (MR-67, 7e98c80)
+- Bud sounds: huh, hum, chomp, yawn, steps, giggle - tiny synthesized cues in utils/sound.js (MR-69, 27fcace)
+- The app tells Bud what you are doing: readings as you type, saves, deletes, errors, tab changes (MR-63, cc01722)
+- More idle life: looks around, scratches, hums, munchies at noon, yawns late, checks his watch, welcomes you back (MR-68, a7aead9)
+- Bud wanders: walks to what you are looking at, points at alerts, hops home, with a Stay put switch (MR-65, fe47a66)
+- Talk back: type a question to Bud and get an offline, data-grounded, Towelie-flavoured answer (MR-66, 02d7cce)
+- Tune the cheer and shrug arm poses so the raised arms stay in front of the leaf (MR-72)
+
 ## 1.3.0 - 2026-09-03
 
 ### Tests and CI

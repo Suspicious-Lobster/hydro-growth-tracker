@@ -12,8 +12,8 @@ import { harvestCountdown } from '../utils/trends';
 import { inferStage } from '../data/recommendations';
 import { formatDate } from '../utils/format';
 
-const Tile = ({ colors, testId, icon, title, children }) => (
-  <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-4 ${colors.border} border`} data-testid={testId}>
+const Tile = ({ colors, testId, icon, title, children, anchor }) => (
+  <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-4 ${colors.border} border`} data-testid={testId} data-bud-anchor={anchor}>
     <div className={`flex items-center gap-1 text-xs ${colors.textMuted} mb-2`}>
       {icon} {title}
     </div>
@@ -109,6 +109,7 @@ const DashboardWidgets = ({ now = new Date() }) => {
       <Tile
         colors={colors}
         testId="widget-alerts"
+        anchor="alert"
         icon={<AlertTriangle size={14} className={totalAlerts > 0 ? 'text-red-500' : colors.textMuted} />}
         title="Alerts"
       >
