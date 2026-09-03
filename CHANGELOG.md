@@ -24,6 +24,7 @@ row ids point at `docs/board.md`, shas at the commit.
 - More idle life: looks around, scratches, hums, munchies at noon, yawns late, checks his watch, welcomes you back (MR-68, a7aead9)
 - Bud wanders: walks to what you are looking at, points at alerts, hops home, with a Stay put switch (MR-65, fe47a66)
 - Talk back: type a question to Bud and get an offline, data-grounded, Towelie-flavoured answer (MR-66, 02d7cce)
+- Tune the cheer and shrug arm poses so the raised arms stay in front of the leaf (MR-72)
 
 ## 1.3.0 - 2026-09-03
 

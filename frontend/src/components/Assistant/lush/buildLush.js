@@ -260,14 +260,39 @@ export const ARM_STRETCH = {
 // Reaction-cue poses (MR-64). Blended in over whatever the idle-emote arms are
 // doing, via the same applyArmPose lerp, so a cue always wins while it's active.
 // Both arms thrown up-and-out for a cheer (higher + wider than the stretch).
+// MR-72: worked out against the actual pivot math (THREE.Group + Euler
+// 'XYZ'), not eyeballed. Two things were wrong with the old pose and the
+// first two attempts below: (1) negative x pitch on top of a big raising-z
+// rotation pushes the hand's world Z *backward* (into the leaf) rather than
+// forward — a positive x pushes it forward instead, per this row's own note.
+// (2) fixing (1) alone still buried the arm: the leaf's own silhouette is
+// ~1.9-2.2 world units wide at the height any "arms thrown up" pose reaches
+// (checked against LEAFLET_ANGLES/LENGTHS), and this arm's max reach from the
+// shoulder is only ~2.1 — there is no pose that lifts the hand much above
+// shoulder height *and* clears the leaf's fan outright. The pose that fits
+// the reach budget is arms out roughly level (large z, ~90-100deg, small x
+// lift) rather than arms held high overhead: world hand ~(±2.03,0.25,0.19),
+// clearing the leaf's silhouette width (~1.95) at that height.
+// OLD attempt 3 (raised too high, buried in the leaf's own fan; only a small
+// hand-coloured sliver visible): L: { x: 0.5, y: -0.15, z: -2.7 }, R: { x: 0.5, y: 0.15, z: 2.7 }
+// OLD attempt 2 (still behind — copied ARM_WAVE's negative x): L: { x: -0.4, y: -0.15, z: -2.4 }, R: { x: -0.4, y: 0.15, z: 2.4 }
+// OLD attempt 1 (still behind, only a sliver of hand visible): L: { x: -0.45, y: -0.2, z: -2.85 }, R: { x: -0.45, y: 0.2, z: 2.85 }
+// OLD original (fully behind the leaf): L: { x: -1.5, y: -0.15, z: -2.6 }, R: { x: -1.5, y: 0.15, z: 2.6 }
 export const ARM_CHEER = {
-  L: { x: -1.5, y: -0.15, z: -2.6 },
-  R: { x: -1.5, y: 0.15, z: 2.6 },
+  L: { x: 0.35, y: -0.15, z: -1.745 }, // -100deg
+  R: { x: 0.35, y: 0.15, z: 1.745 },   // 100deg
 };
 // Both arms out sideways, roughly level, for an "I have no idea" shrug.
+// MR-72: same fix as cheer (see its comment for the math) but a touch lower/
+// less z than cheer's 100deg, so shrug reads flatter/more level: world hand
+// ~(±2.09,-0.06,0.11), fully clear of the leaf's silhouette (~1.82) there.
+// OLD attempt 3 (still overlapped the leaf fan, harder to read): L: { x: 0.3, y: -0.1, z: -1.8 }, R: { x: 0.3, y: 0.1, z: 1.8 }
+// OLD attempt 2 (still not clearly visible — copied ARM_WAVE's negative x): L: { x: -0.4, y: -0.1, z: -1.9 }, R: { x: -0.4, y: 0.1, z: 1.9 }
+// OLD attempt 1 (still not clearly visible): L: { x: -0.25, y: -0.1, z: -2.4 }, R: { x: -0.25, y: 0.1, z: 2.4 }
+// OLD original (behind the leaf): L: { x: 0.05, y: -0.1, z: -2.6 }, R: { x: 0.05, y: 0.1, z: 2.6 }
 export const ARM_SHRUG = {
-  L: { x: 0.05, y: -0.1, z: -2.6 },
-  R: { x: 0.05, y: 0.1, z: 2.6 },
+  L: { x: 0.3, y: -0.1, z: -1.536 }, // -88deg
+  R: { x: 0.3, y: 0.1, z: 1.536 },   // 88deg
 };
 // Right forearm swung up and across to cover the face.
 export const ARM_FACEPALM = {
