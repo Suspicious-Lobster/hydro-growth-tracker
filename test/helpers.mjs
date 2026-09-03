@@ -56,7 +56,10 @@ export async function freshServer({ seed, extraHeaders = {}, token = null, allow
     listDir: (d = tmp) => fs.readdirSync(d),
     close: async () => {
       await new Promise((resolve) => server.close(resolve));
-      fs.rmSync(tmp, { recursive: true, force: true });
+      // Windows can still hold a just-written upload for a moment (ENOTEMPTY
+      // on the uploads dir, seen 1 in ~6 full runs, 2026-09-03); rmSync's own
+      // retry handles that class, so lean on it instead of a bare call.
+      fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
     },
   };
 }

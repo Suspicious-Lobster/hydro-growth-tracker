@@ -96,7 +96,7 @@ test('backup, delete everything, restore, and the plant comes back', async () =>
   await addLog(page, { plantName: 'Pepper', height: 9 });
 
   await goTo(page, 'Settings');
-  const backup = await download(ctx.app, () => page.getByRole('button', { name: 'Download backup' }).click(), tmpFile('backup.json'));
+  const backup = await download(ctx.app, () => page.getByRole('button', { name: 'Download backup', exact: true }).click(), tmpFile('backup.json'));
   expect(JSON.parse(fs.readFileSync(backup, 'utf8')).data.plants).toHaveLength(1);
 
   await goTo(page, 'Plants');
