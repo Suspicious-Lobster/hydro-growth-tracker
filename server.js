@@ -16,7 +16,7 @@ import crypto from 'crypto';
 
 import * as repo from './db/repository.js';
 import { runMigration, migrateData, SchemaTooNewError } from './db/migrate.js';
-import { validateLog, validatePlant, validateSchedule } from './validation.js';
+import { validateLog, validatePlant, validateSchedule, validateReservoirEvent } from './validation.js';
 import { nullLogger } from './logger.js';
 
 // Marker embedded in exported backups so a restore can recognize its own files
@@ -45,16 +45,19 @@ export function sniffImageExt(buf) {
 // Windows can still hold a just-written upload open (multer's stream, an
 // antivirus scan) for a moment; unlinkSync then fails with EPERM/EBUSY. Retry
 // briefly, then log: the row is already gone, so this is never fatal. Seen
-// once in a full parallel test run (1 of ~6) and never alone, 2026-09-02.
+// once in a full parallel test run (1 of ~6) and never alone, 2026-09-02;
+// again 1 of 4 full runs on 2026-09-03 with a 5-attempt / 300 ms budget, so
+// the budget is now 8 attempts (about 720 ms) -- still never alone.
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const UNLINK_ATTEMPTS = 8;
 function unlinkWithRetry(filePath, what) {
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
+  for (let attempt = 1; attempt <= UNLINK_ATTEMPTS; attempt += 1) {
     try {
       fs.unlinkSync(filePath);
       return true;
     } catch (error) {
       if (error.code === 'ENOENT') return true;
-      if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt === 5) {
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt === UNLINK_ATTEMPTS) {
         console.error(`Failed to remove ${what}:`, error.message);
         return false;
       }
@@ -67,6 +70,13 @@ function unlinkWithRetry(filePath, what) {
 export function csvSafe(value) {
   if (typeof value !== 'string') return value;
   return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+// One CSV cell for a log's structured doses (MR-37): "Part A 2 ml/L; Part B
+// 1 ml/L", or '' when there are none.
+export function formatDosesCell(doses) {
+  if (!Array.isArray(doses) || doses.length === 0) return '';
+  return doses.map((d) => `${d.name} ${d.ml_per_l} ml/L`).join('; ');
 }
 
 // Re-exported for backward compatibility with existing importers/tests.
@@ -387,14 +397,16 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     const fields = [
       'id', 'plant_id', 'plant_name', 'date', 'height', 'height_unit', 'growth_stage',
       'ph', 'ec', 'ppm', 'water_temp', 'air_temp', 'temp_unit', 'humidity',
-      'light_hours', 'reservoir_volume', 'nutrients', 'notes', 'created_at',
+      'light_hours', 'reservoir_volume', 'nutrients', 'doses', 'notes', 'created_at',
     ];
     // Neutralise formula-injection cells (probe P7) before handing rows to
     // json2csv, and prefix a UTF-8 BOM so Excel reads non-ASCII notes/plant
-    // names correctly instead of guessing an encoding.
+    // names correctly instead of guessing an encoding. Structured doses are
+    // flattened to one text cell: "Part A 2 ml/L; Part B 1 ml/L".
     const rows = data.logs.map((log) => {
       const row = {};
       for (const f of fields) row[f] = csvSafe(log[f]);
+      row.doses = csvSafe(formatDosesCell(log.doses));
       return row;
     });
     const parser = new Parser({ fields });
@@ -427,17 +439,32 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     res.status(201).json(log);
   }));
 
-  // PUT /logs/:id – update a log (date and image are preserved).
-  app.put('/logs/:id', handle((req, res) => {
+  // PUT /logs/:id – update a log. The date is preserved unless sent; the
+  // image is preserved unless a new one arrives as multipart `image` (MR-37),
+  // in which case the bytes are sniffed exactly like POST and the previous
+  // file is removed once the new URL is stored. multer passes a JSON body
+  // straight through, so the plain edit path is unchanged.
+  app.put('/logs/:id', upload.single('image'), handle((req, res) => {
+    let imageFilename = null;
+    if (req.file) {
+      imageFilename = finalizeUpload(req.file);
+      if (!imageFilename) return res.status(400).json({ error: 'Invalid image file' });
+    }
+    const discardNew = () => { if (imageFilename) removeUploadedImage(`/uploads/${imageFilename}`); };
     const errors = validateLog(req.body, { requireDate: false });
     if (errors.length > 0) {
+      discardNew();
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
     const data = readData();
-    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
-    const log = repo.updateLog(data, parseInt(req.params.id, 10), req.body);
-    if (!log) return res.status(404).json({ error: 'Log not found' });
+    if (unknownPlantId(data, req.body)) { discardNew(); return res.status(404).json({ error: 'Plant not found' }); }
+    const existing = repo.getLog(data, parseInt(req.params.id, 10));
+    if (!existing) { discardNew(); return res.status(404).json({ error: 'Log not found' }); }
+    const previousImage = existing.image_url;
+    const body = imageFilename ? { ...req.body, image_url: `/uploads/${imageFilename}` } : req.body;
+    const log = repo.updateLog(data, existing.id, body);
     writeData(data);
+    if (imageFilename && previousImage && previousImage !== log.image_url) removeUploadedImage(previousImage);
     res.json(log);
   }));
 
@@ -502,6 +529,50 @@ export function createServer({ dataFile, uploadsDir, backupsDir = null, token = 
     if (!deleted) return res.status(404).json({ error: 'Feeding schedule not found' });
     writeData(data);
     res.json({ message: `Deleted feeding schedule ${deleted.id}`, deleted });
+  }));
+
+  /* ----------------------- Reservoir events ---------------------- */
+
+  // GET /reservoir – water changes and top-offs, newest first; ?plant_id=.
+  app.get('/reservoir', handle((req, res) => {
+    const data = readData();
+    res.json(repo.listReservoirEvents(data, { plant_id: req.query.plant_id }));
+  }));
+
+  // POST /reservoir – record a change or top-off for a plant (by plant_id).
+  app.post('/reservoir', handle((req, res) => {
+    const errors = validateReservoirEvent(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    const event = repo.createReservoirEvent(data, req.body);
+    if (!event) return res.status(404).json({ error: 'Plant not found' });
+    writeData(data);
+    res.status(201).json(event);
+  }));
+
+  // PUT /reservoir/:id – partial update.
+  app.put('/reservoir/:id', handle((req, res) => {
+    const errors = validateReservoirEvent(req.body, { partial: true });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+    const data = readData();
+    if (unknownPlantId(data, req.body)) return res.status(404).json({ error: 'Plant not found' });
+    const event = repo.updateReservoirEvent(data, parseInt(req.params.id, 10), req.body);
+    if (!event) return res.status(404).json({ error: 'Reservoir event not found' });
+    writeData(data);
+    res.json(event);
+  }));
+
+  // DELETE /reservoir/:id
+  app.delete('/reservoir/:id', handle((req, res) => {
+    const data = readData();
+    const deleted = repo.deleteReservoirEvent(data, parseInt(req.params.id, 10));
+    if (!deleted) return res.status(404).json({ error: 'Reservoir event not found' });
+    writeData(data);
+    res.json({ message: `Deleted reservoir event ${deleted.id}`, deleted });
   }));
 
   /* -------------------------- Settings -------------------------- */

@@ -59,9 +59,9 @@ function runLogRules(body, { requireDate } = { requireDate: true }) {
     }
   }
 
-  if (!isNonEmptyString(nutrients)) {
-    push('nutrients', 'Nutrients information is required');
-  } else if (nutrients.length > 500) {
+  // Nutrients text is optional (MR-37): a quick log of pH/EC/height alone is
+  // a valid entry, and structured `doses` can carry the recipe instead.
+  if (isNonEmptyString(nutrients) && nutrients.length > 500) {
     push('nutrients', 'Nutrients description must be less than 500 characters');
   }
 
@@ -69,12 +69,86 @@ function runLogRules(body, { requireDate } = { requireDate: true }) {
     push('notes', 'Notes must be less than 1000 characters');
   }
 
+  const doseErr = validateDoses(body.doses);
+  if (doseErr) push('doses', doseErr);
+
   for (const [key, label, range] of MEASUREMENT_RANGES) {
     const err = optionalRange(body[key], label, range);
     if (err) push(key, err);
   }
 
   return tagged;
+}
+
+// Structured dosing: up to DOSES_MAX entries of { name, ml_per_l } per log.
+// Accepts the array itself or its JSON string form (a multipart POST with an
+// image sends every field as text). Returns the parsed array, or null when
+// the value is absent/blank, or a string error. parseDoses is shared with the
+// repository so the request the validator approved is the shape stored.
+export const DOSES_MAX = 10;
+export const DOSE_NAME_MAX = 60;
+export const DOSE_ML_MAX = 100;
+
+export function parseDoses(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch { return 'Doses must be a JSON list'; }
+  }
+  return value;
+}
+
+export function validateDoses(value) {
+  const doses = parseDoses(value);
+  if (doses === null) return null;
+  if (typeof doses === 'string') return doses;
+  if (!Array.isArray(doses)) return 'Doses must be a list';
+  if (doses.length > DOSES_MAX) return `Doses must have at most ${DOSES_MAX} entries`;
+  for (const d of doses) {
+    if (!d || typeof d !== 'object') return 'Each dose must be an object with name and ml_per_l';
+    if (!isNonEmptyString(d.name) || d.name.trim().length > DOSE_NAME_MAX) {
+      return `Each dose needs a name of 1 to ${DOSE_NAME_MAX} characters`;
+    }
+    const ml = parseFloat(d.ml_per_l);
+    if (Number.isNaN(ml) || ml < 0 || ml > DOSE_ML_MAX) {
+      return `Dose ml/L must be a number between 0 and ${DOSE_ML_MAX}`;
+    }
+  }
+  return null;
+}
+
+// Validate a reservoir event (a full water change or a top-off). `partial`
+// is true for updates, where only the changed fields are sent.
+export const RESERVOIR_KINDS = ['change', 'topoff'];
+
+export function validateReservoirEvent(body, { partial } = { partial: false }) {
+  const errors = [];
+  const hasPlantId = body.plant_id !== undefined && body.plant_id !== null && body.plant_id !== '';
+  if (!partial && !hasPlantId) errors.push('plant_id is required');
+  if (hasPlantId && Number.isNaN(parseInt(body.plant_id, 10))) errors.push('plant_id must be a number');
+
+  if (!partial || 'date' in body) {
+    if (!body.date) errors.push('Date is required');
+    else if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.date)) || Number.isNaN(Date.parse(body.date))) {
+      errors.push('Date must be a valid YYYY-MM-DD date');
+    }
+  }
+  if (!partial || 'kind' in body) {
+    if (!RESERVOIR_KINDS.includes(body.kind)) errors.push(`Kind must be one of: ${RESERVOIR_KINDS.join(', ')}`);
+  }
+  if (!partial || 'volume' in body) {
+    if (body.volume === undefined || body.volume === null || body.volume === '') {
+      errors.push('Volume is required');
+    } else {
+      const err = optionalRange(body.volume, 'Volume', { min: 0, max: 100000 });
+      if (err) errors.push(err);
+    }
+  }
+  const ecErr = optionalRange(body.ec, 'EC', { min: 0, max: 5 });
+  if (ecErr) errors.push(ecErr);
+  const phErr = optionalRange(body.ph, 'pH', { min: 0, max: 14 });
+  if (phErr) errors.push(phErr);
+  if (body.notes && String(body.notes).length > 500) errors.push('Notes must be less than 500 characters');
+  return errors;
 }
 
 // Validate a log payload. `requireDate` is false for updates, where the edit

@@ -8,7 +8,11 @@
 
 import fs from 'fs';
 import path from 'path';
+import { parseDoses } from '../validation.js';
 
+// Still 2 after MR-37: `doses` on logs and the `reservoir_events` collection
+// are additive and normalize() fills them, so an older file loads unchanged
+// and an older app would still read a newer file's plants and logs.
 export const SCHEMA_VERSION = 2;
 
 // Default settings shape.
@@ -24,10 +28,12 @@ export const emptyData = () => ({
   plants: [],
   logs: [],
   schedules: [],
+  reservoir_events: [],
   settings: defaultSettings(),
   nextId: 1,
   nextPlantId: 1,
   nextScheduleId: 1,
+  nextReservoirEventId: 1,
 });
 
 /* --------------------------- coercion helpers --------------------------- */
@@ -199,10 +205,12 @@ export function prepareImport(raw) {
   data.plants = Array.isArray(data.plants) ? data.plants : [];
   data.logs = Array.isArray(data.logs) ? data.logs : [];
   data.schedules = Array.isArray(data.schedules) ? data.schedules : [];
+  data.reservoir_events = Array.isArray(data.reservoir_events) ? data.reservoir_events : [];
   const nextAfter = (rows) => rows.reduce((m, r) => Math.max(m, Number(r?.id) || 0), 0) + 1;
   data.nextPlantId = Math.max(Number(data.nextPlantId) || 1, nextAfter(data.plants));
   data.nextId = Math.max(Number(data.nextId) || 1, nextAfter(data.logs));
   data.nextScheduleId = Math.max(Number(data.nextScheduleId) || 1, nextAfter(data.schedules));
+  data.nextReservoirEventId = Math.max(Number(data.nextReservoirEventId) || 1, nextAfter(data.reservoir_events));
   data.schemaVersion = SCHEMA_VERSION;
   return data;
 }
@@ -284,6 +292,7 @@ export function updatePlant(data, id, body) {
   if (plant.name !== oldName) {
     for (const log of data.logs) if (log.plant_id === plant.id) log.plant_name = plant.name;
     for (const s of data.schedules) if (s.plant_id === plant.id) s.plant_name = plant.name;
+    for (const e of data.reservoir_events) if (e.plant_id === plant.id) e.plant_name = plant.name;
   }
   return plant;
 }
@@ -307,6 +316,7 @@ export function deletePlantCascade(data, id) {
   data.plants = data.plants.filter((p) => p.id !== id);
   data.logs = data.logs.filter((l) => l.plant_id !== id);
   data.schedules = data.schedules.filter((s) => s.plant_id !== id);
+  data.reservoir_events = data.reservoir_events.filter((e) => e.plant_id !== id);
   const imageUrls = removedLogs.map((l) => l.image_url).filter(Boolean);
   return { plant, deletedLogs: removedLogs.length, imageUrls };
 }
@@ -382,6 +392,18 @@ function measurementFields(body) {
   };
 }
 
+// Structured dosing rows as stored: trimmed names, numeric ml/L. Takes the
+// array or its JSON-string form (multipart bodies); anything unparseable or
+// absent stores as []. validation.js has already refused a malformed list by
+// the time this runs, and both go through the same parseDoses.
+export function normalizeDoses(value) {
+  const parsed = parseDoses(value);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((d) => d && typeof d === 'object' && String(d.name || '').trim())
+    .map((d) => ({ name: String(d.name).trim(), ml_per_l: num(d.ml_per_l) ?? 0 }));
+}
+
 export function createLog(data, body) {
   const plant = resolvePlant(data, body);
   const log = {
@@ -393,6 +415,7 @@ export function createLog(data, body) {
     height_unit: body.height_unit === 'in' ? 'in' : 'cm',
     ...measurementFields(body),
     nutrients: body.nutrients ? String(body.nutrients).trim() : '',
+    doses: normalizeDoses(body.doses),
     notes: body.notes ? String(body.notes).trim() : '',
     image_url: body.image_url || null,
     created_at: now(),
@@ -431,7 +454,11 @@ export function updateLog(data, id, body) {
     if (f in body) log[f] = num(body[f]);
   }
   if (body.nutrients !== undefined) log.nutrients = String(body.nutrients).trim();
+  if ('doses' in body) log.doses = normalizeDoses(body.doses);
   if (body.notes !== undefined) log.notes = body.notes ? String(body.notes).trim() : '';
+  // The image is preserved unless the caller stored a replacement (the HTTP
+  // layer passes the new /uploads URL after sniffing the bytes, MR-37).
+  if (body.image_url !== undefined) log.image_url = body.image_url || null;
   log.updated_at = now();
   return log;
 }
@@ -510,6 +537,72 @@ export function markFed(data, id) {
   schedule.last_fed = now();
   schedule.updated_at = schedule.last_fed;
   return schedule;
+}
+
+/* --------------------------- reservoir events --------------------------- */
+
+// A full water change ('change') or a top-off ('topoff') for one plant, with
+// the volume in liters (canonical, like every stored volume). Newest first by
+// the user-entered date, then by id, so two calls always agree.
+export function listReservoirEvents(data, { plant_id } = {}) {
+  let events = data.reservoir_events;
+  if (plant_id !== undefined && plant_id !== null && plant_id !== '') {
+    const pid = parseInt(plant_id, 10);
+    events = events.filter((e) => e.plant_id === pid);
+  }
+  return [...events].sort((a, b) => {
+    const byDate = dateSortKey(b).localeCompare(dateSortKey(a));
+    return byDate !== 0 ? byDate : (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+}
+
+export function getReservoirEvent(data, id) {
+  return data.reservoir_events.find((e) => e.id === id) || null;
+}
+
+export function createReservoirEvent(data, body) {
+  const plant = getPlant(data, parseInt(body.plant_id, 10));
+  if (!plant) return null;
+  const ts = now();
+  const event = {
+    id: data.nextReservoirEventId,
+    plant_id: plant.id,
+    plant_name: plant.name,
+    date: body.date,
+    kind: body.kind === 'topoff' ? 'topoff' : 'change',
+    volume: num(body.volume) ?? 0,
+    ec: num(body.ec),
+    ph: num(body.ph),
+    notes: body.notes ? String(body.notes).trim() : '',
+    created_at: ts,
+    updated_at: ts,
+  };
+  data.reservoir_events.push(event);
+  data.nextReservoirEventId += 1;
+  return event;
+}
+
+export function updateReservoirEvent(data, id, body) {
+  const event = getReservoirEvent(data, id);
+  if (!event) return null;
+  if (body.plant_id !== undefined && body.plant_id !== '') {
+    const plant = getPlant(data, parseInt(body.plant_id, 10));
+    if (plant) { event.plant_id = plant.id; event.plant_name = plant.name; }
+  }
+  if (body.date !== undefined) event.date = body.date;
+  if (body.kind !== undefined) event.kind = body.kind === 'topoff' ? 'topoff' : 'change';
+  if (body.volume !== undefined) event.volume = num(body.volume) ?? 0;
+  for (const f of ['ec', 'ph']) if (f in body) event[f] = num(body[f]);
+  if (body.notes !== undefined) event.notes = body.notes ? String(body.notes).trim() : '';
+  event.updated_at = now();
+  return event;
+}
+
+export function deleteReservoirEvent(data, id) {
+  const idx = data.reservoir_events.findIndex((e) => e.id === id);
+  if (idx === -1) return null;
+  const [deleted] = data.reservoir_events.splice(idx, 1);
+  return deleted;
 }
 
 /* -------------------------------- settings ------------------------------ */

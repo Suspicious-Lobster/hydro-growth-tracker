@@ -64,8 +64,9 @@ describe('validateLog: height', () => {
 });
 
 describe('validateLog: text fields', () => {
-  it('requires nutrients', () => {
-    expect(only(errorsFor({ nutrients: '' }), 'Nutrients information is required')).toHaveLength(1);
+  it('nutrients text is optional (MR-37: a quick pH/EC/height log is valid)', () => {
+    expect(errorsFor({ nutrients: '' })).toEqual([]);
+    expect(errorsFor({ nutrients: undefined })).toEqual([]);
   });
   it('caps nutrients at 500 and notes at 1000', () => {
     expect(errorsFor({ nutrients: 'n'.repeat(500) })).toEqual([]);
@@ -99,7 +100,7 @@ describe('validateLog: measurement ranges', () => {
     expect(only(errorsFor({ ph: 'acid' }), 'pH must be a number')).toHaveLength(1);
   });
   it('reports every failing rule, not just the first', () => {
-    const errs = validateLog({ plant_name: '', date: 'x', height: 9999, nutrients: '', ph: 99 });
+    const errs = validateLog({ plant_name: '', date: 'x', height: 9999, doses: [{ name: '', ml_per_l: 1 }], ph: 99 });
     expect(errs.length).toBeGreaterThanOrEqual(5);
   });
 });
