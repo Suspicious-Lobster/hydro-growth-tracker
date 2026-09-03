@@ -9,6 +9,7 @@ import { formatLength, formatTemp, formatVolume, formatDate, fromCm } from '../u
 import { inferStage, stageLabel, getStageGuidance } from '../data/recommendations';
 import { measurementAlerts, describeAlert } from '../utils/ranges';
 import { vpdKpa, vpdBand } from '../utils/vpd';
+import { idealSeries } from '../utils/idealCurve';
 
 const PlantDetail = ({ plant, onBack }) => {
   const { colors } = useTheme();
@@ -23,7 +24,14 @@ const PlantDetail = ({ plant, onBack }) => {
   const alerts = latest ? measurementAlerts(latest, plant.species, stage) : [];
   const plantSchedules = schedules.filter((s) => s.plant_id === plant.id);
 
-  const chartData = sorted.map((log) => ({
+  // Expected-height curve from the species profile, aligned to each log's
+  // date, when the plant has a recorded start date (MR-48). null when it
+  // doesn't, so GrowthChart never draws an ideal line with nothing to anchor it.
+  const ideal = plant.start_date
+    ? idealSeries(plant.species, plant.start_date, sorted.map((l) => l.date ?? l.created_at))
+    : null;
+
+  const chartData = sorted.map((log, i) => ({
     date: formatDate(log.date ?? log.created_at, { year: undefined }),
     // Convert canonical cm to the active display unit so the plotted line
     // matches the axis label and the stat cards.
@@ -31,6 +39,7 @@ const PlantDetail = ({ plant, onBack }) => {
     ph: log.ph != null ? parseFloat(log.ph) : null,
     ec: log.ec != null ? parseFloat(log.ec) : null,
     vpd: vpdKpa(log.air_temp, log.humidity),
+    ideal: ideal && ideal[i] != null ? Math.round(fromCm(ideal[i], lengthUnit) * 100) / 100 : undefined,
   }));
 
   return (
@@ -77,7 +86,7 @@ const PlantDetail = ({ plant, onBack }) => {
         <div className={`${colors.bgSecondary} rounded-xl shadow-lg p-5 ${colors.border} border`}>
           <h3 className={`text-lg font-semibold ${colors.text} mb-3`}>Growth, pH, EC &amp; VPD</h3>
           <div className="h-72">
-            <GrowthChart data={chartData} lengthUnit={lengthUnit} phRange={guidance?.phRange} ecRange={guidance?.ec} vpdRange={stage ? vpdBand(stage) : null} />
+            <GrowthChart data={chartData} lengthUnit={lengthUnit} phRange={guidance?.phRange} ecRange={guidance?.ec} vpdRange={stage ? vpdBand(stage) : null} species={plant.species} />
           </div>
         </div>
       )}

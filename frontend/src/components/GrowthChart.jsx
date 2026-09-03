@@ -16,13 +16,16 @@ const PH_COLOR = '#F59E0B';    // amber  — pH strip
 const EC_COLOR = '#60A5FA';    // blue   — nutrient strength
 const HEIGHT_COLOR = '#34D399'; // green — growth
 const VPD_COLOR = '#A78BFA';   // purple — vapour-pressure deficit
+const IDEAL_COLOR = '#9CA3AF'; // grey   — expected-height reference curve
 
 // Line chart of height over time. When readings carry pH, EC and/or VPD,
 // they're drawn on a shared right axis, each with its ideal target range
 // shaded behind the line (from the plant's stage guidance) so out-of-range
-// readings stand out.
-// `data` items: { date, height, ph?, ec?, vpd? }. `phRange`/`ecRange`/`vpdRange`: { min, max }.
-function GrowthChart({ data, lengthUnit = 'cm', phRange = null, ecRange = null, vpdRange = null }) {
+// readings stand out. When points carry an `ideal` value (the species'
+// expected-height curve, MR-48), it's drawn as a dashed grey line on the
+// left (height) axis alongside the real growth line.
+// `data` items: { date, height, ph?, ec?, vpd?, ideal? }. `phRange`/`ecRange`/`vpdRange`: { min, max }. `species` names the ideal-curve caption.
+function GrowthChart({ data, lengthUnit = 'cm', phRange = null, ecRange = null, vpdRange = null, species = null }) {
   const { isDark } = useTheme();
   const axis = isDark ? '#94a3b8' : '#64748b';
   const grid = isDark ? '#374151' : '#e2e8f0';
@@ -31,6 +34,7 @@ function GrowthChart({ data, lengthUnit = 'cm', phRange = null, ecRange = null, 
   const hasEc = Array.isArray(data) && data.some((d) => d.ec !== null && d.ec !== undefined);
   const hasVpd = Array.isArray(data) && data.some((d) => d.vpd !== null && d.vpd !== undefined);
   const hasChem = hasPh || hasEc || hasVpd;
+  const hasIdeal = Array.isArray(data) && data.some((d) => d.ideal !== null && d.ideal !== undefined);
 
   // Right-axis domain adapts to whatever chemistry is present (so an EC-only
   // chart isn't squashed to the bottom of a pH-sized 0–8 scale).
@@ -63,7 +67,15 @@ function GrowthChart({ data, lengthUnit = 'cm', phRange = null, ecRange = null, 
   if (hasPh) chemLines.push({ key: 'ph', dataKey: 'ph', color: PH_COLOR, name: 'pH' });
   if (hasEc) chemLines.push({ key: 'ec', dataKey: 'ec', color: EC_COLOR, name: 'EC' });
   if (hasVpd) chemLines.push({ key: 'vpd', dataKey: 'vpd', color: VPD_COLOR, name: 'VPD' });
-  const caption = ['Growth', ...chemLines.map((l) => l.name)].join(', ');
+
+  // Same single-source idea as chemLines above, for the left-axis "Ideal"
+  // reference line: this array is what both the <Line> render below AND the
+  // caption read, so dropping the ideal entry here (rather than only editing
+  // the JSX render below) is what removing the ideal line means in practice.
+  const idealLines = [];
+  if (hasIdeal) idealLines.push({ key: 'ideal', dataKey: 'ideal', color: IDEAL_COLOR, name: 'Ideal' });
+
+  const caption = ['Growth', ...idealLines.map((l) => l.name), ...chemLines.map((l) => l.name)].join(', ');
 
   const bandOpacityFor = { ph: phBandOpacity, ec: ecBandOpacity, vpd: vpdBandOpacity };
   const rangeFor = { ph: phRange, ec: ecRange, vpd: vpdRange };
@@ -117,6 +129,20 @@ function GrowthChart({ data, lengthUnit = 'cm', phRange = null, ecRange = null, 
               name={`Height (${lengthUnit})`}
               dot={{ r: 2 }}
             />
+            {idealLines.map((l) => (
+              <Line
+                key={l.key}
+                yAxisId="left"
+                type="monotone"
+                dataKey={l.dataKey}
+                stroke={l.color}
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                name={l.name}
+                dot={false}
+                connectNulls
+              />
+            ))}
             {chemLines.map((l) => (
               <Line
                 key={l.key}
@@ -133,6 +159,11 @@ function GrowthChart({ data, lengthUnit = 'cm', phRange = null, ecRange = null, 
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {idealLines.length > 0 && (
+        <p className="text-xs text-center mt-1" style={{ color: axis }}>
+          Ideal curve from the {species} profile
+        </p>
+      )}
     </div>
   );
 }
