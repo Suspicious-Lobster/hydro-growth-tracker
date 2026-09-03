@@ -47,10 +47,12 @@ export function sniffImageExt(buf) {
 // antivirus scan) for a moment; unlinkSync then fails with EPERM/EBUSY. Retry
 // briefly, then log: the row is already gone, so this is never fatal. Seen
 // once in a full parallel test run (1 of ~6) and never alone, 2026-09-02;
-// again 1 of 4 full runs on 2026-09-03 with a 5-attempt / 300 ms budget, so
-// the budget is now 8 attempts (about 720 ms) -- still never alone.
+// again 1 of 4 full runs on 2026-09-03 with a 5-attempt / 300 ms budget,
+// and once more at 8 attempts / 720 ms (2 of ~10 full runs that day). The
+// budget is now 15 attempts (about 2.4 s worst case); it only ever blocks
+// on the path that is already discarding a rejected or deleted file.
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-const UNLINK_ATTEMPTS = 8;
+const UNLINK_ATTEMPTS = 15;
 function unlinkWithRetry(filePath, what) {
   for (let attempt = 1; attempt <= UNLINK_ATTEMPTS; attempt += 1) {
     try {
