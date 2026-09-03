@@ -195,6 +195,26 @@ describe('LogViewer editing (MR-12)', () => {
     expect(window.confirm).toHaveBeenCalledTimes(0);
   });
 
+  it('choosing a replacement photo sends the edit as FormData with the file (MR-51)', async () => {
+    const user = userEvent.setup();
+    renderViewer();
+
+    await user.click(screen.getByTitle('Edit'));
+
+    const file = new File(['data'], 'plant.jpg', { type: 'image/jpeg' });
+    const fileInput = screen.getByLabelText('Replace photo');
+    Object.defineProperty(fileInput, 'files', { value: [file] });
+    fireEvent.change(fileInput);
+
+    await user.click(screen.getByText('Save'));
+
+    expect(updateLog).toHaveBeenCalledTimes(1);
+    const [, payload] = updateLog.mock.calls[0];
+    expect(payload).toBeInstanceOf(FormData);
+    expect(payload.get('image')).toBe(file);
+    expect(payload.get('height')).toBe('10');
+  });
+
   it('cancelling the ConfirmDialog leaves deleteLog uncalled', async () => {
     window.confirm = vi.fn();
     const user = userEvent.setup();

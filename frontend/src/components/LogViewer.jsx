@@ -59,6 +59,9 @@ const LogViewer = () => {
       nutrients: log.nutrients || '',
       doses: (log.doses || []).map((d) => ({ name: d.name, ml_per_l: d.ml_per_l })),
       notes: log.notes || '',
+      // Only set when the user picks a replacement file (MR-51); left null,
+      // the existing photo (if any) is kept untouched.
+      image: null,
     });
   };
 
@@ -71,7 +74,7 @@ const LogViewer = () => {
     if (!editForm.plant_id) { toast.error('Select a plant'); return; }
     if (editForm.height === '' || parseFloat(editForm.height) < 0) { toast.error('Height must be a positive number'); return; }
     try {
-      await updateLog(logId, {
+      const payload = {
         // Plant is chosen by id, never re-sent as free text — a typo'd
         // plant_name used to make the server silently fork a new plant.
         plant_id: Number(editForm.plant_id),
@@ -90,7 +93,22 @@ const LogViewer = () => {
         nutrients: editForm.nutrients.trim(),
         doses: editForm.doses.filter((d) => d.name.trim()).map((d) => ({ name: d.name.trim(), ml_per_l: parseFloat(d.ml_per_l) })),
         notes: editForm.notes,
-      });
+      };
+      let body = payload;
+      // A replacement photo can only travel as multipart — the server (MR-37)
+      // reads a null measurement as an empty string field, since FormData
+      // cannot carry an actual null.
+      if (editForm.image) {
+        const fd = new FormData();
+        Object.entries(payload).forEach(([k, v]) => {
+          if (v === undefined) return;
+          if (k === 'doses') { fd.append('doses', JSON.stringify(v)); return; }
+          fd.append(k, v === null ? '' : v);
+        });
+        fd.append('image', editForm.image);
+        body = fd;
+      }
+      await updateLog(logId, body);
       toast.success('Log updated');
       cancelEditing();
     } catch (err) {
@@ -258,6 +276,16 @@ const LogViewer = () => {
                     <div>
                       <label className={`block text-sm ${colors.text} mb-1`}>Doses</label>
                       <DosesEditor doses={editForm.doses || []} onChange={(doses) => setEditForm({ ...editForm, doses })} colors={colors} />
+                    </div>
+                    <div>
+                      <label className={`block text-sm ${colors.text} mb-1`}>Replace photo</label>
+                      <input
+                        type="file"
+                        aria-label="Replace photo"
+                        accept="image/*"
+                        onChange={(e) => setEditForm({ ...editForm, image: e.target.files[0] || null })}
+                        className={inputCls}
+                      />
                     </div>
                     <div>
                       <label className={`block text-sm ${colors.text} mb-1`}>Notes</label>
