@@ -33,6 +33,61 @@ export function phTrend(logs, phRange) {
   return { dir, value: Math.round(c * 10) / 10, min: phRange?.min, max: phRange?.max, leaving };
 }
 
+// EC moving consistently one way across the last 3 readings (by a meaningful amount).
+// Mirrors phTrend, but EC bands are narrower than pH bands, so both the noise
+// threshold and the "leaving" margin are tighter here (0.2 / 0.1 vs pH's 0.3 / 0.2).
+export function ecTrend(logs, ecRange) {
+  const sorted = sortLogsByDate(logs);
+  const ec = sorted.map((l) => num(l.ec)).filter((v) => v !== null);
+  if (ec.length < 3) return null;
+  const [a, b, c] = ec.slice(-3);
+  const rising = c > b && b > a;
+  const falling = c < b && b < a;
+  if (!rising && !falling) return null;
+  if (Math.abs(c - a) < 0.2) return null; // ignore measurement noise
+
+  const dir = rising ? 'rising' : 'falling';
+  let leaving = false;
+  if (ecRange && ecRange.min !== undefined && ecRange.max !== undefined) {
+    leaving = (rising && c > ecRange.max - 0.1) || (falling && c < ecRange.min + 0.1);
+  }
+  return { dir, value: Math.round(c * 10) / 10, min: ecRange?.min, max: ecRange?.max, leaving };
+}
+
+// Drift alerts: catches a reading that's already crept out of its band, whether
+// via a monotonic trend that's now "leaving" (see phTrend/ecTrend) or via two
+// consecutive readings both sitting outside the band with no clean trend to
+// report. Returns at most one entry per key ('ph' | 'ec'):
+// { key, dir, value, min, max } where dir is 'rising' | 'falling' (trend case)
+// or 'high' | 'low' (two-consecutive-out-of-band case).
+export function driftAlerts(logs, { phRange, ecRange } = {}) {
+  const sorted = sortLogsByDate(logs);
+  const alerts = [];
+
+  const outOfBand = (v, range) => v < range.min || v > range.max;
+
+  const check = (key, field, range, trend) => {
+    if (!range || range.min === undefined || range.max === undefined) return;
+    const vals = sorted.map((l) => num(l[field])).filter((v) => v !== null);
+    if (vals.length >= 2) {
+      const [prev, last] = vals.slice(-2);
+      if (outOfBand(prev, range) && outOfBand(last, range)) {
+        const dir = last > range.max ? 'high' : 'low';
+        alerts.push({ key, dir, value: Math.round(last * 10) / 10, min: range.min, max: range.max });
+        return; // at most one entry per key
+      }
+    }
+    if (trend && trend.leaving) {
+      alerts.push({ key, dir: trend.dir, value: trend.value, min: range.min, max: range.max });
+    }
+  };
+
+  check('ph', 'ph', phRange, phTrend(logs, phRange));
+  check('ec', 'ec', ecRange, ecTrend(logs, ecRange));
+
+  return alerts;
+}
+
 // Height essentially flat across the last >=3 logs spanning >=5 days.
 export function growthStall(logs) {
   const sorted = sortLogsByDate(logs);

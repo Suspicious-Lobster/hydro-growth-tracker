@@ -63,6 +63,36 @@ describe('assistantTips.selectTip', () => {
   });
 });
 
+describe('assistantTips drift alerts', () => {
+  // Two consecutive pH readings both outside the tomato profile's band (5.8–6.2),
+  // built with the same log-fixture shape the other suites use.
+  const driftLogs = [
+    { height: 20, ph: 6.9, date: '2026-01-01', created_at: '2026-01-01T00:00:00Z' },
+    { height: 21, ph: 7.0, date: '2026-01-03', created_at: '2026-01-03T00:00:00Z' },
+  ];
+
+  it('surfaces a pH drift tip at alert priority when readings drift out of band', () => {
+    const tip = selectTip({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: driftLogs, stage: 'vegetative' }, { now: LATE });
+    expect(tip.kind).toBe('alert');
+    expect(tip.text).toMatch(/pH/);
+    expect(tip.text).toMatch(/drift/i);
+  });
+
+  it('does not surface a drift tip when readings are in-band', () => {
+    const inBandLogs = [
+      { height: 20, ph: 6.0, date: '2026-01-01', created_at: '2026-01-01T00:00:00Z' },
+      { height: 21, ph: 6.0, date: '2026-01-03', created_at: '2026-01-03T00:00:00Z' },
+    ];
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: inBandLogs, stage: 'vegetative' });
+    expect(cands.some((c) => c.id.startsWith(`drift-${plant.id}-ph`))).toBe(false);
+  });
+
+  it('skips a drift entry whose key already has a live measurementAlert', () => {
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [alert], logs: driftLogs, stage: 'vegetative' });
+    expect(cands.some((c) => c.id.startsWith(`drift-${plant.id}-ph`))).toBe(false);
+  });
+});
+
 describe('assistantTips.buildCandidates', () => {
   it('emits a first-log milestone for a single log', () => {
     const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs: [{ height: 5, date: '2026-01-01' }] });

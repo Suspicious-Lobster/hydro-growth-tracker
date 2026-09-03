@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { phTrend, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
+import { phTrend, ecTrend, driftAlerts, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
 
 const log = (date, fields) => ({ date, created_at: `${date}T00:00:00Z`, ...fields });
 const PH_RANGE = { min: 5.8, max: 6.2 };
@@ -26,6 +26,53 @@ describe('trends.phTrend', () => {
 
   it('returns null with fewer than 3 readings', () => {
     expect(phTrend([log('2026-01-01', { ph: 6.0 }), log('2026-01-03', { ph: 6.5 })], PH_RANGE)).toBeNull();
+  });
+});
+
+describe('trends.ecTrend', () => {
+  const EC_RANGE = { min: 0.8, max: 1.4 };
+
+  it('flags a steady rise heading out of the EC band', () => {
+    const logs = [log('2026-01-01', { ec: 1.0 }), log('2026-01-03', { ec: 1.2 }), log('2026-01-05', { ec: 1.5 })];
+    const t = ecTrend(logs, EC_RANGE);
+    expect(t).toMatchObject({ dir: 'rising', leaving: true });
+  });
+
+  it('returns null for noisy / non-monotonic EC', () => {
+    const logs = [log('2026-01-01', { ec: 1.0 }), log('2026-01-03', { ec: 1.1 }), log('2026-01-05', { ec: 1.0 })];
+    expect(ecTrend(logs, EC_RANGE)).toBeNull();
+  });
+
+  it('returns null with fewer than 3 readings', () => {
+    expect(ecTrend([log('2026-01-01', { ec: 1.0 }), log('2026-01-03', { ec: 1.5 })], EC_RANGE)).toBeNull();
+  });
+});
+
+describe('trends.driftAlerts', () => {
+  const PH_RANGE = { min: 5.8, max: 6.2 };
+  const EC_RANGE = { min: 0.8, max: 1.4 };
+
+  it('flags two consecutive out-of-band pH readings with no clean trend', () => {
+    const logs = [log('2026-01-01', { ph: 6.9 }), log('2026-01-03', { ph: 7.0 })];
+    const alerts = driftAlerts(logs, { phRange: PH_RANGE });
+    expect(alerts).toEqual([{ key: 'ph', dir: 'high', value: 7, min: 5.8, max: 6.2 }]);
+  });
+
+  it('flags a leaving EC trend even while still technically in-band', () => {
+    const logs = [log('2026-01-01', { ec: 1.0 }), log('2026-01-03', { ec: 1.2 }), log('2026-01-05', { ec: 1.4 })];
+    const alerts = driftAlerts(logs, { ecRange: EC_RANGE });
+    expect(alerts).toEqual([{ key: 'ec', dir: 'rising', value: 1.4, min: 0.8, max: 1.4 }]);
+  });
+
+  it('emits at most one entry per key', () => {
+    const logs = [log('2026-01-01', { ph: 6.9 }), log('2026-01-03', { ph: 7.0 }), log('2026-01-05', { ph: 7.1 })];
+    const alerts = driftAlerts(logs, { phRange: PH_RANGE });
+    expect(alerts.filter((a) => a.key === 'ph')).toHaveLength(1);
+  });
+
+  it('returns nothing for in-band, non-drifting readings', () => {
+    const logs = [log('2026-01-01', { ph: 6.0 }), log('2026-01-03', { ph: 6.0 }), log('2026-01-05', { ph: 6.0 })];
+    expect(driftAlerts(logs, { phRange: PH_RANGE })).toEqual([]);
   });
 });
 

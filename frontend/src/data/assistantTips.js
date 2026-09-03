@@ -9,7 +9,7 @@
 import { totalGrowth, daysTracked, latestLog, currentHeight } from '../utils/stats';
 import { stageLabel, getStageGuidance, getProfile } from './recommendations';
 import { feedingStatus } from '../utils/feeding';
-import { phTrend, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
+import { phTrend, driftAlerts, growthStall, strongGrowth, isHarvestWindow, harvestCountdown, careStreak } from '../utils/trends';
 
 // Higher number = more important. Alerts always outrank chit-chat. Reminders
 // (feeding/logging) sit just below alerts; insights (trends) below milestones.
@@ -32,6 +32,18 @@ const ALERT_COPY = {
   air_temp: (a) => `It's feeling ${a.value}° in here — comfy is ${a.range.min}–${a.range.max}°. Keep your plant chill (but not too chill).`,
   water_temp: (a) => `Reservoir's reading ${a.value}° (sweet spot ${a.range.min}–${a.range.max}°). Roots like it just right.`,
   humidity: (a) => `Humidity's at ${a.value}% — target's ${a.range.min}–${a.range.max}%. Dial it in to keep things breezy.`,
+};
+
+// Copy for driftAlerts entries — a reading that's been creeping toward (or is
+// already sitting past) the edge of its band across several days, as opposed
+// to today's point-in-time ALERT_COPY. `dir` is 'rising'/'falling' (trend) or
+// 'high'/'low' (already out for two readings running, no clean trend to name).
+const DRIFT_LABEL = { ph: 'pH', ec: 'EC' };
+const DRIFT_DIR_WORDS = { rising: 'crept up', falling: 'crept down', high: 'stuck high', low: 'stuck low' };
+const driftCopy = (d) => {
+  const label = DRIFT_LABEL[d.key] || d.key;
+  const dirWord = DRIFT_DIR_WORDS[d.dir] || d.dir;
+  return `Heads up — ${label} drift: it's ${dirWord} and sitting outside the target band (aim ${d.min}–${d.max}). Worth a look before it wanders further. 🧪`;
 };
 
 const IDLE_TIPS = [
@@ -154,8 +166,25 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
       });
     }
 
-    // Trend insights — gentle, non-urgent observations.
+    // Drift alerts — a reading creeping toward (or already past) the edge of its
+    // band over several days. These rank at alert priority, but skip any key a
+    // live point-in-time measurementAlert already covers, so Bud doesn't say two
+    // things about the same reading at once.
     const phRange = getProfile(selectedPlant.species)?.phRange;
+    const ecRange = getStageGuidance(selectedPlant.species, stage)?.ec;
+    const alertKeys = new Set(alerts.map((a) => a && a.key));
+    for (const d of driftAlerts(logs, { phRange, ecRange })) {
+      if (alertKeys.has(d.key)) continue;
+      candidates.push({
+        id: `drift-${pid}-${d.key}-${d.dir}`,
+        kind: 'alert',
+        expression: 'alert',
+        text: driftCopy(d),
+        priority: TIP_KINDS.alert,
+      });
+    }
+
+    // Trend insights — gentle, non-urgent observations.
     const ph = phTrend(logs, phRange);
     if (ph) {
       candidates.push({
