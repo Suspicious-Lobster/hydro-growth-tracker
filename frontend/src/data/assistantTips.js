@@ -4,7 +4,10 @@
 // Date.now() inside (the caller injects `now`), so it's deterministic and unit
 // testable alongside ranges.test.js / stats.test.js.
 //
-// Tone: playful, lightly cannabis-punny, family-friendly. All copy lives here.
+// Tone: every tip is composed from a voice (see ./budVoice — 'towelie' by
+// default, or 'clean') plus a plain factual clause defined here. The clause
+// (numbers, ranges, plant names) never lives in the voice table, so it can
+// never be lost when a joke gets rewritten.
 
 import { totalGrowth, daysTracked, latestLog, currentHeight, sortLogsByDate } from '../utils/stats';
 import { stageLabel, getStageGuidance, getProfile, inferStage } from './recommendations';
@@ -13,6 +16,7 @@ import { phTrend, driftAlerts, growthStall, strongGrowth, isHarvestWindow, harve
 import { BADGES } from '../utils/achievements';
 import { parseLocalDate } from '../utils/dates';
 import { GROWTH_STAGES } from './plantKnowledge';
+import { compose, seedFrom, VOICES } from './budVoice';
 
 // Lifecycle order used to tell whether an inferred stage change is a step
 // forward (worth celebrating) rather than a correction/backslide.
@@ -35,65 +39,48 @@ const plantKey = (plant) => (plant && plant.id != null ? plant.id : 'none');
 
 // ----------------------------- copy templates ----------------------------- //
 
-// Punny one-liners per out-of-range measurement. Falls back to a generic line.
-const ALERT_COPY = {
-  ph: (a) => `Heads up — pH is drifting ${a.value} out of the happy zone (aim ${a.range.min}–${a.range.max}). A little tweak and your buds will thank you. 🌿`,
-  ec: (a) => `Your nutrient strength (EC ${a.value}) is off target (${a.range.min}–${a.range.max}). Let's not over- or under-feed these green friends.`,
-  air_temp: (a) => `It's feeling ${a.value}° in here — comfy is ${a.range.min}–${a.range.max}°. Keep your plant chill (but not too chill).`,
-  water_temp: (a) => `Reservoir's reading ${a.value}° (sweet spot ${a.range.min}–${a.range.max}°). Roots like it just right.`,
-  humidity: (a) => `Humidity's at ${a.value}% — target's ${a.range.min}–${a.range.max}%. Dial it in to keep things breezy.`,
+// Factual clauses per out-of-range measurement — plain, joke-free, always
+// carries the actual value + band. Falls back to a generic clause. compose()
+// glues the caller's chosen voice onto the front of these.
+const ALERT_FACT = {
+  ph: (a) => `pH is ${a.value}, aim ${a.range.min}-${a.range.max}.`,
+  ec: (a) => `nutrient strength (EC ${a.value}) is off target (${a.range.min}-${a.range.max}).`,
+  air_temp: (a) => `it's ${a.value}° in here, comfy is ${a.range.min}-${a.range.max}°.`,
+  water_temp: (a) => `reservoir's reading ${a.value}° (sweet spot ${a.range.min}-${a.range.max}°).`,
+  humidity: (a) => `humidity's at ${a.value}% (target's ${a.range.min}-${a.range.max}%).`,
 };
+const alertFact = (a) => (ALERT_FACT[a.key] || ((x) => `${x.label} is out of range (${x.range.min}-${x.range.max}).`))(a);
 
-// Copy for driftAlerts entries — a reading that's been creeping toward (or is
+// Facts for driftAlerts entries — a reading that's been creeping toward (or is
 // already sitting past) the edge of its band across several days, as opposed
-// to today's point-in-time ALERT_COPY. `dir` is 'rising'/'falling' (trend) or
+// to today's point-in-time ALERT_FACT. `dir` is 'rising'/'falling' (trend) or
 // 'high'/'low' (already out for two readings running, no clean trend to name).
 const DRIFT_LABEL = { ph: 'pH', ec: 'EC' };
 const DRIFT_DIR_WORDS = { rising: 'crept up', falling: 'crept down', high: 'stuck high', low: 'stuck low' };
-const driftCopy = (d) => {
+const driftFact = (d) => {
   const label = DRIFT_LABEL[d.key] || d.key;
   const dirWord = DRIFT_DIR_WORDS[d.dir] || d.dir;
-  return `Heads up — ${label} drift: it's ${dirWord} and sitting outside the target band (aim ${d.min}–${d.max}). Worth a look before it wanders further. 🧪`;
+  return `${label} drift: it's ${dirWord} and sitting outside the target band (aim ${d.min}-${d.max}).`;
 };
 
-export const IDLE_TIPS = [
-  "Psst — logging height every few days makes your growth chart way more satisfying. 📈",
-  "Stay hydrated, and so should your roots. 💧",
-  "A quick pH check today saves a headache tomorrow.",
-  "Talking to your plants is optional. Logging them is not. 😉",
-  "Clean reservoir, happy roots. Just sayin'.",
-  "Good things grow to those who track.",
-  "Bud's motto: measure twice, harvest once. 🌿",
-  "Fun fact: plants can't read your mind. Logs help. 📋",
-  "A watched pot never boils, but a watered root always grows.",
-  "Feeling leafy? That's a good sign, keep it up. 🍃",
-  "Every log is a tiny time capsule for future-you. 🕰️",
-  "Bud approves of consistent EC checks. Very responsible of you.",
-  "Small daily habits, big leafy results. 🌱",
-  "Reservoir water gets stale faster than yesterday's memes.",
-];
+// Idle chit-chat pool size lives in the voice tables now (see budVoice.js);
+// exported here for back-compat with anything still importing the towelie
+// pool length directly.
+export const IDLE_TIPS = VOICES.towelie.idle;
 
-// Logging-streak praise, biggest first (find() picks the highest earned tier).
+// Logging-streak facts, biggest first (find() picks the highest earned tier).
 const STREAK_MILESTONES = [14, 7, 3];
-const STREAK_COPY = {
-  3: (name) => `Three days straight of logging ${name} — Bud salutes the dedication. 🫡`,
-  7: (name) => `A full WEEK of daily logs for ${name}. You're officially a grow nerd (compliment). 🏅`,
-  14: (name) => `Fourteen-day logging streak on ${name}?! Legendary. The chart thanks you. 👑`,
+const STREAK_FACT = {
+  3: (name) => `Three days straight of logging ${name}.`,
+  7: (name) => `A full week of daily logs for ${name}.`,
+  14: (name) => `Fourteen-day logging streak on ${name}!`,
 };
-
-// Chill little hellos for when Bud pops up (dashboard, no plant picked yet).
-const GREETING_TIPS = [
-  "Yooo, you're back. Garden's been chillin' — let's vibe. 🌿✌️",
-  "Heyyy. Pull up a seat, let's see how the green's coming along. 😎",
-  "What's good? Bud's been keeping an eye on things. All mellow. 🌱",
-  "Welcome back, friend. Take it easy — we'll grow at our own pace. 🍃",
-];
 
 // --------------------------- candidate building --------------------------- //
 
 // Build every tip that *could* apply right now, each with a stable id so the
 // same condition always yields the same id (enables dedupe + "don't show again").
-export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = [], stage, schedules = [], newBadges = [], reservoirEvents = [] } = {}, now = 0) {
+export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = [], stage, schedules = [], newBadges = [], reservoirEvents = [], voice = 'towelie' } = {}, now = 0) {
   const candidates = [];
   const pid = plantKey(selectedPlant);
 
@@ -105,7 +92,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         id: `milestone:badge:${badge.id}`,
         kind: 'milestone',
         expression: 'celebrating',
-        text: `Badge unlocked: ${badge.label}! ${badge.description} ${badge.emoji}`,
+        text: compose(voice, 'badge', `Badge unlocked: ${badge.label}! ${badge.description} ${badge.emoji}`, { seed: seedFrom(`badge:${badge.id}`) }),
         priority: TIP_KINDS.milestone,
       });
     }
@@ -114,12 +101,11 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
   // 1. Alerts — highest priority, one per out-of-range reading.
   for (const a of alerts) {
     if (!a || !a.range) continue;
-    const copy = ALERT_COPY[a.key] || ((x) => `${x.label} is out of range (${x.range.min}–${x.range.max}). Worth a look! 🌱`);
     candidates.push({
       id: `alert:${pid}:${a.key}:${a.status}`,
       kind: 'alert',
       expression: 'alert',
-      text: copy(a),
+      text: compose(voice, 'alertPrefix', alertFact(a), { seed: seedFrom(`${pid}:${a.key}`) }),
       priority: TIP_KINDS.alert,
     });
   }
@@ -131,7 +117,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         id: `milestone:first:${pid}`,
         kind: 'milestone',
         expression: 'celebrating',
-        text: `First log for ${selectedPlant.name} is in the books — the journey begins! 🌱`,
+        text: compose(voice, 'milestone', `First log for ${selectedPlant.name} is in the books — the journey begins!`, { seed: seedFrom(`first:${pid}`) }),
         priority: TIP_KINDS.milestone,
       });
     }
@@ -140,7 +126,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         id: `milestone:stage:${pid}:${stage}`,
         kind: 'milestone',
         expression: 'celebrating',
-        text: `${selectedPlant.name} just hit ${stageLabel(stage)} — looking dank! 🎉`,
+        text: compose(voice, 'milestone', `${selectedPlant.name} just hit ${stageLabel(stage)}.`, { seed: seedFrom(`stage:${pid}:${stage}`) }),
         priority: TIP_KINDS.milestone,
       });
     }
@@ -159,7 +145,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
           id: `milestone:stage:${pid}:${newStage}`,
           kind: 'milestone',
           expression: 'celebrating',
-          text: `${selectedPlant.name} just leveled up to ${stageLabel(newStage)} — nice work! 🎉`,
+          text: compose(voice, 'milestone', `${selectedPlant.name} just leveled up to ${stageLabel(newStage)} — nice work!`, { seed: seedFrom(`levelup:${pid}:${newStage}`) }),
           priority: TIP_KINDS.milestone,
         });
       }
@@ -171,7 +157,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         id: `milestone:growth:${pid}:${bucket}`,
         kind: 'milestone',
         expression: 'celebrating',
-        text: `${selectedPlant.name} has grown ${bucket}cm+ since you started tracking. Reach for the sky! 🌳`,
+        text: compose(voice, 'milestone', `${selectedPlant.name} has grown ${bucket}cm+ since you started tracking.`, { seed: seedFrom(`growth:${pid}:${bucket}`) }),
         priority: TIP_KINDS.milestone,
       });
     }
@@ -182,7 +168,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         id: `milestone:days:${pid}:${weekBucket}`,
         kind: 'milestone',
         expression: 'happy',
-        text: `${weekBucket} days of tracking ${selectedPlant.name} — that's dedication. 🙌`,
+        text: compose(voice, 'milestone', `${weekBucket} days of tracking ${selectedPlant.name} — that's dedication.`, { seed: seedFrom(`days:${pid}:${weekBucket}`) }),
         priority: TIP_KINDS.milestone,
       });
     }
@@ -194,7 +180,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         id: `milestone:streak:${pid}:${streakHit}`,
         kind: 'milestone',
         expression: 'celebrating',
-        text: STREAK_COPY[streakHit](selectedPlant.name),
+        text: compose(voice, 'milestone', STREAK_FACT[streakHit](selectedPlant.name), { seed: seedFrom(`streak:${pid}:${streakHit}`) }),
         priority: TIP_KINDS.milestone,
       });
     }
@@ -215,7 +201,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
             id: `reminder:reservoir:${pid}:${weekBucket}`,
             kind: 'reminder',
             expression: 'idle',
-            text: `${selectedPlant.name}'s reservoir hasn't been changed in ${age} days — stale water makes roots grumpy. Time for a refresh? 💧`,
+            text: compose(voice, 'reservoir', `${selectedPlant.name}'s reservoir hasn't been changed in ${age} days — time for a refresh?`, { seed: seedFrom(`reservoir:${pid}:${weekBucket}`) }),
             priority: TIP_KINDS.reminder,
           });
         }
@@ -225,7 +211,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         id: `contextual:reservoir-intro:${pid}`,
         kind: 'contextual',
         expression: 'idle',
-        text: `Haven't seen a reservoir change logged for ${selectedPlant.name} yet — give it a go, roots love a fresh start. 💧`,
+        text: compose(voice, 'reservoir', `Haven't seen a reservoir change logged for ${selectedPlant.name} yet — give it a go.`, { seed: seedFrom(`reservoir-intro:${pid}`) }),
         priority: TIP_KINDS.contextual,
       });
     }
@@ -237,12 +223,14 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
       const st = feedingStatus(s, when);
       if (!st.due) continue;
       const label = s.nutrient_type ? `${s.nutrient_type} feed` : 'a feed';
-      const text = st.overdue
-        ? `${selectedPlant.name} is ${Math.abs(st.daysUntil)}d overdue for ${label} — let's not keep 'em waiting. 🍽️`
-        : `${selectedPlant.name} is due for ${label} today. Mix it up! 🍽️`;
+      const fact = st.overdue
+        ? `${selectedPlant.name} is ${Math.abs(st.daysUntil)}d overdue for ${label}.`
+        : `${selectedPlant.name} is due for ${label} today.`;
       candidates.push({
         id: `reminder:feed:${pid}:${s.id}`,
-        kind: 'reminder', expression: 'happy', text, priority: TIP_KINDS.reminder,
+        kind: 'reminder', expression: 'happy',
+        text: compose(voice, 'reminderPrefix', fact, { seed: seedFrom(`feed:${pid}:${s.id}`) }),
+        priority: TIP_KINDS.reminder,
       });
     }
 
@@ -259,7 +247,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
         id: `drift-${pid}-${d.key}-${d.dir}`,
         kind: 'alert',
         expression: 'alert',
-        text: driftCopy(d),
+        text: compose(voice, 'drift', driftFact(d), { seed: seedFrom(`drift:${pid}:${d.key}:${d.dir}`) }),
         priority: TIP_KINDS.alert,
       });
     }
@@ -302,7 +290,7 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
       candidates.push({
         id: `milestone:harvestday:${pid}`,
         kind: 'milestone', expression: 'celebrating',
-        text: `IT'S HARVEST TIME for ${selectedPlant.name}!! 🎉🌾 Months of care, all paid off. Enjoy the fruits (well... buds) of your labor!`,
+        text: compose(voice, 'harvest', `It's harvest time for ${selectedPlant.name}! Months of care, all paid off.`, { seed: seedFrom(`harvestday:${pid}`) }),
         priority: TIP_KINDS.milestone,
       });
     } else if (hc && hc.days <= 14) {
@@ -323,14 +311,14 @@ export function buildCandidates({ activeTab, selectedPlant, alerts = [], logs = 
   }
 
   // 4. Contextual — one tip tuned to the current tab.
-  const ctx = contextualTip({ activeTab, selectedPlant, stage, pid });
+  const ctx = contextualTip({ activeTab, selectedPlant, stage, pid, voice });
   if (ctx) candidates.push(ctx);
 
   // (Idle tips are added by selectTip, since they depend on the injected `now`.)
   return candidates;
 }
 
-function contextualTip({ activeTab, selectedPlant, stage, pid }) {
+function contextualTip({ activeTab, selectedPlant, stage, pid, voice = 'towelie' }) {
   const base = { kind: 'contextual', expression: 'happy', priority: TIP_KINDS.contextual };
   switch (activeTab) {
     case 'add-log':
@@ -353,7 +341,7 @@ function contextualTip({ activeTab, selectedPlant, stage, pid }) {
       if (selectedPlant) {
         return { ...base, id: `contextual:dashboard:${pid}`, text: `${selectedPlant.name}${stage ? ` is cruising through ${stageLabel(stage)}` : ' is looking good'} — keep it up! 🌱` };
       }
-      return { ...base, id: 'contextual:dashboard:none', expression: 'idle', text: GREETING_TIPS[0] };
+      return { ...base, id: 'contextual:dashboard:none', expression: 'idle', text: compose(voice, 'greeting', '', { seed: 0 }) };
   }
 }
 
@@ -365,11 +353,11 @@ function contextualTip({ activeTab, selectedPlant, stage, pid }) {
 // returns something and ignores the rate-limit.
 export function answerQuestion(input = {}, key = 'status', opts = {}) {
   const { now = 0 } = opts;
-  const { selectedPlant, alerts = [], logs = [], stage, schedules = [] } = input;
+  const { selectedPlant, alerts = [], logs = [], stage, schedules = [], voice = 'towelie' } = input;
   const base = { kind: 'answer', dismissible: true };
 
   if (key === 'fun') {
-    const pool = [...IDLE_TIPS, ...GREETING_TIPS];
+    const pool = [...(VOICES[voice] ? VOICES[voice].idle : VOICES.towelie.idle), ...(VOICES[voice] ? VOICES[voice].greeting : VOICES.towelie.greeting)];
     const i = Math.floor(now / RATE_LIMIT_MS) % pool.length;
     return { ...base, id: 'answer:fun', expression: 'happy', text: pool[i] };
   }
@@ -432,12 +420,12 @@ export function answerQuestion(input = {}, key = 'status', opts = {}) {
     // Ranked: fix an out-of-range reading › feed if due › log if stale › stage care.
     const bad = alerts.find((a) => a.status === 'out' && a.range) || alerts.find((a) => a.range);
     if (bad) {
-      const copy = ALERT_COPY[bad.key];
-      return { ...base, id: 'answer:action:alert', expression: 'alert', text: copy ? copy(bad) : `${bad.label} is out of range — worth a fix. 🌱` };
+      const fact = bad.range ? alertFact(bad) : `${bad.label} is out of range — worth a fix.`;
+      return { ...base, id: 'answer:action:alert', expression: 'alert', text: compose(voice, 'alertPrefix', fact, { seed: seedFrom(`action:${plantKey(selectedPlant)}:${bad.key}`) }) };
     }
     const due = schedules.find((s) => s && s.active !== false && feedingStatus(s, new Date(now)).due);
     if (due) {
-      return { ...base, id: 'answer:action:feed', expression: 'happy', text: `Give ${selectedPlant.name} a feed — ${due.nutrient_type || 'nutrients'} are due. 🍽️` };
+      return { ...base, id: 'answer:action:feed', expression: 'happy', text: compose(voice, 'reminderPrefix', `Give ${selectedPlant.name} a feed — ${due.nutrient_type || 'nutrients'} are due.`, { seed: seedFrom(`action-feed:${plantKey(selectedPlant)}`) }) };
     }
     const latest = latestLog(logs);
     const daysSince = latest ? Math.floor((now - new Date(latest.date ?? latest.created_at).getTime()) / 86400000) : null;
@@ -473,9 +461,10 @@ export function selectTip(input = {}, opts = {}) {
   const dismissed = new Set(dismissedIds);
   const candidates = buildCandidates(input, now);
 
+  const { selectedPlant, logs = [], voice = 'towelie' } = input;
+
   // Logging nudge — depends on `now`, so it's generated here. If it's been a while
   // since the selected plant's latest log, gently suggest one.
-  const { selectedPlant, logs = [] } = input;
   if (selectedPlant && logs.length) {
     const latest = latestLog(logs);
     const t = latest ? new Date(latest.date ?? latest.created_at).getTime() : 0;
@@ -485,27 +474,28 @@ export function selectTip(input = {}, opts = {}) {
         id: `reminder:log:${plantKey(selectedPlant)}`,
         kind: 'reminder',
         expression: 'idle',
-        text: `Haven't heard about ${selectedPlant.name} in ${daysSince} days — quick log to keep the chart honest? 📋`,
+        text: compose(voice, 'reminderPrefix', `Haven't heard about ${selectedPlant.name} in ${daysSince} days — quick log to keep the chart honest?`, { seed: seedFrom(`log:${plantKey(selectedPlant)}`) }),
         priority: TIP_KINDS.reminder,
       });
     }
   }
 
   // Idle tips are generated here (depend on `now`) so the engine stays pure.
-  const idleIndex = Math.floor(now / RATE_LIMIT_MS) % IDLE_TIPS.length;
+  const idlePool = VOICES[voice] ? VOICES[voice].idle : VOICES.towelie.idle;
+  const idleIndex = Math.floor(now / RATE_LIMIT_MS) % (idlePool.length || 1);
   candidates.push({
     id: `idle:${idleIndex}`,
     kind: 'idle',
     expression: 'idle',
-    text: IDLE_TIPS[idleIndex],
+    text: compose(voice, 'idle', '', { seed: idleIndex }),
     priority: TIP_KINDS.idle,
   });
 
   // Rotate the chill pop-up greeting so it's not word-for-word every time.
   const greeting = candidates.find((c) => c.id === 'contextual:dashboard:none');
   if (greeting) {
-    const gi = Math.floor(now / RATE_LIMIT_MS) % GREETING_TIPS.length;
-    greeting.text = GREETING_TIPS[gi];
+    const gi = Math.floor(now / RATE_LIMIT_MS);
+    greeting.text = compose(voice, 'greeting', '', { seed: gi });
   }
 
   const visible = candidates

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectTip, buildCandidates, answerQuestion, RATE_LIMIT_MS, TIP_KINDS, IDLE_TIPS } from '../data/assistantTips';
+import { TOWELIE_MARKERS } from '../data/budVoice';
 
 const plant = { id: 1, name: 'Tomato', species: 'tomato', target_stage: null };
 const alert = { key: 'ph', label: 'pH', value: 7.4, range: { min: 5.8, max: 6.2 }, status: 'out' };
@@ -281,6 +282,37 @@ describe('assistantTips MR-52: reservoir age, VPD, stage-change, idle count', ()
     const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [], logs });
     const tip = cands.find((c) => c.kind === 'milestone' && c.text.includes('Early Vegetative'));
     expect(tip).toBeTruthy();
+  });
+});
+
+describe('assistantTips MR-67: Towelie voice vs clean voice', () => {
+  it('renders the pH alert with the towelie voice: factual band present + a towelie marker', () => {
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [alert], logs: [], voice: 'towelie' });
+    const a = cands.find((c) => c.id === 'alert:1:ph:out');
+    expect(a.text).toContain('5.8-6.2');
+    expect(TOWELIE_MARKERS.some((m) => a.text.includes(m))).toBe(true);
+  });
+
+  it('renders the pH alert with the clean voice: factual band present, no towelie marker', () => {
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [alert], logs: [], voice: 'clean' });
+    const a = cands.find((c) => c.id === 'alert:1:ph:out');
+    expect(a.text).toContain('5.8-6.2');
+    expect(TOWELIE_MARKERS.some((m) => a.text.includes(m))).toBe(false);
+  });
+
+  it('defaults to the towelie voice when none is given', () => {
+    const cands = buildCandidates({ activeTab: 'dashboard', selectedPlant: plant, alerts: [alert], logs: [] });
+    const a = cands.find((c) => c.id === 'alert:1:ph:out');
+    expect(TOWELIE_MARKERS.some((m) => a.text.includes(m))).toBe(true);
+  });
+
+  it('answerQuestion action alert also carries the voice', () => {
+    const towelie = answerQuestion({ selectedPlant: plant, alerts: [alert], logs: [], voice: 'towelie' }, 'action');
+    const clean = answerQuestion({ selectedPlant: plant, alerts: [alert], logs: [], voice: 'clean' }, 'action');
+    expect(towelie.text).toContain('5.8-6.2');
+    expect(TOWELIE_MARKERS.some((m) => towelie.text.includes(m))).toBe(true);
+    expect(clean.text).toContain('5.8-6.2');
+    expect(TOWELIE_MARKERS.some((m) => clean.text.includes(m))).toBe(false);
   });
 });
 

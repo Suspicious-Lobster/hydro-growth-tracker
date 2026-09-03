@@ -19,14 +19,17 @@ vi.mock('../../contexts/AppDataContext', () => ({
   useAppData: () => ({ settings, updateSettings }),
 }));
 
+const setVoice = vi.fn();
 vi.mock('../../contexts/AssistantContext', () => ({
   useAssistant: () => ({
     effectsEnabled: true,
     muted: false,
     soundEnabled: true,
+    voice: 'towelie',
     toggleEffects: vi.fn(),
     setMuted: vi.fn(),
     setSoundEnabled: vi.fn(),
+    setVoice,
     resetDismissed: vi.fn(),
     startTour: vi.fn(),
   }),
@@ -58,6 +61,18 @@ describe('SettingsPanel (MR-25)', () => {
   beforeEach(() => {
     updateSettings.mockClear();
     toastSuccess.mockClear();
+    setVoice.mockClear();
+  });
+
+  // MR-67: the voice select lives under Fun & Effects, saved instantly (no
+  // Save button needed — same pattern as the other assistant toggles).
+  it("changing Bud's voice select calls setVoice", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.selectOptions(screen.getByLabelText("Bud's voice"), 'clean');
+
+    expect(setVoice).toHaveBeenCalledWith('clean');
   });
 
   it('saves the length unit change and re-renders it', async () => {
