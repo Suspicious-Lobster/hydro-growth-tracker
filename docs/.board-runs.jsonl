@@ -67,3 +67,6 @@
 {"kind": "row", "run": "bud-run1", "wave": 4, "row": "MR-70", "tier": "S", "outcome": "done", "redproof": "real"}
 {"kind": "row", "run": "bud-run1", "wave": 4, "row": "MR-71", "tier": "S", "outcome": "done", "redproof": "real"}
 {"kind": "row", "run": "bud-run1", "wave": 4, "row": "MR-72", "tier": "S", "outcome": "done", "redproof": "real"}
+{"kind": "row", "run": "ci-run1", "wave": 1, "row": "MR-73", "tier": "S", "outcome": "done", "redproof": "real"}
+{"kind": "row", "run": "ci-run1", "wave": 1, "row": "MR-74", "tier": "S", "outcome": "done", "redproof": "real"}
+{"kind": "row", "run": "ci-run1", "wave": 1, "row": "MR-75", "tier": "S", "outcome": "done", "redproof": "real"}

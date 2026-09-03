@@ -373,17 +373,17 @@ Red proof: Omit the CHANGELOG.md argument from the generator -> the 1.3.0 rows r
 Accept: node tools/bud_capture.mjs --out <dir> then open cheer.png and shrug.png: at the 30 and 60 percent frames both arms are visible in front of or beside the leaf; the owner says it reads as a cheer.
 Red proof: Revert ARM_CHEER to the current values and re-capture: the 60 percent frame shows no arms.
 
-<!--row id=MR-73 tier=S status=doing lane=D files=package.json,package-lock.json,.github/workflows/ci.yml-->
+<!--row id=MR-73 tier=S status=done lane=D files=package.json,package-lock.json,.github/workflows/ci.yml commit=b62bf5d-->
 **MR-73 [S] CI Linux jobs cannot install: the Windows-only rolldown binding must be optional** Gap (CI run 33745516729 on main, 2026-09-03): both test jobs fail in 10 s with npm error EBADPLATFORM: @rolldown/binding-win32-x64-msvc@1.2.7 wanted os win32, actual linux. The binding was added to root devDependencies in mr-run1 as a Windows workaround for the vite 8 pull; npm treats an unsupported devDependency as fatal but SKIPS an unsupported optionalDependency. Move it to optionalDependencies.
 Accept: On main the CI test matrix (America/Los_Angeles and Pacific/Auckland) reaches the test steps and passes; locally npm install still resolves the binding on Windows (frontend build works).
 Red proof: Move it back to devDependencies -> the Linux jobs fail at install again (the CI run is the instrument; cite the run id both ways).
 
-<!--row id=MR-74 tier=O status=doing lane=D files=e2e/a11y.spec.mjs,e2e/helpers.mjs,frontend/src/**-->
+<!--row id=MR-74 tier=O status=done lane=D files=e2e/a11y.spec.mjs,e2e/helpers.mjs,frontend/src/** commit=b448dde-->
 **MR-74 [O] Axe reports serious violations on every tab on the CI Windows runner but not locally** Gap (CI run 33745516729 package-and-e2e job, 2026-09-03): all six a11y specs fail with 'axe violations on <tab>' while the same suite passes 20/20 on the owner's machine three times today. Same Electron, same spec; the difference is the runner (display scaling, colour scheme, fonts, or a timing where the page is captured before theme tokens apply). Download the error-context artefacts, read the violation ids, and fix the product or the staging, never the assertion.
 Accept: The package-and-e2e job on main is green; the error-context names the violation ids and the fix commit explains which runner difference produced them.
 Red proof: Revert the fix on a scratch branch and re-run the workflow -> the six specs fail again.
 
-<!--row id=MR-75 tier=S status=ready lane=D files=e2e/a11y.spec.mjs,e2e/helpers.mjs-->
+<!--row id=MR-75 tier=S status=done lane=D files=e2e/a11y.spec.mjs,e2e/helpers.mjs commit=d19d135-->
 **MR-75 [S] Run the axe accessibility specs under BOTH colour schemes** Gap (CI run 33795688347, 2026-09-03): the a11y specs passed 6/6 on the owner's machine (dark OS theme) three times today and failed 6/6 on the CI runner (light theme) on two different elements in a row: the sidebar sub-line, then the active tab button whose class string lacked a space before text-white. One scheme per machine means half the palette is never checked. launchApp already sets localStorage keys before reload; the theme is a per-device preference in ThemeContext (read it for the key), so the spec can run each tab under 'light' and 'dark' explicitly instead of inheriting the OS.
 Accept: npm run test:e2e runs the six tab checks twice (light and dark, named in the spec title: 12 a11y specs), both green locally; the CI package-and-e2e job is green.
 Red proof: Re-introduce the missing space in App.jsx's active tab class on a scratch run -> the LIGHT variant fails while dark still passes (assert the precondition that the local OS theme is dark, or force it).
