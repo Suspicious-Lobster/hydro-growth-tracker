@@ -132,10 +132,12 @@
     "json2csv": "^5.0.7",
     "multer": "^2.0.0"
   },
+  "optionalDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "^1.2.7"
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
-    "@rolldown/binding-win32-x64-msvc": "^1.2.7",
     "@vitest/coverage-v8": "^4.1.11",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
