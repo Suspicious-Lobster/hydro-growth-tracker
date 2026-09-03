@@ -1,14 +1,60 @@
-import React, { useState, useEffect, useId } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
 import { Plus, Minus, Save, AlertCircle, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppData } from '../contexts/AppDataContext';
 import { useToast } from '../contexts/ToastContext';
 import { apiErrorMessage } from '../api/api';
 import { GROWTH_STAGES } from '../data/plantKnowledge';
-import { getProfileStages, stageLabel } from '../data/recommendations';
+import { getProfileStages, stageLabel, getProfile, getStageGuidance, inferStage } from '../data/recommendations';
+import { classify } from '../utils/ranges';
 import { toCm, toCelsius, toLiters, lengthUnitLabel, tempUnitLabel, volumeUnitLabel } from '../utils/format';
 import { todayLocalISO } from '../utils/dates';
 import { validateLogByField, DOSES_MAX } from '@shared/validation';
+import { emitSafe } from '../utils/budBus';
+import { BUD_EVENTS } from '../data/budCues';
+
+// Shared by AddLogForm and QuickLogForm (MR-63): classify a just-typed
+// reading against the selected plant's species/stage band so Bud can react
+// with an approving nod or a wince. `value` must already be in canonical
+// units (Celsius for air_temp; pH/EC/humidity are unitless) — the caller
+// converts display units first. `stage` defaults to the plant's own
+// target_stage when the caller doesn't have a more specific one (e.g. one
+// inferred from the current height, as PlantCards does).
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper shared with QuickLogForm, not a component
+export function readingStatus(field, value, plant, stage = plant?.target_stage ?? null) {
+  if (!plant) return 'unknown';
+  const profile = getProfile(plant.species);
+  switch (field) {
+    case 'ph': return classify(value, profile.phRange);
+    case 'humidity': return classify(value, profile.optimalHumidity);
+    case 'air_temp': return classify(value, profile.optimalTemp);
+    case 'ec': {
+      const guidance = getStageGuidance(plant.species, stage);
+      return classify(value, guidance?.ec);
+    }
+    default: return 'unknown';
+  }
+}
+
+// Emit form:reading at most once per 400ms per field, but always emit the
+// last value once the user pauses (a trailing timer) so the final keystroke's
+// status still reaches Bud. Tiny and local — not worth sharing as a module.
+function useReadingEmitter() {
+  const state = useRef({});
+  return (field, value, status) => {
+    const now = Date.now();
+    const entry = state.current[field] || { last: 0, timer: null };
+    if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+    const elapsed = now - entry.last;
+    const fire = () => {
+      entry.last = Date.now();
+      emitSafe(BUD_EVENTS.FORM_READING, { field, value, status });
+    };
+    if (elapsed >= 400) fire();
+    else entry.timer = setTimeout(fire, 400 - elapsed);
+    state.current[field] = entry;
+  };
+}
 
 const DRAFT_KEY = 'logFormDraft';
 const blankForm = () => ({
@@ -41,6 +87,7 @@ const AddLogForm = ({ defaultPlantId = null }) => {
 
   const { length: lengthUnit, temp: tempUnit, volume: volumeUnit } = settings.units;
   const selectedPlant = plants.find((p) => p.id === Number(selectedPlantId)) || null;
+  const emitReading = useReadingEmitter();
 
   // Default to "new plant" when there are no plants to pick.
   useEffect(() => {
@@ -71,10 +118,19 @@ const AddLogForm = ({ defaultPlantId = null }) => {
 
   const update = (patch) => { setForm((f) => ({ ...f, ...patch })); setIsDirty(true); };
 
+  const READING_FIELDS = ['ph', 'ec', 'humidity', 'air_temp'];
+
   const handleChange = (e) => {
     const { name, value, files } = e.target;
-    if (name === 'image') update({ image: files[0] || null });
-    else update({ [name]: value });
+    if (name === 'image') { update({ image: files[0] || null }); return; }
+    update({ [name]: value });
+    if (READING_FIELDS.includes(name)) {
+      const compareValue = name === 'air_temp' && value !== '' ? toCelsius(parseFloat(value), tempUnit) : value;
+      const heightCm = form.height === '' ? undefined : toCm(parseFloat(form.height), lengthUnit);
+      const stage = selectedPlant ? inferStage(selectedPlant.species, heightCm, form.growth_stage) : null;
+      const status = readingStatus(name, compareValue, selectedPlant, stage);
+      emitReading(name, value, status);
+    }
   };
 
   const adjustHeight = (delta) => {
@@ -121,6 +177,7 @@ const AddLogForm = ({ defaultPlantId = null }) => {
     if (!name) fieldErrors.plant = 'Please select or name a plant';
     if (Object.keys(fieldErrors).length > 0) {
       setErrors(fieldErrors);
+      emitSafe(BUD_EVENTS.SAVE_ERROR, { kind: 'log' });
       return;
     }
     setErrors({});
@@ -142,6 +199,7 @@ const AddLogForm = ({ defaultPlantId = null }) => {
       }
       const created = await createLog(body, config);
       toast.success('Growth log added');
+      emitSafe(BUD_EVENTS.SAVE_OK, { kind: 'log' });
       clearDraft();
       setErrors({});
       // Keep the same plant selected for fast repeat entry.
@@ -152,6 +210,7 @@ const AddLogForm = ({ defaultPlantId = null }) => {
       }
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to add log'));
+      emitSafe(BUD_EVENTS.SAVE_ERROR, { kind: 'log' });
     } finally {
       setIsSubmitting(false);
     }
@@ -186,12 +245,12 @@ const AddLogForm = ({ defaultPlantId = null }) => {
             </button>
           </div>
           {plantMode === 'existing' ? (
-            <select aria-label="Plant" value={selectedPlantId} onChange={(e) => { setSelectedPlantId(e.target.value); setIsDirty(true); }} className={inputCls(errors.plant)}>
+            <select aria-label="Plant" value={selectedPlantId} onChange={(e) => { setSelectedPlantId(e.target.value); setIsDirty(true); }} onFocus={() => emitSafe(BUD_EVENTS.FORM_FOCUS, {})} className={inputCls(errors.plant)}>
               <option value="">Select a plant…</option>
               {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           ) : (
-            <input name="plant_name" aria-label="New plant name" value={form.plant_name} onChange={handleChange}
+            <input name="plant_name" aria-label="New plant name" value={form.plant_name} onChange={handleChange} onFocus={() => emitSafe(BUD_EVENTS.FORM_FOCUS, {})}
               placeholder="e.g., Tomato Plant #1" className={inputCls(errors.plant)} />
           )}
           {errors.plant && <p className="text-red-500 text-sm mt-1">{errors.plant}</p>}

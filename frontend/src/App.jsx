@@ -20,6 +20,8 @@ import LogViewer from './components/LogViewer';
 import PlantDetail from './components/PlantDetail';
 import SettingsPanel from './components/SettingsPanel';
 import { useFeedingReminders } from './hooks/useFeedingReminders';
+import { emitSafe } from './utils/budBus';
+import { BUD_EVENTS } from './data/budCues';
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -58,6 +60,12 @@ function AppContent() {
   // wants the user to visit.
   const tourActive = !tourDone && tourStep != null && tourStep < TOUR_STEPS.length;
   const tourTab = tourActive ? TOUR_STEPS[tourStep].tab : null;
+
+  // MR-63: wrapped so a tab-bar click emits exactly once, not on every render.
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    emitSafe(BUD_EVENTS.TAB, { tab });
+  };
 
   const handlePlantSelect = (id) => {
     setSelectedPlantId(id);
@@ -105,7 +113,7 @@ function AppContent() {
             {TABS.map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => handleTabChange(tab.key)}
                 className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                   activeTab === tab.key
                     ? 'bg-light-primary-bg dark:bg-dark-primary-bgtext-white shadow-md'

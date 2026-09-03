@@ -15,6 +15,8 @@ import { GROWTH_STAGES } from '../data/plantKnowledge';
 import { filterLogs, isFilterActive } from '../utils/logFilter';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { DosesEditor } from './AddLogForm';
+import { emitSafe } from '../utils/budBus';
+import { BUD_EVENTS } from '../data/budCues';
 
 // Round a display-unit value to a sane number of decimals when prefilling an
 // input, so e.g. 10cm shown in inches doesn't render as 3.9370078740157...
@@ -110,6 +112,7 @@ const LogViewer = () => {
       }
       await updateLog(logId, body);
       toast.success('Log updated');
+      emitSafe(BUD_EVENTS.SAVE_OK, { kind: 'log' });
       cancelEditing();
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to update log'));
@@ -124,6 +127,7 @@ const LogViewer = () => {
     try {
       await deleteLog(pendingDelete.id);
       toast.success('Log deleted');
+      emitSafe(BUD_EVENTS.DELETE, { kind: 'log' });
       setPendingDelete(null);
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to delete log'));

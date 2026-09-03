@@ -7,6 +7,8 @@ import { apiErrorMessage } from '../api/api';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { formatVolume, formatDate, toLiters, volumeUnitLabel } from '../utils/format';
 import { todayLocalISO, parseLocalDate } from '../utils/dates';
+import { emitSafe } from '../utils/budBus';
+import { BUD_EVENTS } from '../data/budCues';
 
 const KIND_LABELS = { change: 'Full change', topoff: 'Top-off' };
 
@@ -59,6 +61,7 @@ const ReservoirLog = ({ plant, now = new Date() }) => {
     try {
       await createReservoirEvent(payload);
       toast.success('Reservoir event added');
+      emitSafe(BUD_EVENTS.SAVE_OK, { kind: 'reservoir' });
       setForm(emptyForm(now));
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to add reservoir event'));
@@ -73,6 +76,7 @@ const ReservoirLog = ({ plant, now = new Date() }) => {
     try {
       await deleteReservoirEvent(pendingDelete.id);
       toast.success('Event deleted');
+      emitSafe(BUD_EVENTS.DELETE, { kind: 'reservoir' });
       setPendingDelete(null);
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Failed to delete event'));
