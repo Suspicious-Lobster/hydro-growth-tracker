@@ -28,6 +28,9 @@ Commands
     stats                process telemetry from the runs ledger
     show <id>            one row, header + body
     set <id> k=v [k=v]   rewrite a row's header in place
+    validate --exclude-in-flight
+                         derive the vitest --exclude globs for test files
+                         inside in-flight (status=doing) rows' footprints
 
 Every command takes --json. Every command exits non-zero on a hard failure so
 it can be a gate (CODING-PRACTICES 1.7: a gate ABORTS, it does not report a
@@ -61,6 +64,9 @@ from pathlib import Path
 # is vendored. Comparing copies is therefore a human act, and this string is
 # the only thing that makes it cheap.
 #
+# 1.3.2  validate --exclude-in-flight: derive the vitest --exclude globs for
+#        test files inside in-flight (status=doing) rows' footprints, so the
+#        exclusion is read off the board instead of hand-typed by a foreman
 # 1.2.1  body_ends() now treats a bare `---` divider as a body/section end
 #        (fenced code blocks are tracked so a divider-shaped line inside one
 #        does not truncate the row)
@@ -68,7 +74,7 @@ from pathlib import Path
 #        repairs and rule breaks apart from clean ships, per tier
 # 1.1.0  new; stats per-run deltas; UTF-8 stdout; version stamp
 # 1.0.0  lint/ready/wave/conflicts/audit/coverage/stats/log/show/set
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 
 # --------------------------------------------------------------------------
 # config
@@ -437,6 +443,77 @@ def expand(globs: list[str], files: list[str]) -> set[str]:
         else:
             hit.add(g)
     return hit
+
+
+# --------------------------------------------------------------------------
+# validate -- deriving the vitest --exclude list from in-flight footprints
+# --------------------------------------------------------------------------
+
+TEST_FILE_RE = re.compile(r"\.test\.(?:js|jsx|mjs)$")
+
+
+def is_test_file(rel: str) -> bool:
+    """A footprint entry counts as a test file if it matches the vitest
+    naming convention (*.test.js/.jsx/.mjs) or lives under test/ or
+    frontend/src/__tests__/ -- the three shapes MR-36's retrospective named
+    (MR-34's ten-species assertion, MR-23's kaboom boundary test, MR-25's
+    require-in-a-test, Modal.test.jsx)."""
+    rel = rel.replace("\\", "/")
+    if TEST_FILE_RE.search(rel):
+        return True
+    if rel == "test" or rel.startswith("test/"):
+        return True
+    if rel == "frontend/src/__tests__" or "frontend/src/__tests__/" in rel:
+        return True
+    return False
+
+
+def working_tree_files(root: Path) -> list[str]:
+    """Every file on disk, relative to root, forward-slashed. Unlike
+    `repo_files()` (git ls-files) this sees files a row created but has not
+    yet staged -- exactly the state a `doing` row is usually in."""
+    out = []
+    # Dependency and build trees hold no footprint file and cost ~27 s to
+    # walk on this repo (two node_modules); the footprint globs never name
+    # them (board.config.json ignore_globs), so prune at the top.
+    skip = {".git", "node_modules", "dist", "coverage"}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in skip]
+        for fn in filenames:
+            rel = (Path(dirpath) / fn).relative_to(root).as_posix()
+            out.append(rel)
+    return out
+
+
+def expand_working_tree(root: Path, globs: list[str]) -> set[str]:
+    """Concrete files a footprint claims, resolved against the WORKING TREE
+    (not `git ls-files`, unlike `expand()`). A row mid-edit may have created a
+    test file that is not yet staged/committed -- exactly the case this
+    command exists for -- so this must see the disk, not the index. A glob
+    matching nothing on disk still contributes its literal text (a footprint
+    is a claim, not an inventory, same rule as `expand()`). fnmatch has no
+    special recursive syntax, so `test/**` matches like `test/*` (`*` already
+    translates to `.*`) -- which is exactly "covers every file under test/",
+    the behaviour this command needs."""
+    files = working_tree_files(root)
+    hits: set[str] = set()
+    for g in globs:
+        g = g.replace("\\", "/")
+        if any(ch in g for ch in "*?["):
+            matched = [f for f in files if fnmatch.fnmatch(f, g)]
+            if matched:
+                hits.update(matched)
+            else:
+                hits.add(g)
+            continue
+        p = root / g
+        if p.is_dir():
+            hits.update(f for f in files if f == g or f.startswith(g + "/"))
+        elif p.is_file():
+            hits.add(g)
+        else:
+            hits.add(g)
+    return hits
 
 
 # --------------------------------------------------------------------------
@@ -1160,6 +1237,44 @@ def cmd_set(root: Path, cfg: dict, args) -> int:
     return 0
 
 
+def cmd_validate(root: Path, cfg: dict, args) -> int:
+    """Derive the vitest --exclude list from rows currently in flight.
+
+    Gap this closes (retrospective, mr-run1): four times the full validate
+    ladder went red only because a worker's in-flight test file was mid-edit
+    while the foreman validated a FINISHED row, and each time the foreman
+    re-ran with a hand-typed --exclude list. This reads the board instead of
+    a human's memory: any test file inside a status=doing row's footprint is
+    excluded; a done row contributes nothing.
+
+    This command only DERIVES the list -- it never runs the validate
+    commands itself.
+    """
+    rows, problems = load_rows(root, cfg)
+    if any(p.level == "error" for p in problems):
+        print("board: REFUSING to answer -- the board does not parse cleanly.\n"
+              "       run `python tools/board.py lint` first.", file=sys.stderr)
+        return 2
+
+    excluded: set[str] = set()
+    in_flight = [r for r in rows if r.status == "doing"]
+    if args.exclude_in_flight:
+        for r in in_flight:
+            for f in expand_working_tree(root, r.files):
+                if is_test_file(f):
+                    excluded.add(f.replace("\\", "/"))
+
+    result = sorted(excluded)
+    if args.json:
+        print(json.dumps(result, indent=1))
+    else:
+        for f in result:
+            print(f"--exclude {f}")
+    print(f"validate: {len(in_flight)} in-flight row(s), {len(result)} test "
+          f"file(s) excluded", file=sys.stderr)
+    return 0
+
+
 # --------------------------------------------------------------------------
 
 def main(argv: list[str]) -> int:
@@ -1224,6 +1339,12 @@ def main(argv: list[str]) -> int:
     st = sub.add_parser("set", help="rewrite a row header")
     st.add_argument("id")
     st.add_argument("kv", nargs="+", metavar="k=v")
+    vd = sub.add_parser("validate", help="derive the vitest --exclude list "
+                        "from in-flight (status=doing) rows' footprints")
+    vd.add_argument("--exclude-in-flight", action="store_true",
+                    help="print one `--exclude <path>` per test file inside "
+                         "a status=doing row's footprint; done rows "
+                         "contribute nothing")
 
     args = ap.parse_args(argv)
 
@@ -1244,6 +1365,7 @@ def main(argv: list[str]) -> int:
         "conflicts": cmd_conflicts, "audit": cmd_audit,
         "coverage": cmd_coverage, "stats": cmd_stats, "log": cmd_log,
         "new": cmd_new, "show": cmd_show, "set": cmd_set,
+        "validate": cmd_validate,
     }[args.cmd]
     return fn(root, cfg, args)
 

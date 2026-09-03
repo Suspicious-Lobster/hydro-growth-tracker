@@ -974,6 +974,99 @@ check("prose after the fence is still part of the same row's body",
       "More prose after the fence" in p11.body, f"body={p11.body!r}")
 
 
+# --- 15. `validate --exclude-in-flight` -- derived, never hand-typed --------
+# Gap (retrospective, mr-run1): four times the full validate ladder was red
+# only because a worker's in-flight test file was mid-edit while the foreman
+# validated a FINISHED row; each time the foreman re-ran with a hand-typed
+# --exclude list. `validate` must read the board instead of a human's memory.
+def validate_args(**kw):
+    base = dict(json=True, exclude_in_flight=True)
+    base.update(kw)
+    return type("A", (), base)()
+
+
+def run_validate(root: Path, cfg: dict, **kw) -> tuple[list[str], int, str]:
+    a = validate_args(**kw)
+    buf, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(buf), redirect_stderr(err):
+        rc = board.cmd_validate(root, cfg, a)
+    out = buf.getvalue()
+    return (json.loads(out) if out.strip() else []), rc, err.getvalue()
+
+
+# (a) a doing row with files=test/** and one real test file present under
+# the temp repo's test/ -> one --exclude line naming it
+vroot, vcfg = board_with(
+    "<!--row id=P1.1 tier=S status=doing files=test/**-->\n"
+    "**P1.1 [S] Mid-edit test file.** Accept: x. Red proof: y.\n")
+(vroot / "test").mkdir()
+(vroot / "test" / "kaboom.test.js").write_text("x\n", encoding="utf-8")
+excl, rc, err = run_validate(vroot, vcfg)
+check("doing row's test/** footprint yields one --exclude naming the real file",
+      excl == ["test/kaboom.test.js"], f"excl={excl}")
+check("stderr prints the derivation's own arithmetic",
+      "1 in-flight row(s), 1 test file(s) excluded" in err, err)
+
+# (b) the same row set to `done` -> zero lines
+rows_v, _ = board.load_rows(vroot, vcfg)
+with redirect_stdout(io.StringIO()):
+    board.cmd_set(vroot, vcfg, type("A", (), {"json": False, "id": "P1.1",
+                                              "kv": ["status=done",
+                                                     "commit=deadbeef"]})())
+excl_done, rc_done, err_done = run_validate(vroot, vcfg)
+check("the same row, once done, contributes nothing",
+      excl_done == [], f"excl={excl_done}")
+check("stderr reflects zero in-flight rows once done",
+      "0 in-flight row(s), 0 test file(s) excluded" in err_done, err_done)
+
+# RED PROOF: restoring the row to `doing` brings the exclusion straight back --
+# the presence of the line tracks status=doing, not some cached state.
+with redirect_stdout(io.StringIO()):
+    board.cmd_set(vroot, vcfg, type("A", (), {"json": False, "id": "P1.1",
+                                              "kv": ["status=doing"]})())
+excl_again, _, _ = run_validate(vroot, vcfg)
+check("RED PROOF -- flipping back to doing restores the exclusion",
+      excl_again == ["test/kaboom.test.js"], f"excl={excl_again}")
+
+# (c) a doing row whose footprint holds only non-test files -> zero lines
+vroot2, vcfg2 = board_with(
+    "<!--row id=P1.1 tier=S status=doing files=src/plain.js-->\n"
+    "**P1.1 [S] Not a test.** Accept: x. Red proof: y.\n")
+(vroot2 / "src").mkdir()
+(vroot2 / "src" / "plain.js").write_text("x\n", encoding="utf-8")
+excl2, _, _ = run_validate(vroot2, vcfg2)
+check("a doing row with only non-test files excludes nothing",
+      excl2 == [], f"excl={excl2}")
+
+# (d) the frontend __tests__ pattern
+vroot3, vcfg3 = board_with(
+    "<!--row id=P1.1 tier=S status=doing "
+    "files=frontend/src/__tests__/Modal.test.jsx-->\n"
+    "**P1.1 [S] Mid-edit Modal test.** Accept: x. Red proof: y.\n")
+(vroot3 / "frontend" / "src" / "__tests__").mkdir(parents=True)
+(vroot3 / "frontend" / "src" / "__tests__" / "Modal.test.jsx").write_text(
+    "x\n", encoding="utf-8")
+excl3, _, _ = run_validate(vroot3, vcfg3)
+check("frontend/src/__tests__ pattern is recognised",
+      excl3 == ["frontend/src/__tests__/Modal.test.jsx"], f"excl={excl3}")
+
+# without --exclude-in-flight, the command derives nothing (the flag names
+# the behaviour explicitly rather than always running it silently)
+excl_off, _, err_off = run_validate(vroot, vcfg, exclude_in_flight=False)
+check("--exclude-in-flight is what turns the derivation on",
+      excl_off == [], f"excl={excl_off}")
+
+# an unparseable board REFUSES rather than reporting a number it can't stand
+# behind, same discipline as `ready`/`wave`
+vroot4, vcfg4 = board_with(
+    "<!--row id=P1.1 tier=S status=doing files=test/**-->\n"
+    "**P1.1 [S] Fine.** Accept: x. Red proof: y.\n\n"
+    "**P1.2 [S] Unheadered -- the board is now untrustworthy.** Accept: x.\n")
+_, rc4, err4 = run_validate(vroot4, vcfg4)
+check("`validate` REFUSES on an unparseable board (exit 2)",
+      rc4 == 2 and "REFUSING" in err4, f"rc={rc4} err={err4}")
+
+
 # -----------------------------------------------------------------------------
 print(f"\nboard tests: {PASS} passed, {FAIL} failed")
 for f in FAILURES:
